@@ -1,0 +1,20 @@
+[project]
+name = "tca"
+version = "0.1.0"
+description = "Type Construction Architecture — programs as type construction graphs"
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.12.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.38.1",
+    "pytest>=9.0.2",
+]
