@@ -15,6 +15,12 @@ TCA is the discipline of writing programs as type construction graphs. Define th
 
 **[The building block classifier](tca/building_block.py)** is a teaching resource, a live demonstration of every TCA mechanism in the spec, and a practical tool. Point it at any Pydantic model and it classifies every field into its structural building block — enum, newtype, record, collection, scalar — through pure construction. No branching, no external classifiers. One `model_validate` at the root cascades the entire classification. Use it to learn TCA, to see TCA working, and to understand the structure of your own models.
 
+## Why This Matters for LLMs
+
+When a language model consumes a type schema, field names become instructions and construction becomes proof that the output is valid. TCA already preserves names, descriptions, and enum members as first-class structural elements — adding an LLM consumer activates a semantic dimension without architectural change. The same types that structure the construction graph become instructions to the model.
+
+This phenomenon is formalized as **[Semantic Index Types](https://github.com/kylejtobin/sit)** — a companion research project exploring what happens when the compilation target reads natural language.
+
 ## Requirements
 
 - Python 3.12+
