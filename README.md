@@ -13,6 +13,8 @@ TCA is the discipline of writing programs as type construction graphs. Define th
 
 **[The specification](tca.md)** defines the architecture: the construction machine and its five layers, the two fundamental mechanisms (`from_attributes` and discriminated unions), construction graphs, the program triad, and the principles that follow from treating construction as proof.
 
+**[The construction lifecycle](construction-lifecycle.md)** describes the five phases of the construction machine with per-phase contracts, code examples from the reference architecture, and the priority principle: computation migrates toward earlier phases because earlier phases are more compositional, more testable, and reduce semantic surface area.
+
 **[The building block classifier](tca/building_block.py)** is a teaching resource, a live demonstration of every TCA mechanism in the spec, and a practical tool. Point it at any Pydantic model and it classifies every field into its structural building block — enum, newtype, record, collection, scalar — through pure construction. No branching, no external classifiers. One `model_validate` at the root cascades the entire classification. Use it to learn TCA, to see TCA working, and to understand the structure of your own models.
 
 ## Why This Matters for LLMs

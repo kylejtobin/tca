@@ -84,6 +84,8 @@ class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
         return {"field_name": data[0], "annotation": data[1].annotation}
 ```
 
+**Contract**: Output must be dict-like or attribute-bearing. Must not construct models — that is Phase 3's job. A before validator that calls `Model(...)` is doing construction work outside the construction machine.
+
 **When to use alias**: Always try alias first. An input object with an
 attribute named differently than a field is bridged by alias with zero code.
 
@@ -140,6 +142,8 @@ class ModelTree(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
             )
         })
 ```
+
+**Contract**: The handler must be called exactly once or not at all. Wrap must not re-enter construction except through the handler. If the handler is not called, no object is produced — the wrap validator has vetoed construction.
 
 **When to use**: Sealing abstract bases. Reshaping input when before would
 recurse. Any case where you need to control WHETHER construction happens,
@@ -199,6 +203,8 @@ AnnotationShape = Annotated[
 ]
 ```
 
+**Contract**: No user code runs during field construction except properties read by `from_attributes`. Those properties must be pure and terminating — they are participating in construction and must be as trustworthy as stored fields. Construction is structural: Pydantic does the work, you declare the shape.
+
 **When to focus here**: Always. Field construction is where 90% of the work
 happens. Construction that isn't working points to a missing intermediary
 model, a smarter alias, or a discriminated union — not a validator.
@@ -228,6 +234,8 @@ class Organization(Resource, frozen=True, from_attributes=True):
             raise OrganizationInvalidError(errors)
         return self
 ```
+
+**Contract**: May only reject (raise) or return `Self`. Must be total and side-effect free — no I/O, no external state, no ambient dependencies. A proof obligation that reads a database or checks a global flag has smuggled a dependency into the proof.
 
 **When to use**: Cross-field invariants that field types alone cannot express.
 Reference resolution (field A's value must exist in collection B). Mutual
@@ -298,6 +306,8 @@ class FieldEntry(BaseModel, frozen=True, from_attributes=True):
         return self.shape.nullable
 ```
 
+**Contract**: Must be referentially transparent. Caching is observationally irrelevant — a `@cached_property` and an equivalent `@property` must produce the same value. If a projection appears in `model_dump()` (via `@computed_field`), it is part of the model's public API and should be versioned accordingly.
+
 **When to use**: Any derivation from a model's own fields. Calling code that
 computes something from a model's fields is a wiring bug — that computation
 belongs ON the model as a projection.
@@ -330,6 +340,8 @@ Construction IS registration. The resource exists, so register it. But the
 registration is not part of producing the proven object — it is a consequence
 of the proven object existing.
 
+**Contract**: May mutate external state. Must not mutate the model — the object is frozen by the time `model_post_init` fires. Must not be used to "fix" invalid objects — if the object needs fixing, the construction pipeline is incomplete.
+
 **When to use**: Auto-registration on construction. Any side effect that should
 happen exactly once when a value is constructed.
 
@@ -352,7 +364,7 @@ existence. Field declaration handles the passive structure. There is no
 "run arbitrary code on a model instance" capability. Every active computation
 falls into one of these categories.
 
-The priority order for solving problems:
+**Computation migrates toward earlier phases.** Prefer earlier phases because earlier phases are more compositional, more testable, and reduce semantic surface area. A problem solved by shape (Phase 1 + 3) requires no code. A problem solved by a validator (Phase 4) requires code that must be total and pure. A problem solved by an effect (post_init) requires code that interacts with the world. Each step right adds complexity and reduces the guarantees you can make. The priority order:
 1. **Field types + aliases** (Phase 1 + 3) — shape alone, no code
 2. **Discriminated unions** (Phase 3) — dispatch without branching
 3. **`@property` / `@computed_field`** (Phase 5) — derivation from stored fields
