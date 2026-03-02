@@ -9,9 +9,13 @@ Pydantic is a programming language. Python is its runtime.
 
 TCA is the discipline of writing programs as type construction graphs. Define the types. Wire their construction pipelines. Let `model_validate` execute. If the object exists, it's proven. If construction fails, no object exists. There is no third outcome.
 
-## Quick Example
+**[The specification](tca.md)** defines the architecture: the construction machine and its five layers, the two fundamental mechanisms (`from_attributes` and discriminated unions), construction graphs, the program triad, and the principles that follow from treating construction as proof.
 
-The building block classifier is a pure TCA program. One `model_validate` classifies every field on any Pydantic model — through construction alone:
+**[The construction lifecycle](construction-lifecycle.md)** describes the five phases of the construction machine with per-phase contracts, code examples from the reference architecture, and the priority principle: computation migrates toward earlier phases because earlier phases are more compositional, more testable, and reduce semantic surface area.
+
+## The Building Block Classifier
+
+**[`tca/building_block.py`](tca/building_block.py)** is a teaching resource, a live demonstration of every TCA mechanism in the spec, and a practical tool. Point it at any Pydantic model and it classifies every field into its structural building block — enum, newtype, record, collection, scalar — through pure construction. One `model_validate` at the root cascades the entire classification:
 
 ```python
 tree = ModelTree.model_validate(Team)
@@ -53,14 +57,6 @@ ModelTree.model_validate(Team)              # YOU call this. One call.
 ```
 
 No `if` chains. No visitor pattern. No external classifiers. Two discriminated unions fire during construction — one classifies the annotation form, one classifies the type itself. The variant's `Literal` fields ARE the answer. Dispatch replaces computation.
-
-## What's Here
-
-**[The specification](tca.md)** defines the architecture: the construction machine and its five layers, the two fundamental mechanisms (`from_attributes` and discriminated unions), construction graphs, the program triad, and the principles that follow from treating construction as proof.
-
-**[The construction lifecycle](construction-lifecycle.md)** describes the five phases of the construction machine with per-phase contracts, code examples from the reference architecture, and the priority principle: computation migrates toward earlier phases because earlier phases are more compositional, more testable, and reduce semantic surface area.
-
-**[The building block classifier](tca/building_block.py)** is a teaching resource, a live demonstration of every TCA mechanism in the spec, and a practical tool. Point it at any Pydantic model and it classifies every field into its structural building block — enum, newtype, record, collection, scalar — through pure construction. No branching, no external classifiers. One `model_validate` at the root cascades the entire classification. Use it to learn TCA, to see TCA working, and to understand the structure of your own models.
 
 ## Why This Matters for LLMs
 
