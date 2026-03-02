@@ -4,16 +4,22 @@
 WHAT THIS SCRIPT TEACHES
 ================================================================================
 
-This script demonstrates "programming in Pydantic" — an architecture where
-the types ARE the program. Instead of writing functions that transform data
-step by step, you declare models (types) and wire them together. One call to
-model_validate at the root constructs the entire result. Pydantic descends the
-type tree, constructing each inner model as it goes.
+This script demonstrates "programming in the construction semantics of
+Pydantic" — an architecture where you declare models (types) and wire them
+together, and Pydantic's constructor is the evaluator. One call to
+model_validate at the root fires the entire tree of construction. Pydantic
+descends the type tree, constructing each inner model as it goes.
+
+The types are not the program alone. The types + Pydantic's evaluator are the
+program. The types declare the structure and dispatch. Pydantic's construction
+engine — field coercion, discriminated union routing, from_attributes reads,
+validator hooks — evaluates them. We are writing programs in a specific
+runtime's construction semantics, not claiming mystical type-level computation.
 
 If you come from procedural Python, here's the mental shift:
 
     PROCEDURAL: Write functions. Call them in order. Pass data between them.
-    CONSTRUCTION: Declare models. Wire them as fields. One model_validate cascades.
+    CONSTRUCTION: Declare models. Wire them as fields. Pydantic evaluates the tree.
 
 The script takes ANY Pydantic BaseModel class and recursively classifies its
 entire construction graph — every field, and every field of every record-typed
@@ -81,10 +87,56 @@ THE KEY IDEAS
      Phase 2: Sealed Boundary — mode="wrap" validator (controls IF construction happens)
      Phase 3: Field Construction — Pydantic parses types, from_attributes reads, DUs route
      Phase 4: Proof Obligation — mode="after" validator (cross-field invariants)
-     Phase 5: Derived Projection — @computed_field / @cached_property / @property
-     Construction Effect — model_post_init (not a construction phase — reacts to existence)
-   This script uses Phases 1, 2, 3, and 5. Phase 4 (Proof Obligation) isn't needed here.
+     Phase 5: Construction Effect — model_post_init (registration, side effects)
+     Phase 6: Derived Projection — @computed_field / @cached_property / @property
+   This script uses Phases 1, 2, 3, and 6. Phase 4 and 5 aren't needed here.
    Each class below is annotated with which phase(s) it demonstrates.
+
+================================================================================
+SEMANTIC CONTRACT — what Pydantic guarantees we depend on
+================================================================================
+
+This architecture works because Pydantic's construction engine provides
+specific guarantees. If you port this pattern to another runtime, these are
+the contracts that must hold:
+
+    DISCRIMINATOR ROUTING: When a field is typed as a discriminated union
+        (Annotated[A | B, Field(discriminator="tag")]), Pydantic reads the
+        tag value from the input and selects the matching variant BEFORE
+        constructing fields. Routing is total — an unmatched tag is an error,
+        not a silent pass-through. This is what makes DU dispatch exhaustive.
+
+    from_attributes READS: When a model has from_attributes=True, Pydantic
+        reads the input object's attributes by name (via getattr) to populate
+        the model's fields. Properties count. This is evaluated DURING field
+        construction (Phase 3), not lazily. Each field is read exactly once.
+        This is what makes self-classifying wrappers work — the wrapper's
+        @property fires when Pydantic reads it, not before or after.
+
+    CONSTRUCTION ORDER: Pydantic processes validators in a fixed order:
+        mode="before" → mode="wrap" → field construction → mode="after" →
+        model_post_init. Within field construction, fields are processed in
+        declaration order. Parent fields before child fields (inheritance).
+        This ordering is what makes the construction lifecycle predictable.
+
+    COERCION: When a field expects type T and receives compatible data,
+        Pydantic constructs T from that data automatically. Pass a raw
+        annotation where TypeAnnotation is expected — Pydantic wraps it.
+        Pass a dict where a BaseModel is expected — Pydantic constructs it.
+        This is what makes nested construction work without manual building.
+
+    FROZEN IMMUTABILITY: frozen=True prevents attribute assignment after
+        construction. Combined with tuple (not list) for sequences, this
+        means a constructed value's fields never change. @cached_property
+        is safe because the inputs to the derivation are stable. Derived
+        projections are referentially transparent.
+
+    COMPUTED FIELD REALIZATION: @computed_field values are NOT computed at
+        construction time. They materialize on first access (via
+        @cached_property) and are then cached. They ARE included in
+        model_dump() and model_dump_json() — they serialize as if they
+        were stored fields. This is what makes projection models serve
+        both programmatic access and JSON serialization.
 
 ================================================================================
 THE CASCADE
@@ -118,7 +170,7 @@ Here is every step that fires, annotated with WHAT does the work and WHY:
     │   │
     │   ├─ field_name = "budget_authority"        # from dict key
     │   ├─ annotation = TypeAnnotation(RoleName)  # Pydantic coerces raw → TypeAnnotation
-    │   └─ resolved_type → ResolvedType(RoleName) # @property wraps inner type (Phase 5)
+    │   └─ resolved_type → ResolvedType(RoleName) # @property wraps inner type (Phase 6)
     │
     ├─► Pydantic coerces FieldSlot → ClassifiedNode  (from_attributes=True)
     │   │
@@ -212,6 +264,14 @@ Every type in a Pydantic program is one of these building blocks:
     | UNION      | Sum type / discriminated union       | Annotated[A|B, Field()] |
 
 Use the simplest construct that does the job. Enum before Newtype before Record.
+
+Note: this taxonomy is pragmatic, not orthogonal. ALGEBRA and EFFECT are
+behavioral refinements of RECORD — they differ in what happens during or
+after construction, not in data shape. A pure decomposition would separate
+data shape (scalar/enum/record/collection/sum) from behavioral refinement
+(pure/projected/effectful). We keep a flat taxonomy because the classifier
+needs one discriminator axis, and the predicate table in ResolvedType already
+encodes the priority ordering (ALGEBRA and EFFECT checked before RECORD).
 
 ================================================================================
 USAGE
@@ -491,7 +551,7 @@ AnnotationShape = Annotated[
 
 
 # =============================================================================
-# TYPE ANNOTATION — self-classifying wrapper #1 (Phase 5: Derived Projection)
+# TYPE ANNOTATION — self-classifying wrapper #1 (Phase 6: Derived Projection)
 # =============================================================================
 # This is self-classifying wrapper #1 of two. (ResolvedType is #2.)
 #
@@ -509,7 +569,7 @@ AnnotationShape = Annotated[
 # Pydantic reads .kind, routes the DU, and the variant's Literal fields
 # ARE the answer. No one manually determines the kind. The type does it.
 #
-# .kind and .resolved_type are Phase 5: Derived Projection. Pure functions
+# .kind and .resolved_type are Phase 6: Derived Projection. Pure functions
 # of the frozen root value. Bare @property (not @computed_field) because
 # they don't need caching or serialization — trivial derivations read
 # once during Phase 3 field construction on downstream models.
@@ -594,7 +654,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
 # automatically coerces the raw annotation into a TypeAnnotation wrapper.
 # The type declaration IS the instruction.
 #
-# Phase 5: The .resolved_type property wraps the unwrapped inner type in a
+# Phase 6: The .resolved_type property wraps the unwrapped inner type in a
 # ResolvedType (self-classifying wrapper #2). ClassifiedNode reads this
 # during construction via from_attributes, triggering BlockShape DU routing.
 # This is the bridge between annotation-level classification (AnnotationShape)
@@ -610,7 +670,7 @@ class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
     Two attributes feed downstream construction:
       .annotation (stored field) — TypeAnnotation, coerced during Phase 3.
         ClassifiedNode reads this via alias to construct AnnotationShape DU.
-      .resolved_type (property) — ResolvedType, derived during Phase 5.
+      .resolved_type (property) — ResolvedType, derived during Phase 6.
         ClassifiedNode reads this via alias to construct BlockShape DU.
 
     The two self-classifying wrappers (TypeAnnotation, ResolvedType) both
@@ -656,7 +716,7 @@ class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
 #   routing. The DU selects the variant. The variant's Literal fields set
 #   nullable/collection. All automatic — no code triggers it.
 #
-# Phase 5 (Derived Projection): Properties delegate to self.shape, exposing
+# Phase 6 (Derived Projection): Properties delegate to self.shape, exposing
 #   resolved_type, nullable, collection as flat attributes. from_attributes
 #   on ClassifiedNode reads these properties. The flattening IS the projection.
 
@@ -700,7 +760,7 @@ class FieldEntry(BaseModel, frozen=True, from_attributes=True):
 
 
 # =============================================================================
-# CLASSIFIED NODE — two DUs, full classification (Phase 3 + Phase 5)
+# CLASSIFIED NODE — two DUs, full classification (Phase 3 + Phase 6)
 # =============================================================================
 # ClassifiedNode inherits from FieldEntry. Inheritance in Pydantic means
 # "I am a FieldEntry, plus more." Phase 3 fires the parent's fields first
@@ -719,7 +779,7 @@ class FieldEntry(BaseModel, frozen=True, from_attributes=True):
 # children field, so the property never fires. The variant's shape IS
 # the recursion decision. Nobody writes "if record: descend."
 #
-# .block and .children are Phase 5 delegation properties — they forward
+# .block and .children are Phase 6 delegation properties — they forward
 # to block_shape so downstream models (FieldReport) see a flat interface.
 
 
@@ -747,7 +807,7 @@ class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
 
 
 # =============================================================================
-# RESOLVED TYPE — self-classifying wrapper #2 (Phase 5: Derived Projection)
+# RESOLVED TYPE — self-classifying wrapper #2 (Phase 6: Derived Projection)
 # =============================================================================
 # This is self-classifying wrapper #2 of two. (TypeAnnotation is #1.)
 #
@@ -837,6 +897,15 @@ class ResolvedType(RootModel[object], frozen=True):
 # Pydantic supports multiple values in a single Literal for DU discriminators.
 # One variant catches all five leaf cases. Without this, you'd need five
 # identical leaf variants — shape duplication for no semantic gain.
+#
+# INVARIANT: Leaf variants must NEVER define a stored field named "children."
+# The entire demand-driven recursion pattern depends on Pydantic reading
+# ResolvedType.children ONLY when a variant has a children field. If a leaf
+# variant gained a children field, Pydantic would read ResolvedType.children
+# during construction, triggering recursive descent on non-record types.
+# LeafBlock's .children @property (returning ()) exists solely for uniform
+# delegation from ClassifiedNode — it is trivial, non-recursive, and must
+# remain so.
 
 
 class RecordBlock(BaseModel, frozen=True, from_attributes=True):
@@ -916,12 +985,12 @@ BlockShape = Annotated[
 
 
 # =============================================================================
-# FIELD REPORT + TREE REPORT — recursive rendering (Phase 3 + Phase 5)
+# FIELD REPORT + TREE REPORT — recursive rendering (Phase 3 + Phase 6)
 # =============================================================================
 # In procedural code, rendering means writing a format_output() function that
 # loops over results and builds strings. In construction-first code, rendering
 # is ANOTHER model_validate (Phase 3: Field Construction) followed by
-# @computed_field derivation (Phase 5: Derived Projection).
+# @computed_field derivation (Phase 6: Derived Projection).
 #
 # RECURSIVE STRUCTURE: FieldReport has a children field typed as
 # tuple[FieldReport, ...]. When Pydantic constructs a FieldReport from a
@@ -935,7 +1004,7 @@ BlockShape = Annotated[
 # reading ClassifiedNode's properties (field_name, block, nullable, collection,
 # children). Children coerce recursively into more FieldReports.
 #
-# Phase 5: Three @computed_field projections derive the display:
+# Phase 6: Three @computed_field projections derive the display:
 #   .line — one field's display string, derived from stored fields
 #   .lines — recursive flatten of this report + all descendant lines
 #   .text (on TreeReport) — indented tree rendering with depth tracking
@@ -949,7 +1018,7 @@ BlockShape = Annotated[
 # indented text output.
 #
 # __str__ delegates to .text — Python's display protocol uses the cached
-# Phase 5 projection. print(report) fires the entire rendering pipeline.
+# Phase 6 projection. print(report) fires the entire rendering pipeline.
 #
 # The cascade: ClassifiedNode → FieldReport → TreeReport → print().
 # Each step is model_validate + from_attributes. No string formatting functions.
@@ -960,7 +1029,7 @@ class FieldReport(BaseModel, frozen=True, from_attributes=True):
 
     Phase 3: Constructs from ClassifiedNode via from_attributes — reads
     field_name, block, nullable, collection, children.
-    Phase 5: line derives the display string, lines recursively flattens
+    Phase 6: line derives the display string, lines recursively flattens
     the tree. Derived once, cached, serializable.
     """
 
@@ -1023,12 +1092,12 @@ class FieldReport(BaseModel, frozen=True, from_attributes=True):
 #   Phase 1: Each (name, FieldInfo) → FieldSlot._from_tuple (before validator)
 #   Phase 3: Pydantic coerces FieldSlots → ClassifiedNodes (from_attributes)
 #            FieldEntry alias reads .annotation → constructs AnnotationShape DU
-#            TypeAnnotation.kind drives DU routing (Phase 5 property)
+#            TypeAnnotation.kind drives DU routing (Phase 6 property)
 #            Variant's Literal fields set nullable/collection
 #   Phase 3: ClassifiedNode.block_shape reads FieldSlot.resolved_type
 #            → ResolvedType.block_kind drives BlockShape DU routing
 #            → RecordBlock.children fires recursive ModelTree.model_validate
-#   Phase 5: FieldReport.line / TreeReport.text derive display strings
+#   Phase 6: FieldReport.line / TreeReport.text derive display strings
 #
 # One wrap validator. Everything else is Phases 1 (alias), 3 (field types +
 # from_attributes + DU routing), and 6 (properties + computed_fields).
@@ -1123,7 +1192,7 @@ class TreeReport(BaseModel, frozen=True, from_attributes=True):
 #
 #   target (stored) → model_class (resolve) → tree (classify) → report (render)
 #
-# Each @cached_property is a Phase 5 derivation from frozen fields. The chain
+# Each @cached_property is a Phase 6 derivation from frozen fields. The chain
 # fires lazily on first access. __str__ is the terminal projection — it reads
 # .report (which reads .tree, which reads .model_class, which reads .target).
 # One stored field. Four derivations. Zero procedure.
@@ -1154,7 +1223,7 @@ class ClassifierRun(BaseModel, frozen=True):
 
     @cached_property
     def model_class(self) -> type[BaseModel]:
-        """Phase 5: resolve the target string to a BaseModel class.
+        """Phase 6: resolve the target string to a BaseModel class.
 
         The boundary crossing — string → module → class. importlib and
         getattr are inherently dynamic. This projection contains that
@@ -1166,12 +1235,12 @@ class ClassifierRun(BaseModel, frozen=True):
 
     @cached_property
     def tree(self) -> ModelTree:
-        """Phase 5: classify every field on the resolved class."""
+        """Phase 6: classify every field on the resolved class."""
         return ModelTree.model_validate(self.model_class)
 
     @cached_property
     def report(self) -> TreeReport:
-        """Phase 5: project the classified tree into a renderable report."""
+        """Phase 6: project the classified tree into a renderable report."""
         return TreeReport.model_validate(self.tree)
 
     @override
