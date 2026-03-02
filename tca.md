@@ -13,7 +13,9 @@ Pydantic is a programming language. Python is its runtime.
 
 This is not analogy. A Pydantic model is not a passive container that holds data in named slots — Python dataclasses do that. A Pydantic model is an active machine with an execution pipeline that fires every time data enters it. That pipeline — translation, interception, coercion, invariant proving, derivation — is real computation. One call to `model_validate` executes the program. If the object exists at the end, the program succeeded and the result is proven. If construction fails, no object exists. There is no third outcome.
 
-Type Construction Architecture is the discipline of writing programs this way. Define the types. Wire their construction pipelines. Let `model_validate` execute. The types are not a model of the program. They are the program. Everything else — services, routes, CLI entry points — is plumbing that hands raw data to a construction machine and receives a proven object.
+Type Construction Architecture is the discipline of writing programs in the construction semantics of Pydantic. Define the types. Wire their construction pipelines. Let `model_validate` execute. The types are not a model of the program. They are the program. Everything else — services, routes, CLI entry points — is plumbing that hands raw data to a construction machine and receives a proven object.
+
+A TCA program is the directed construction graph rooted at Environment, Action, and Result types. Evaluation is `model_validate` at a root. Success yields a proven value. Failure yields no value.
 
 ---
 
@@ -21,7 +23,7 @@ Type Construction Architecture is the discipline of writing programs this way. D
 
 Every Pydantic model is a machine with five wired layers. You do not call these layers in sequence. You wire logic into them by declaring fields, aliases, validators, and computed fields. When `model_validate(raw)` fires, the machine executes all layers automatically:
 
-**Translation.** `mode="before"` validators and field-level aliases reshape raw input before field construction begins. Foreign structure becomes domain structure. `Field(alias="user_id")` maps external vocabulary to domain vocabulary at the field declaration. A `mode="before"` validator flattens nested payloads or restructures mismatched shapes. Translation is the machine's ingestion preprocessor — as native to the model as its fields, not an escape hatch for messy data.
+**Translation.** `mode="before"` validators and field-level aliases reshape raw input before field construction begins. Foreign structure becomes domain structure. `Field(alias="cp_id")` maps external vocabulary to domain vocabulary at the field declaration. A `mode="before"` validator flattens nested payloads or restructures mismatched shapes. Translation is the machine's ingestion preprocessor — as native to the model as its fields, not an escape hatch for messy data.
 
 ```python
 class Trade(BaseModel, frozen=True):
@@ -41,21 +43,34 @@ class Trade(BaseModel, frozen=True):
 **Interception.** `mode="wrap"` validators receive the raw input and the inner constructor as a callable. They control whether and how construction proceeds — the only layer with that power. A wrap validator can inspect the input, decide if construction should happen at all, reshape the input, and call the inner constructor exactly once. This is how abstract base types seal themselves so only concrete variants construct, and how machines reshape input when a `mode="before"` validator would cause infinite recursion by re-triggering itself.
 
 ```python
-class EventBase(BaseModel, frozen=True):
-    timestamp: datetime
-
+class Instrument(BaseModel, frozen=True):
     @model_validator(mode="wrap")
     @classmethod
-    def _seal(cls, data: object, handler: Callable[..., EventBase]) -> EventBase:
+    def _seal(cls, data: object, handler: Callable[..., Instrument]) -> Instrument:
         result = handler(data)
-        if type(result) is EventBase:
-            raise TypeError("Construct a concrete event variant, not EventBase")
+        if type(result) is Instrument:
+            raise TypeError("Construct Bond, Swap, or Option directly")
         return result
+
+class Bond(Instrument, frozen=True):
+    face_value: Decimal
+    coupon_rate: Decimal
+    maturity: date
 ```
 
-`handler(data)` fires the full construction pipeline. The wrap validator inspects the result: if the concrete type is `EventBase` itself, construction fails. Subclasses like `UserCreated(EventBase)` pass through. The wrap validator decides what may exist. In the building block classifier, `ModelTree` uses a wrap validator to reshape a `BaseModel` class into a dict of classified fields — a `mode="before"` validator would recurse infinitely because returning a `ModelTree` instance re-triggers the validator. Wrap avoids this because the handler is called exactly once.
+`handler(data)` fires the full construction pipeline. The wrap validator inspects the result: if the concrete type is `Instrument` itself, construction fails. `Bond(...)` passes through — its concrete type is `Bond`, not `Instrument`. The wrap validator decides what may exist. In the building block classifier (Section 7), `ModelTree` uses a wrap validator for a different purpose: reshaping a `BaseModel` class into a dict of classified fields. A `mode="before"` validator would recurse infinitely because returning a `ModelTree` instance re-triggers the validator. Wrap avoids this because the handler is called exactly once.
 
-**Coercion.** Every field's type annotation is a construction instruction. Pydantic reads the incoming data and constructs each field value through the type's own pipeline. A raw string becomes a `CounterpartyID`. A nested dict becomes a `RiskProfile`. When `from_attributes=True` is set, Pydantic reads attributes from the input object by name — properties included — so one model's projection surface feeds another model's construction. When a field is a discriminated union, Pydantic reads the tag and routes to the correct variant automatically. Nested models fire their own machines recursively. This is where the two fundamental mechanisms (Section 3) execute. Coercion is the heart of the construction machine — where 90% of the work happens. If construction isn't working, the fix is almost always a missing intermediary model, a smarter alias, or a discriminated union — not a validator.
+**Coercion.** Every field's type annotation is a construction instruction. Pydantic reads the incoming data and constructs each field value through the type's own pipeline. Nested models fire their own five-layer machines recursively. This is not type checking — the runtime is not asking "is this already the right type?" It is constructing the field value through the type's own construction pipeline.
+
+```python
+class Customer(BaseModel, frozen=True):
+    id: CustomerId
+    name: CustomerName
+    risk: RiskProfile
+    segment: CustomerSegment
+```
+
+No procedural code appears on `Customer`. The four field types ARE the construction instructions. `Customer.model_validate(raw)` fires four construction pipelines — `CustomerId` and `CustomerName` coerce raw strings through their own machines, `RiskProfile` constructs from a nested dict (firing its own five layers), and `CustomerSegment` validates against a closed vocabulary. When `from_attributes=True` is set, Pydantic reads attributes from the input object by name — properties included — so one model's projection surface feeds another model's construction. When a field is a discriminated union, Pydantic reads the tag and routes to the correct variant automatically. This is where the two fundamental mechanisms (Section 4) execute. Coercion is the heart of the construction machine — where 90% of the work happens. If construction isn't working, the fix is almost always a missing intermediary model, a smarter alias, or a discriminated union — not a validator.
 
 **Integrity.** `mode="after"` validators and `field_validator` prove that the constructed fields, individually and in combination, satisfy the machine's invariants. These are proof obligations: conditions that must hold for the object to exist. A `DateRange` whose `start >= end` does not "fail validation." It fails to construct. The machine will not produce it.
 
@@ -80,24 +95,24 @@ class DateRange(BaseModel, frozen=True):
 @cached_property
 def days_to_maturity(self) -> int:
     return (self.maturity - self.trade_date).days
+
+@computed_field
+@cached_property
+def tenor_bucket(self) -> Literal["short", "medium", "long"]:
+    if self.days_to_maturity <= 90: return "short"
+    if self.days_to_maturity <= 365: return "medium"
+    return "long"
 ```
 
 Bare `@cached_property` — derived and cached, but not serialized. Use for expensive projections like indexes that shouldn't appear in JSON output.
 
-Bare `@property` — trivial delegation, not cached. This is how self-classifying wrappers expose derived attributes that downstream models read via `from_attributes`. A `TypeAnnotation` wrapping a raw Python annotation exposes `.kind` as a property. Pydantic reads `.kind` during coercion, routes a discriminated union, and the variant's `Literal` fields settle the classification. The property is the bridge between a wrapped value and the construction machinery that consumes it.
-
-```python
-class TypeAnnotation(RootModel[object], frozen=True):
-    @property
-    def kind(self) -> AnnotationKind:
-        o = get_origin(self.root)
-        if o is types.UnionType: return AnnotationKind.OPTIONAL
-        if o is tuple: return AnnotationKind.TUPLE
-        if isinstance(self.root, TypeAliasType): return AnnotationKind.ALIAS
-        return AnnotationKind.DIRECT
-```
+Bare `@property` — trivial delegation, not cached. This is how self-classifying wrappers expose derived attributes that downstream models read via `from_attributes`, and how models flatten nested structure for consumption by other models. The worked example (Section 7) demonstrates the full pattern: a `@property` exposes a tag, Pydantic reads it during coercion, a discriminated union routes on it, and the variant's `Literal` fields settle the classification. The property is the bridge between a wrapped value and the construction machinery that consumes it.
 
 One `model_validate` call ignites the entire pipeline. A proven, self-aware object emerges, or a construction failure is raised. The calling code does not participate in construction. It ignites the machine with raw input and receives a proven result.
+
+---
+
+## 3. Construction Guarantees
 
 ### Construction as Proof
 
@@ -105,13 +120,33 @@ The machine's existence IS the proof of its validity. If a `Trade` object exists
 
 This is Alexis King's "Parse, Don't Validate" realized as a programming paradigm. Construction is parsing. The unconstructed data is not a value in the system.
 
+### The Purity Discipline
+
+Construction is proof only if the construction pipeline is trustworthy. One assumption and three rules make it so.
+
+**The foundational assumption: TCA models are frozen.** Immutability is what makes projections referentially transparent and construction a permanent proof. A `@cached_property` on a frozen model computes once and never goes stale. A `@property` returns the same value on every access. The object you constructed is the object you have — now and forever. Without `frozen=True`, these guarantees collapse: fields can change after construction, cached projections diverge from current state, and "the object exists therefore it's valid" stops being true the moment someone mutates a field.
+
+**Rule 1: Validators must be total and side-effect free.** `mode="before"`, `mode="wrap"`, and `mode="after"` validators must always return or raise — never hang, never diverge. They must not perform I/O, mutate external state, or depend on anything outside the data they receive. A validator that reads a database, writes to a log, or checks a global flag has smuggled an ambient dependency into the proof. The proof is no longer self-contained.
+
+**Rule 2: Properties consumed by `from_attributes` must be pure and terminating.** When Pydantic reads a property via `from_attributes` during coercion, that property is participating in construction. It must be a pure function of the object's own frozen fields — no I/O, no side effects, no unbounded computation. This is the one place where the construction machine can be silently undermined, because a property masquerades as data access while executing arbitrary code. The discipline is explicit: if a property feeds construction, it must be as trustworthy as a stored field.
+
+**Rule 3: `model_post_init` is the only sanctioned effect boundary, and must not mutate the model.** Side effects — registration, indexing, notification — belong in `model_post_init` and nowhere else in the construction pipeline. `model_post_init` may change the world; it must not change the object. The model is frozen by the time it fires. This is the line between construction (producing the proven object) and effect (reacting to its existence).
+
+Given this discipline, three properties hold:
+
+1. **No invalid states.** If a value exists, its invariants hold. Construction succeeded, validators proved their obligations, and immutability ensures the proof doesn't decay. There is no moment after construction where the object is "valid but stale."
+
+2. **Compositionality.** If a model's children all construct successfully, the parent's construction is purely structural (field assembly) plus its own stated invariants (after validators). You can reason about each model locally. Adding a child type does not change the parent's proof obligations — it adds a new one that the child discharges independently.
+
+3. **Refactor stability.** Moving a pure derivation between projection forms — `@computed_field` to `@cached_property` to `@property` — does not change the model's meaning. It changes only the serialization surface (whether the value appears in `model_dump()`). This is because all three forms are referentially transparent under the frozen assumption. The choice between them is an API decision, not a semantic one.
+
 ---
 
-## 3. Two Fundamental Mechanisms
+## 4. Two Fundamental Mechanisms
 
 TCA rests on two Pydantic mechanisms that are equally foundational. Each eliminates an entire category of procedural code.
 
-### 3.1 `from_attributes=True` — Ingestion Without Extraction
+### 4.1 `from_attributes=True` — Ingestion Without Extraction
 
 When a model declares `from_attributes=True`, it constructs by reading attributes from another object by name. Field names are the wiring. Properties count — Pydantic reads them via `getattr`. No mapping code, no adapter functions, no intermediate dictionaries. One object's surface becomes another object's input.
 
@@ -133,7 +168,7 @@ class DisplayReading(BaseModel, frozen=True, from_attributes=True):
 
 This mechanism is how data gets INTO machines. External data arrives with external names and external structure. `from_attributes` lets a machine read what it needs from any object whose attributes match its field names. Combined with aliases, this subsumes the entire category of "data mapping" code that proliferates in conventional architectures — adapter classes, DTO converters, serialization layers. In TCA, the field declaration IS the mapping.
 
-### 3.2 Discriminated Unions — Dispatch Without Branching
+### 4.2 Discriminated Unions — Dispatch Without Branching
 
 Instead of branching on raw data to decide which type to construct, declare a variant for each case. Each variant carries a `Literal` tag. Pydantic reads the tag and routes to the correct variant automatically. The variant's fields ARE the result — no computation needed after dispatch.
 
@@ -164,7 +199,7 @@ These two mechanisms — `from_attributes` for ingestion and discriminated union
 
 ---
 
-## 4. The Construction Graph
+## 5. The Construction Graph
 
 Types compose by appearing in each other's field annotations. A parent type that declares a child type as a field requires the child to construct before the parent can exist. The child's machine fires first. If it fails, the parent fails. Proof cascades upward.
 
@@ -202,7 +237,7 @@ Roots are computable. Collect all `BaseModel` subclasses in a codebase, subtract
 
 ---
 
-## 5. The Program Triad
+## 6. The Program Triad
 
 If construction is proof, then ask: what needs to be proven in any program that takes typed input and produces typed output within a typed context?
 
@@ -242,7 +277,7 @@ These are three roots because they are three distinct proof obligations, and TCA
 
 ---
 
-## 6. Worked Example: A Building Block Classifier
+## 7. Worked Example: A Building Block Classifier
 
 The following program classifies every field on any Pydantic `BaseModel` into a structural building block — what role that type plays in a Pydantic program (enum, newtype, record, collection, scalar, etc.). It does this with zero domain knowledge. It works on any model, anywhere.
 
@@ -346,21 +381,21 @@ Identifying the irreducible procedural minimum is a TCA discipline. In any progr
 
 ---
 
-## 7. Architectural Principles
+## 8. Architectural Principles
 
-**Shapes first.** Define the types before writing any procedural code. The types ARE the specification. If you cannot express the domain as types, you do not yet understand the domain. Development proceeds: domain types, then vocabularies (enums), then hardened constraints (validators), then plumbing (services, routes). Everything interesting lives in the types. Everything else is thin.
-
-**Shape over procedure.** A well-shaped model with the right field names, types, and aliases does most of the work. Pydantic's default coercion, `from_attributes` reading, and discriminated union routing handle the rest. If you are reaching for a validator or helper function, ask first: can a better shape solve it? An intermediate model, a smarter alias, or a discriminated union almost always can. Validators are the last resort — the irreducible minimum where pure shape cannot bridge a boundary. Most models need none.
+These principles follow from the thesis. They are not design preferences — they are consequences of treating construction as proof.
 
 **Domain types are the program.** The domain directory — types, enums, validators, computed fields — is the program. Service layers wire plumbing. API layers expose projections. Neither contains domain logic. If domain logic lives outside the types, it is in the wrong place.
 
-**Construction is proof.** Never validate after the fact. Never check a field "just in case." If the object exists, it is valid. If you find yourself writing defensive checks against a constructed model, you have a construction deficiency, not a validation gap. Strengthen the machine's wiring so the guarantee holds by construction.
-
-**Name precisely.** Field names are the interface between domain knowledge and computation. Use domain vocabulary, not programmer vocabulary: `churn_risk_tier`, not `risk_level`. Disambiguate with docstrings: if two terms could be confused, the docstring resolves it. Enum members are a closed vocabulary, and each member carries meaning. Treat renames as you would changing a function's logic, because that is what they are.
-
 **Compose through construction.** Types compose by appearing in each other's field annotations. A parent requires its children to construct first. Proof cascades upward automatically. Do not compose through inheritance for domain types — inheritance expresses "is-a" relationships; field annotations express "contains-and-requires" relationships. Domain models are almost always the latter.
 
-**Derivation belongs on the machine.** If calling code computes something from a machine's fields, that computation is a wiring defect. It belongs on the machine's projection surface as a `@computed_field`. The machine owns its derived knowledge. External code consumes projections. Calling code that iterates a machine's collection to look something up, or that combines two of a machine's fields to produce a third value, is doing the machine's work outside the machine.
+**Derivation belongs on the machine — if it is a pure function of fields already proven by construction.** If calling code computes something from a machine's fields, that computation is a wiring defect. It belongs on the machine's projection surface. The machine owns its derived knowledge. External code consumes projections. The boundary condition: contextual computations that depend on external state — user locale, request time, feature flags — are not intrinsic projections. They are computations in a larger environment and do not belong on the type. Forcing them onto the machine creates god models with ambient context leaks.
+
+The following are development practices — how to build TCA programs well.
+
+**Shapes first.** Define the types before writing any procedural code. The types ARE the specification. If you cannot express the domain as types, you do not yet understand the domain. Development proceeds: domain types, then vocabularies (enums), then hardened constraints (validators), then plumbing (services, routes). If you are reaching for a validator or helper function, ask first: can a better shape solve it? An intermediate model, a smarter alias, or a discriminated union almost always can. Validators are the last resort — the irreducible minimum where pure shape cannot bridge a boundary.
+
+**Name precisely.** Field names are the interface between domain knowledge and computation. Use domain vocabulary, not programmer vocabulary: `churn_risk_tier`, not `risk_level`. Disambiguate with docstrings: if two terms could be confused, the docstring resolves it. Enum members are a closed vocabulary, and each member carries meaning. Treat renames as you would changing a function's logic, because that is what they are.
 
 **Progressively harden.** Start with contracts as field names and docstrings. Observe where soft compliance is insufficient. Promote those specific contracts to structural guarantees through validators. The construction pipeline grows by observation, not by speculation. Do not over-constrain prematurely.
 
@@ -368,7 +403,7 @@ Identifying the irreducible procedural minimum is a TCA discipline. In any progr
 
 ---
 
-## 8. Anti-Patterns
+## 9. Anti-Patterns
 
 **Types at the exit.** The program operates in untyped space — raw dicts, string concatenation, ad hoc transformations — and types appear only at the output boundary as a retroactive check. This inverts the architecture. Types should be present at every layer, constraining computation from the start.
 
@@ -384,7 +419,7 @@ Identifying the irreducible procedural minimum is a TCA discipline. In any progr
 
 ---
 
-## 9. Relationship to Existing Work
+## 10. Relationship to Existing Work
 
 TCA draws on and extends several traditions in programming language theory and software architecture.
 
@@ -400,7 +435,7 @@ TCA draws on and extends several traditions in programming language theory and s
 
 ---
 
-## 10. Compatibility with Semantic Index Types
+## 11. Compatibility with Semantic Index Types
 
 TCA does not require an LLM consumer. The building block classifier demonstrates a complete TCA program with no LLM anywhere — a pure construction graph that classifies type annotations through structural dispatch and construction chaining. TCA is valuable whenever programs benefit from construction-as-proof, composition through types, and derivation owned by the objects that hold the data.
 
