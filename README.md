@@ -9,6 +9,51 @@ Pydantic is a programming language. Python is its runtime.
 
 TCA is the discipline of writing programs as type construction graphs. Define the types. Wire their construction pipelines. Let `model_validate` execute. If the object exists, it's proven. If construction fails, no object exists. There is no third outcome.
 
+## Quick Example
+
+The building block classifier is a pure TCA program. One `model_validate` classifies every field on any Pydantic model — through construction alone:
+
+```python
+tree = ModelTree.model_validate(Team)
+print(TreeReport.model_validate(tree))
+```
+
+Here's what fires inside that single call:
+
+```
+ModelTree.model_validate(Team)              # YOU call this. One call.
+│
+├─► FieldSlot.model_validate( ("budget_authority", FieldInfo) )
+│   │
+│   │  ┌─ ANNOTATION SHAPE DU (#1: annotation form) ──────────────────┐
+│   │  │  TypeAnnotation wraps the raw annotation. Pydantic reads     │
+│   │  │  .kind (@property) → AnnotationKind.DIRECT                   │
+│   │  │  DU selects DirectAnnotation:                                │
+│   │  │    nullable = Literal[False]     (constant, not computed)    │
+│   │  │    collection = Literal[False]   (constant, not computed)    │
+│   │  └──────────────────────────────────────────────────────────────┘
+│   │
+│   │  ┌─ BLOCK SHAPE DU (#2: type classification) ───────────────────┐
+│   │  │  ResolvedType wraps the inner type. Pydantic reads           │
+│   │  │  .block_kind (@property) → Block.NEWTYPE                     │
+│   │  │  DU selects LeafBlock:                                       │
+│   │  │    No children field → recursion doesn't happen.             │
+│   │  │    The shape decided.                                        │
+│   │  └──────────────────────────────────────────────────────────────┘
+│
+│   For a RECORD field (a BaseModel):
+│     DU selects RecordBlock → HAS children field
+│     Pydantic reads .children → ModelTree.model_validate(inner type)
+│     RECURSE. The children ARE the recursive result.
+│     Construction IS descent.
+│
+│   For an Optional field like reports_to: RoleName | None:
+│     DU selects OptionalAnnotation → nullable=Literal[True]
+│     THE SHAPE IS THE ANSWER.
+```
+
+No `if` chains. No visitor pattern. No external classifiers. Two discriminated unions fire during construction — one classifies the annotation form, one classifies the type itself. The variant's `Literal` fields ARE the answer. Dispatch replaces computation.
+
 ## What's Here
 
 **[The specification](tca.md)** defines the architecture: the construction machine and its five layers, the two fundamental mechanisms (`from_attributes` and discriminated unions), construction graphs, the program triad, and the principles that follow from treating construction as proof.
