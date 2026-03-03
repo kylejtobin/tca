@@ -93,7 +93,14 @@ THE KEY IDEAS
    construction phase. It reacts to the object's existence (registration,
    side effects) rather than producing it. Projection extends the object.
    Effect extends the world.
-   This script uses Phases 1, 2, 3, and 5. Phase 4 (Proof Obligation) isn't needed here.
+   This script uses Phases 1, 2, 3, and 5. Phase 4 (mode="after" validators)
+   isn't used, but the proof obligation CONCEPT is expressed structurally:
+   AnnotationShape variants declare Literal fields without defaults (e.g.
+   nullable: Literal[False]). During Phase 3, Pydantic reads
+   TypeAnnotation.nullable via from_attributes and validates the supplied
+   value against the Literal constraint. If the wrapper's truth doesn't
+   match the variant's declared constraint, construction fails. The Literal
+   type IS the proof obligation — no after validator needed.
    Each class below is annotated with which phase(s) it demonstrates.
 
 ================================================================================
@@ -189,8 +196,9 @@ Here is every step that fires, annotated with WHAT does the work and WHY:
     │   │  │    get_origin(RoleName) → None → AnnotationKind.DIRECT       │
     │   │  │                                                              │
     │   │  │  DU sees kind="direct" → selects DirectAnnotation:           │
-    │   │  │    nullable = Literal[False]     (constant, not computed)    │
-    │   │  │    collection = Literal[False]   (constant, not computed)    │
+    │   │  │    nullable = Literal[False]     (proof obligation — must    │
+    │   │  │      match TypeAnnotation.nullable, validated at Phase 3)    │
+    │   │  │    collection = Literal[False]   (same proof obligation)     │
     │   │  │    resolved_type = RoleName      (unwrapped inner type)      │
     │   │  └──────────────────────────────────────────────────────────────┘
     │   │
@@ -265,7 +273,7 @@ Every type in a Pydantic program is one of these building blocks:
     | ALGEBRA    | Record + derived fields              | Record + @computed_field|
     | EFFECT     | Record + side effects on construction| Record + model_post_init|
     | SCALAR     | Primitive (str, int, bool, etc.)     | bare Python types       |
-    | UNION      | Sum type / discriminated union       | Annotated[A|B, Field()] |
+    | UNION      | Multi-member union (A | B)            | any union, 2+ non-None  |
 
 Use the simplest construct that does the job. Enum before Newtype before Record.
 
@@ -425,7 +433,7 @@ class Block(StrEnum):
     ALGEBRA = "algebra"  # Record + @computed_field — stored fields in, derived out
     EFFECT = "effect"  # Record + model_post_init — construction triggers action
     SCALAR = "scalar"  # str, int, bool, etc. — Python primitives
-    UNION = "union"  # Annotated[A | B, Field(discriminator=...)] — sum type
+    UNION = "union"  # A | B — any union with 2+ non-None members
 
     @override
     def __repr__(self) -> str:
@@ -433,19 +441,22 @@ class Block(StrEnum):
 
 
 class AnnotationKind(StrEnum):
-    """The four structural forms a Python type annotation can take.
+    """The six structural forms a Python type annotation can take.
 
     Python annotations aren't always plain types. They can be wrapped in
-    structural constructs: Optional (X | None), tuple (tuple[X, ...]),
-    or TypeAliasType (type X = ...). This enum captures WHICH wrapping
-    form an annotation has. The AnnotationShape DU below uses it as its
+    structural constructs: exactly T | None, tuple[X, ...],
+    tuple[A, B, C] (fixed), TypeAliasType (type X = ...), or a
+    multi-member union (A | B). This enum captures WHICH wrapping form
+    an annotation has. The AnnotationShape DU below uses it as its
     discriminator — the kind tag routes to the correct variant.
     """
 
     DIRECT = "direct"  # Plain type: str, int, MyModel
-    OPTIONAL = "optional"  # X | None — nullable
-    TUPLE = "tuple"  # tuple[X, ...] — homogeneous collection
+    OPTIONAL = "optional"  # Exactly T | None — one non-None member
+    TUPLE = "tuple"  # tuple[X, ...] — variadic tuple
+    FIXED_TUPLE = "fixed_tuple"  # tuple[A, B, ...] — fixed-length positional product
     ALIAS = "alias"  # type X = ... — TypeAliasType
+    UNION = "union"  # union with 2+ non-None members; may include NoneType
 
     @override
     def __repr__(self) -> str:
@@ -467,15 +478,25 @@ class AnnotationKind(StrEnum):
 #
 # Instead, we declare a VARIANT MODEL for each case. Each variant has:
 #   - A Literal tag (kind) that identifies it
-#   - Fields whose VALUES are baked into the type (Literal[True], Literal[False])
+#   - Literal fields that constrain which values are valid
 #
 # Pydantic reads the tag, selects the variant, and the variant's fields
 # ARE the answer. No computation. The shape IS the program.
 #
-# Notice: nullable and collection are Literal[True] or Literal[False] on
-# three of the four variants. They're not computed — they're CONSTANTS
-# determined by which variant was selected. That's the power of DUs:
-# dispatch replaces computation.
+# SIX VARIANTS: DirectAnnotation, OptionalAnnotation, TupleAnnotation,
+# FixedTupleAnnotation, AliasAnnotation, UnionAnnotation. Each one
+# captures a different structural form a Python type annotation can take.
+#
+# PROOF OBLIGATIONS: On variants where nullable or collection is
+# structurally determined (Direct, Optional, Tuple, FixedTuple, Union),
+# the fields are Literal types WITHOUT defaults. TypeAnnotation supplies
+# .nullable and .collection via from_attributes during Phase 3, and
+# Pydantic validates the supplied value against the Literal constraint.
+# If the self-classifier disagrees with the variant's declared constraint,
+# construction fails. The Literal field IS the proof obligation.
+#
+# AliasAnnotation is the exception: its target varies, so nullable and
+# collection are plain bool — no structural proof, just a runtime value.
 
 
 class DirectAnnotation(BaseModel, frozen=True, from_attributes=True):
@@ -489,8 +510,8 @@ class DirectAnnotation(BaseModel, frozen=True, from_attributes=True):
     resolved_type: object = Field(
         exclude=True, description="The Python type the field holds"
     )
-    nullable: Literal[False] = False  # Direct types aren't nullable
-    collection: Literal[False] = False  # Direct types aren't collections
+    nullable: Literal[False]
+    collection: Literal[False]
 
 
 class OptionalAnnotation(BaseModel, frozen=True, from_attributes=True):
@@ -504,8 +525,8 @@ class OptionalAnnotation(BaseModel, frozen=True, from_attributes=True):
     resolved_type: object = Field(
         exclude=True, description="The Python type the field holds"
     )
-    nullable: Literal[True] = True  # Optional is ALWAYS nullable
-    collection: Literal[False] = False
+    nullable: Literal[True]
+    collection: Literal[False]
 
 
 class TupleAnnotation(BaseModel, frozen=True, from_attributes=True):
@@ -519,8 +540,25 @@ class TupleAnnotation(BaseModel, frozen=True, from_attributes=True):
     resolved_type: object = Field(
         exclude=True, description="The Python type the field holds"
     )
-    nullable: Literal[False] = False
-    collection: Literal[True] = True  # Tuple IS a collection
+    nullable: Literal[False]
+    collection: Literal[True]
+
+
+class FixedTupleAnnotation(BaseModel, frozen=True, from_attributes=True):
+    """A fixed-length tuple annotation — a positional product of heterogeneous types.
+
+    Examples: tuple[str, int], tuple[str, int, bool].
+    Not a collection (no homogeneous element type). Not nullable.
+    resolved_type preserves the full tuple typing object.
+    """
+
+    kind: Literal[AnnotationKind.FIXED_TUPLE] = AnnotationKind.FIXED_TUPLE
+    resolved_type: object = Field(
+        exclude=True,
+        description="The tuple typing object; positional member types preserved",
+    )
+    nullable: Literal[False]
+    collection: Literal[False]
 
 
 class AliasAnnotation(BaseModel, frozen=True, from_attributes=True):
@@ -543,13 +581,30 @@ class AliasAnnotation(BaseModel, frozen=True, from_attributes=True):
     )
 
 
+class UnionAnnotation(BaseModel, frozen=True, from_attributes=True):
+    """A multi-member union — 2+ non-None types, optionally including NoneType.
+
+    Examples: Authority | Exemption, Authority | Exemption | None.
+    nullable is bool because the union may or may not include NoneType.
+    collection is always False — unions aren't collections.
+    """
+
+    kind: Literal[AnnotationKind.UNION] = AnnotationKind.UNION
+    resolved_type: object = Field(
+        exclude=True,
+        description="The union typing object; members preserved (including NoneType if present)",
+    )
+    nullable: bool = Field(description="True when union includes NoneType")
+    collection: Literal[False]
+
+
 # The discriminated union itself. Pydantic reads the "kind" field from the
 # input data and routes to the matching variant. This is the type-level
 # equivalent of a match/case statement — but it fires DURING CONSTRUCTION,
 # not in calling code. The consumer never switches on kind. They just
 # read .nullable and .collection from whatever variant was selected.
 AnnotationShape = Annotated[
-    DirectAnnotation | OptionalAnnotation | TupleAnnotation | AliasAnnotation,
+    DirectAnnotation | OptionalAnnotation | TupleAnnotation | FixedTupleAnnotation | AliasAnnotation | UnionAnnotation,
     Field(discriminator="kind"),
 ]
 
@@ -565,57 +620,139 @@ AnnotationShape = Annotated[
 # classifies itself — no external classifier needed.
 #
 # Here, TypeAnnotation wraps a raw Python annotation and exposes:
-#   .kind → AnnotationKind tag (drives AnnotationShape DU routing)
-#   .resolved_type → the inner type after unwrapping structural wrappers
+#   .peel(t)        → static normalizer: strips Annotated wrappers
+#   .base           → surface annotation with Annotated peeled
+#   ._effective     → fully resolved: aliases chased, Annotated peeled at each hop
+#   .kind           → AnnotationKind tag (drives AnnotationShape DU routing)
+#   .resolved_type  → the inner type after unwrapping structural wrappers
+#   .nullable       → True if the effective type includes NoneType
+#   .collection     → True if the effective type is a variadic tuple
+#
+# TypeAnnotation is the SINGLE SOURCE OF STRUCTURAL TRUTH. The normalizers
+# (.peel, .base, ._effective) handle Annotated wrappers and alias chains.
+# The classification properties (.kind, .resolved_type) work against the
+# normalized result. The structural predicates (.nullable, .collection)
+# are computed from ._effective and feed into AnnotationShape variants as
+# proof obligations — the variant's Literal type validates the supplied value.
 #
 # The key insight: from_attributes reads PROPERTIES, not just stored fields.
 # So a RootModel with the right properties IS a self-classifying object.
-# Pydantic reads .kind, routes the DU, and the variant's Literal fields
-# ARE the answer. No one manually determines the kind. The type does it.
+# Pydantic reads .kind, routes the DU, reads .nullable and .collection,
+# and the variant's Literal fields validate them. No one manually determines
+# the kind. The type does it.
 #
-# .kind and .resolved_type are Phase 5: Derived Projection. Pure functions
-# of the frozen root value. Bare @property (not @computed_field) because
-# they don't need caching or serialization — trivial derivations read
-# once during Phase 3 field construction on downstream models.
+# All properties are Phase 5: Derived Projection. Pure functions of the
+# frozen root value. Bare @property (not @computed_field) because they
+# don't need caching or serialization — trivial derivations read once
+# during Phase 3 field construction on downstream models.
+#
+# .peel is public: ResolvedType also needs to normalize Annotated wrappers
+# before classification. TypeAnnotation owns the normalizer because it is
+# the authority on annotation structure. The dependency is one-way:
+# ResolvedType depends on TypeAnnotation, not the reverse.
 
 
 class TypeAnnotation(RootModel[object], frozen=True):
-    """Self-classifying wrapper #1: raw annotation → structural form.
+    """Self-classifying wrapper #1: raw annotation → structural form + truth.
 
     Wraps any annotation (type, generic alias, TypeAliasType, etc.) and
-    exposes .kind and .resolved_type as properties. Downstream models read
-    these via from_attributes=True — enabling automatic DU routing.
+    exposes classification and structural truth as properties. Downstream
+    models read these via from_attributes=True — enabling automatic DU
+    routing and proof obligation validation.
 
-    .kind classifies the STRUCTURAL FORM: is this a plain type, an Optional,
-    a tuple, or a type alias? The AnnotationShape DU reads .kind and routes.
+    NORMALIZATION CHAIN:
+      .peel(t)    → strips Annotated[X, metadata] → X
+      .base       → self.root with surface Annotated peeled
+      ._effective → aliases chased, Annotated peeled at each hop
 
-    .resolved_type UNWRAPS the structure: RoleName | None → RoleName.
-    tuple[Team, ...] → Team. type X = Y → Y. The wrapper is captured by
-    .kind — resolved_type is what's inside. This unwrapping is what makes
-    recursive descent work: a field typed tuple[Team, ...] resolves to Team,
-    which classifies as RECORD, which triggers descent into Team's fields.
+    CLASSIFICATION:
+      .kind → DIRECT, OPTIONAL, TUPLE, FIXED_TUPLE, ALIAS, or UNION
+        ALIAS is detected from .base (surface form).
+        All others from ._effective (resolved target).
+
+    UNWRAPPING:
+      .resolved_type → the inner type, structural wrapper removed:
+        T | None → T. tuple[X, ...] → X. type X = Y → Y.
+        Fixed tuples and multi-member unions are preserved as-is.
+
+    STRUCTURAL TRUTH:
+      .nullable   → True if ._effective includes NoneType in a union
+      .collection → True if ._effective is tuple[X, ...] (variadic only)
+      These feed AnnotationShape variants as proof obligations.
     """
+
+    @staticmethod
+    def peel(t: object) -> object:
+        """Strip Annotated wrappers from the surface of a typing object.
+
+        Annotated[X, metadata] → X. Nested Annotated (rare but legal) is
+        peeled iteratively. Non-Annotated inputs pass through unchanged.
+        """
+        while get_origin(t) is Annotated:
+            # get_args returns tuple[Any, ...]; safe in Annotated branch
+            t = get_args(t)[0]  # pyright: ignore[reportAny]
+        return t
+
+    @property
+    def base(self) -> object:
+        """The root annotation with surface Annotated wrappers removed.
+
+        Peels only the outermost Annotated layer(s). If the annotation is
+        a TypeAliasType, it remains — base does not resolve aliases.
+        """
+        return self.peel(self.root)
+
+    @property
+    def _effective(self) -> object:
+        """The fully resolved typing object: aliases chased, Annotated peeled at each hop.
+
+        Starts from .base and follows TypeAliasType.__value__ until a
+        non-alias is reached, peeling Annotated at each step. The result
+        is what the annotation structurally IS, after all indirection.
+        """
+        t = self.base
+        while isinstance(t, TypeAliasType):
+            # TypeAliasType.__value__ is Any; safe in isinstance branch
+            t = self.peel(t.__value__) # pyright: ignore[reportAny]
+        return t
 
     @property
     def kind(self) -> AnnotationKind:
-        """Detect which structural form this annotation has.
+        """Classify the structural form of this annotation.
 
-        Uses get_origin() for generic aliases (tuple[X,...], X | None)
-        and isinstance() for TypeAliasType. Falls back to DIRECT.
+        ALIAS is detected from .base (surface form — the annotation IS
+        an alias regardless of what it resolves to). All other kinds are
+        determined from ._effective (the resolved target):
+          tuple[X, ...] → TUPLE (variadic)
+          tuple[A, B, ...] → FIXED_TUPLE (positional product)
+          T | None (exactly one non-None member) → OPTIONAL
+          A | B (2+ non-None members, with or without None) → UNION
+          everything else → DIRECT
         """
-        # get_origin() returns the "base" of a generic alias:
-        #   get_origin(str | None) → types.UnionType
-        #   get_origin(tuple[str, ...]) → tuple
-        #   get_origin(str) → None (not generic)
-        o = get_origin(self.root)
-        if o is types.UnionType:
-            return AnnotationKind.OPTIONAL
-        if o is tuple:
-            return AnnotationKind.TUPLE
-        # TypeAliasType isn't a generic alias — it's a special class
-        # created by 'type X = ...' syntax. isinstance detects it.
-        if isinstance(self.root, TypeAliasType):
+        b = self.base
+        if isinstance(b, TypeAliasType):
             return AnnotationKind.ALIAS
+
+        e = self._effective
+        o = get_origin(e)
+
+        if o is tuple:
+            args = get_args(e)
+            if len(args) == 2 and args[1] is Ellipsis:
+                return AnnotationKind.TUPLE
+            return AnnotationKind.FIXED_TUPLE
+
+        if o is types.UnionType:
+            args = get_args(e)
+            non_none_count = sum(1 for a in args if a is not type(None))  # pyright: ignore[reportAny]
+            if type(None) in args and non_none_count == 1:
+                return AnnotationKind.OPTIONAL
+            if non_none_count >= 2:
+                return AnnotationKind.UNION
+            raise TypeError(
+                f"UnionType with {non_none_count} non-None members is an invariant violation: {e}"
+            )
+
         return AnnotationKind.DIRECT
 
     @property
@@ -624,21 +761,60 @@ class TypeAnnotation(RootModel[object], frozen=True):
 
         The structural wrapper is already captured by .kind — resolved_type
         is what's inside:
-          X | None → X (the non-None member)
-          tuple[X, ...] → X (the element type)
+          X | None → X (the non-None member, peeled)
+          tuple[X, ...] → X (the element type, peeled)
+          tuple[A, B, ...] → tuple[A, B, ...] (fixed tuple preserved)
+          A | B | ... → the union typing object (preserved)
           type X = Y → Y (the alias target)
           plain type → itself
         """
-        o = get_origin(self.root)
+        e = self._effective
+        o = get_origin(e)
+
         if o is types.UnionType:
-            return next(a for a in get_args(self.root) if a is not type(None))  # pyright: ignore[reportAny]
+            args = get_args(e)
+            non_none = tuple(a for a in args if a is not type(None)) # pyright: ignore[reportAny]
+
+            # T | None -> T (peeled)
+            if type(None) in args and len(non_none) == 1:
+                return self.peel(non_none[0]) # pyright: ignore[reportAny]
+
+            # multi-member union -> preserve union object (top-level peeled only)
+            return e
 
         if o is tuple:
-            return get_args(self.root)[0]  # pyright: ignore[reportAny]
-        if isinstance(self.root, TypeAliasType):
-            return self.root.__value__  # pyright: ignore[reportAny]
-        return self.root
+            args = get_args(e)
+            if len(args) == 2 and args[1] is Ellipsis:
+                return self.peel(args[0]) # pyright: ignore[reportAny]
+            # fixed tuple -> return as-is (truthful)
+            return e
 
+        return e
+
+    @property
+    def nullable(self) -> bool:
+        """True if the effective type includes NoneType in a union.
+
+        Covers both T | None (OPTIONAL) and A | B | None (nullable UNION).
+        Fed to AnnotationShape variants as a proof obligation.
+        """
+        e = self._effective
+        return get_origin(e) is types.UnionType and type(None) in get_args(e)
+
+    @property
+    def collection(self) -> bool:
+        """True if the effective type is a variadic tuple: tuple[X, ...].
+
+        Fixed tuples (tuple[A, B]) return False — they are positional
+        products, not collections. Fed to AnnotationShape variants as
+        a proof obligation.
+        """
+        e = self._effective
+        o = get_origin(e)
+        if o is tuple:
+            args = get_args(e)
+            return len(args) == 2 and args[1] is Ellipsis
+        return False
 
 # =============================================================================
 # FIELD SLOT — bridging the dict boundary (Phases 1, 3, and 5)
@@ -703,6 +879,12 @@ class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
 
     @property
     def resolved_type(self) -> ResolvedType:
+        """Bridge annotation → type classification.
+
+        Wraps the unwrapped inner type (from TypeAnnotation.resolved_type)
+        in a ResolvedType — self-classifying wrapper #2. ClassifiedNode
+        reads this via from_attributes to construct the BlockShape DU.
+        """
         return ResolvedType(self.annotation.resolved_type)
 
 
@@ -744,7 +926,7 @@ class FieldEntry(BaseModel, frozen=True, from_attributes=True):
     )
     shape: AnnotationShape = Field(
         alias="annotation",
-        description="Structural form of the annotation — direct, optional, tuple, or alias — with nullable and collection flags",
+        description="Structural form of the annotation — direct, optional, tuple, fixed_tuple, alias, or union — with nullable and collection flags",
     )
 
     @property
@@ -754,12 +936,12 @@ class FieldEntry(BaseModel, frozen=True, from_attributes=True):
 
     @property
     def nullable(self) -> bool:
-        """Delegate to shape — True if the annotation was X | None."""
+        """Delegate to shape — True if the type includes NoneType (Optional or nullable union)."""
         return self.shape.nullable
 
     @property
     def collection(self) -> bool:
-        """Delegate to shape — True if the annotation was tuple[X, ...]."""
+        """Delegate to shape — True if the annotation was tuple[X, ...] (variadic only)."""
         return self.shape.collection
 
 
@@ -803,10 +985,12 @@ class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
 
     @property
     def block(self) -> Block:
+        """Delegate to block_shape — which building block this field's type is."""
         return self.block_shape.block_kind
 
     @property
     def children(self) -> tuple[ClassifiedNode, ...]:
+        """Delegate to block_shape — classified children for record-like types, empty for leaves."""
         return self.block_shape.children
 
 
@@ -819,16 +1003,24 @@ class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
 #   TypeAnnotation wraps an annotation → .kind classifies the FORM
 #   ResolvedType wraps a type         → .block_kind classifies the TYPE
 #
-# Two properties:
-#   .block_kind — walks a predicate table (_BLOCK_MAP) in priority order.
-#     The table evolved from the original (type, Block) pairs to
-#     (Callable[[type], bool], Block) predicates. The walk is the same
-#     one-liner — next() with a default. The table got wider (predicates
-#     instead of bare types) so it can express ALGEBRA and EFFECT as
-#     refinements of RECORD. Data-driven dispatch scales by widening rows,
-#     not adding branches.
+# NORMALIZATION: Both block_kind and children first peel Annotated wrappers
+# via TypeAnnotation.peel (the public normalizer owned by wrapper #1).
+# This ensures an Annotated[SomeModel, metadata] is classified and
+# recursed into the same way as a bare SomeModel. The dependency is
+# one-way: ResolvedType depends on TypeAnnotation, not the reverse.
 #
-#   .children — unconditionally calls ModelTree.model_validate(self.root).
+# Two properties:
+#   .block_kind — first checks for union typing objects (get_origin is
+#     UnionType → Block.UNION), then walks a predicate table (_BLOCK_MAP)
+#     in priority order. The table uses (Callable[[type], bool], Block)
+#     predicates — data-driven dispatch that scales by widening rows, not
+#     adding branches. COLLECTION is checked before NEWTYPE (both are
+#     RootModel subclasses, but COLLECTION wraps a variadic tuple).
+#     ALGEBRA and EFFECT are checked before RECORD (behavioral refinements).
+#     Non-type values (like union typing objects already handled above)
+#     fall through to SCALAR.
+#
+#   .children — calls ModelTree.model_validate on the peeled root.
 #     No guard. No isinstance check. This property is ONLY ever read when
 #     a BlockShape DU variant with a children field constructs via
 #     from_attributes (RecordBlock, AlgebraBlock, EffectBlock). Leaf
@@ -842,16 +1034,24 @@ class ResolvedType(RootModel[object], frozen=True):
     Parallels TypeAnnotation: RootModel[object] wrapping a value, exposing
     derived properties downstream DUs read via from_attributes.
 
-    TypeAnnotation classifies the ANNOTATION FORM (Optional, tuple, alias, direct).
-    ResolvedType classifies the TYPE ITSELF (enum, newtype, record, scalar, ...).
+    TypeAnnotation classifies the ANNOTATION FORM (direct, optional, tuple,
+    fixed_tuple, alias, union). ResolvedType classifies the TYPE ITSELF
+    (enum, newtype, collection, record, algebra, effect, scalar, union).
 
-    .block_kind drives BlockShape DU variant routing.
+    .block_kind drives BlockShape DU variant routing. Union typing objects
+    are detected before the predicate table. The table walks type predicates
+    in priority order for class-based blocks.
     .children provides recursive descent — only ever read when a variant
     with a children field constructs. Leaf variants never request it.
     """
 
     _BLOCK_MAP: ClassVar[tuple[tuple[Callable[[type], bool], Block], ...]] = (
         (lambda t: issubclass(t, StrEnum), Block.ENUM),
+        (
+            lambda t: issubclass(t, RootModel)
+            and TypeAnnotation(t.model_fields["root"].annotation).collection,
+            Block.COLLECTION,
+        ),
         (lambda t: issubclass(t, RootModel), Block.NEWTYPE),
         (
             lambda t: issubclass(t, BaseModel) and bool(t.model_computed_fields),
@@ -866,19 +1066,22 @@ class ResolvedType(RootModel[object], frozen=True):
 
     @property
     def block_kind(self) -> Block:
+        effective = TypeAnnotation.peel(self.root)
+        if get_origin(effective) is types.UnionType:
+            return Block.UNION
+
         return next(
             (
                 b
                 for pred, b in self._BLOCK_MAP
-                if isinstance(self.root, type) and pred(self.root)
+                if isinstance(effective, type) and pred(effective)
             ),
             Block.SCALAR,
         )
 
     @property
     def children(self) -> tuple[ClassifiedNode, ...]:
-        return ModelTree.model_validate(self.root).fields
-
+        return ModelTree.model_validate(TypeAnnotation.peel(self.root)).fields
 
 # =============================================================================
 # BLOCK SHAPE — discriminated union #2 (Phase 3 + demand-driven recursion)
@@ -1039,10 +1242,10 @@ class FieldReport(BaseModel, frozen=True, from_attributes=True):
 
     field_name: str = Field(description="Name of the field on the analyzed model")
     block: Block = Field(
-        description="Structural role: record (named fields), enum (closed vocabulary), newtype (typed wrapper), scalar (primitive), algebra (record + derived), effect (record + side effects), collection (sequence wrapper), union (sum type)"
+        description="Structural role: record (named fields), enum (closed vocabulary), newtype (typed wrapper), scalar (primitive), algebra (record + derived), effect (record + side effects), collection (sequence wrapper), union (multi-member union)"
     )
     nullable: bool = Field(
-        description="True when the field's type was X | None — the field accepts absence"
+        description="True when the field's type includes NoneType — T | None or A | B | None"
     )
     collection: bool = Field(
         description="True when the field's type was tuple[X, ...] — the field holds a sequence"
@@ -1086,18 +1289,21 @@ class FieldReport(BaseModel, frozen=True, from_attributes=True):
 # recurse forever. The _seen ContextVar tracks which types are currently
 # being walked. Each recursive call sees the parent's frozenset plus the
 # current type. If a type was already seen, construction short-circuits
-# with empty fields. frozenset | {data} creates a NEW set per level —
-# no mutation, no shared state, natural cleanup via ContextVar.reset().
+# with cycle=True and empty fields — distinguishable from a genuinely
+# empty model. frozenset | {data} creates a NEW set per level — no
+# mutation, no shared state, natural cleanup via ContextVar.reset().
+# The reset is exception-safe (try/finally).
 #
 # The full cascade, with phases labeled:
 #
 #   Phase 2: _reshape wrap validator iterates model_fields.items()
 #            + cycle guard: skip if type already in _seen frozenset
+#            Both paths explicitly set cycle=True or cycle=False
 #   Phase 1: Each (name, FieldInfo) → FieldSlot._from_tuple (before validator)
 #   Phase 3: Pydantic coerces FieldSlots → ClassifiedNodes (from_attributes)
 #            FieldEntry alias reads .annotation → constructs AnnotationShape DU
 #            TypeAnnotation.kind drives DU routing (Phase 5 property)
-#            Variant's Literal fields set nullable/collection
+#            Variant's Literal fields validate against TypeAnnotation.nullable/collection
 #   Phase 3: ClassifiedNode.block_shape reads FieldSlot.resolved_type
 #            → ResolvedType.block_kind drives BlockShape DU routing
 #            → RecordBlock.children fires recursive ModelTree.model_validate
@@ -1116,13 +1322,17 @@ class ModelTree(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
         print(report)
 
     Cycle detection via _seen ContextVar: each recursive call sees the parent's
-    visited set plus the current type. Already-seen types produce empty fields.
+    visited set plus the current type. Already-seen types short-circuit with
+    cycle=True and empty fields — distinguishable from a genuinely empty model.
     """
 
     _seen: ClassVar[ContextVar[frozenset[type]]] = ContextVar("_seen")
 
+    cycle: bool = Field(
+        default=False,
+        description="True when this node was already visited in an ancestor — fields is empty due to cycle, not because the model has no fields",
+    )
     fields: tuple[ClassifiedNode, ...] = Field(
-        alias="fields",
         description="Every field on the model, fully classified with block type, flags, and recursive children",
     )
 
@@ -1133,17 +1343,20 @@ class ModelTree(BaseModel, frozen=True, from_attributes=True, populate_by_name=T
     ) -> ModelTree:
         seen = cls._seen.get(frozenset())
         if data in seen:
-            return handler({"fields": ()})
+            return handler({"fields": (), "cycle": True})
+
         token = cls._seen.set(seen | {data})
-        result = handler(
-            {
-                "fields": tuple(
-                    FieldSlot.model_validate(item) for item in data.model_fields.items()
-                )
-            }
-        )
-        cls._seen.reset(token)
-        return result
+        try:
+            return handler(
+                {
+                    "fields": tuple(
+                        FieldSlot.model_validate(item) for item in data.model_fields.items()
+                    ),
+                    "cycle": False,
+                }
+            )
+        finally:
+            cls._seen.reset(token)
 
 
 class TreeReport(BaseModel, frozen=True, from_attributes=True):
