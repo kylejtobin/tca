@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "agent",
+            "model": "sonnet",
+            "timeout": 90,
+            "statusMessage": "Auditing edit for TCA drift",
+            "prompt": "You are a TCA audit hook. Use this hook input to identify the edited file and inspect the current codebase state: $ARGUMENTS\n\nAudit only for the two core failure modes in this project:\n1. procedural fallback\n2. flat modeling\n\nA failure means the edit introduced free procedure where stronger structure should exist, or collapsed domain meaning into generic primitives like dict, str, Any, object, or other flat shapes.\n\nFocus on real structural violations, not style. Ignore unrelated issues. Read only the edited file and any immediately necessary local context.\n\nIf the edit is acceptable, respond with exactly: {\"ok\": true}\n\nIf the edit introduces TCA drift, respond with exactly: {\"ok\": false, \"reason\": \"...\"}\n\nThe reason must be concise and concrete. Name the exact procedural or flat construct introduced, explain why it violates TCA, and name the stronger model or construct that should replace it."
+          }
+        ]
+      }
+    ]
+  }
+}
