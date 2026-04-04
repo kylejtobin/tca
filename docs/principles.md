@@ -6,13 +6,15 @@ These principles are not style preferences. They are the disciplines that fall o
 
 ## Structural Discipline
 
-**Types at the entry.** Types constrain computation from the start. Raw data enters a construction machine at the boundary and emerges as proven objects. There is no untyped staging area.
+**Types at the entry.** Types constrain computation from the start. Raw data enters a construction machine at the boundary and emerges as proven objects. There is no untyped staging area where helper code gets to improvise meaning first.
 
 **Focused types.** Each type represents one coherent domain concept in one context. A customer as-analyzed is a different type from a customer as-indexed. Fields that belong together in every context share a type. Fields that don't, don't.
 
 **Domain-typed fields.** Every field carries domain meaning through its type. Closed vocabularies are enums. Bounded values are constrained types. Structured formats are pattern-validated. A bare primitive must justify why it has no domain type.
 
-Types compose through composition (field annotations require the child to construct before the parent), inheritance (a child's machine includes the parent's fields, validators, and projections), and structural matching (`from_attributes` reads any object whose attributes match field names). The choice follows from the domain: does this type contain another, share construction with another, or read another's surface?
+Types compose through composition (field annotations require the child to construct before the parent), inheritance (a child's machine includes the parent's fields, validators, and projections), and structural matching (`from_attributes` reads any object whose attributes match field names). The choice follows from the domain: does this type contain another, share construction with another, or read another's surface? Each choice replaces a different kind of procedure that conventional systems usually hide in services and adapters.
+
+**Model uncertainty as a possibility space.** Unknown outcomes do not justify untyped procedure. Success, failure, pending review, retryable error, multi-case classification, and composite outcomes are still representable states. The discipline is not to pretend uncertainty away, but to name it structurally early enough that the program carries it as types instead of controllers, flags, and ad hoc branch code.
 
 ---
 
@@ -22,7 +24,7 @@ Types compose through composition (field annotations require the child to constr
 
 **Intrinsic derivation belongs on the machine.** A derivation is intrinsic when it depends only on the object's own proven fields. Intrinsic derivations are projections — they belong on the machine. If calling code computes one externally, that is a wiring defect.
 
-**Contextual derivation stays external.** A derivation is contextual when it depends on external state: user locale, request time, feature flags, another model's fields. Contextual derivations do not belong on the type. They are computations in a larger environment. Forcing them onto the machine creates god models with ambient context leaks.
+**Contextual derivation stays external.** A derivation is contextual when it depends on external state: user locale, request time, feature flags, or other ambient runtime conditions. Contextual derivations do not belong on the type. They are computations in a larger environment. Forcing them onto the machine creates god models with ambient context leaks.
 
 **Route contracts belong to the context.** Request types, response projections, and error envelopes are domain knowledge. They belong in the context that understands them, not in the route handler.
 
@@ -30,9 +32,9 @@ Types compose through composition (field annotations require the child to constr
 
 ## Development Discipline
 
-**Shapes first.** Define the types before writing any procedural code. The types are the specification. If you cannot express the domain as types, you do not yet understand the domain. Development proceeds: domain types, then vocabularies (enums), then the thinnest possible plumbing.
+**Shapes first.** Define the types before writing procedural code. The types are the specification. If you cannot express the domain as types, you do not yet understand the domain. Development proceeds: domain types, then vocabularies (enums), then the thinnest possible plumbing.
 
-**Validators exist only at irreducible boundaries.** If you are reaching for a validator, ask first: can a better shape solve it? An intermediate model, a smarter alias, a constrained type, or a discriminated union almost always can. Validators exist only for cross-field constraints that types cannot express, or for translation seams where foreign structure must be reshaped. See [Irreducible Seams](irreducible-seams.md).
+**Validators exist only at irreducible boundaries.** If you are reaching for a validator, ask first: can a better shape solve it? An intermediate model, a smarter alias, composition through fields, a constrained type, or a discriminated union almost always can. Validators exist only for cross-field constraints that types cannot express, or for translation seams where foreign structure must be reshaped. See [Irreducible Seams](irreducible-seams.md).
 
 ---
 
@@ -46,7 +48,7 @@ Types compose through composition (field annotations require the child to constr
 
 ## Progressive Hardening
 
-Start with the clearest model and the most precise language you can justify: field names, docstrings, focused types. Observe where soft compliance is insufficient — where consumers (human or LLM) produce wrong or ambiguous results. Promote those specific contracts to structural guarantees: tighter types, constrained primitives, enums, discriminated unions.
+Start with the clearest model and the most precise language you can justify: field names, docstrings, focused types. Observe where soft compliance is insufficient — where consumers (human or LLM) produce wrong or ambiguous results. Promote those specific contracts to structural guarantees: tighter types, constrained primitives, enums, discriminated unions, and more explicit intermediate models.
 
 The construction pipeline grows by observation, not by speculation. Do not over-constrain prematurely. The discipline is empirical: watch what fails, then harden that specific boundary.
 

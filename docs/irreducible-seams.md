@@ -1,6 +1,6 @@
 # Irreducible Seams
 
-Some boundaries cannot be crossed with pure construction. At those boundaries, one small validator or connector bridges the gap. Everywhere else, the type tree owns the logic. Identifying the irreducible procedural minimum is a core TCA discipline — one of the primary architectural tests of whether a program is well-shaped.
+Some boundaries cannot be crossed with pure construction. At those boundaries, one small validator or connector bridges the gap. Everywhere else, the type tree owns the logic. Identifying the irreducible procedural minimum is a core TCA discipline and one of the primary architectural tests of whether a program is well-shaped.
 
 ---
 
@@ -30,6 +30,10 @@ If the answer to all four is no, the boundary is real.
 ## Legitimate Seam Classes
 
 Some seams resist pure construction:
+
+**Live input capture.** Websocket frames, stream chunks, and callback payloads arrive through effectful runtime surfaces. Someone must catch the raw message and hand it to construction. The key is that capture is not where business meaning lives. It is a tiny outer seam that moves unstable transport reality into a typed entry point.
+
+**Payload normalization.** A third-party payload may wrap the actual fields one layer deeper, or mix transport metadata with domain-bearing content. A small before-validator can unwrap or normalize the payload once so the construction graph can resume. This is legitimate only when the reshaping truly belongs to the boundary and remains terminal.
 
 **Positional-to-named bridging.** Python's `dict.items()` produces `(key, value)` tuples where the key is positional, not an attribute on the value. Someone must pair them into named fields. The [building block classifier](building-block-classifier.md) has exactly one such seam: the wrap validator on `ModelTree` that iterates `model_fields.items()` and constructs `FieldSlot` instances.
 
@@ -76,3 +80,5 @@ Effects are a special class of irreducible seam. Construction must remain pure; 
 Many effects belong outside the model lifecycle entirely. Service orchestration, I/O, external commands are plumbing that runs after the proven object is returned. The principle is: proof first, then effect.
 
 When a program genuinely needs ongoing operational behavior — catching streaming content, managing websocket state, coordinating long-running I/O — an active model or thin operational shell may be justified. But this is the outermost seam in a well-shaped TCA program. The interior remains certain modeled context. The active shell wraps the construction graph, receives proven objects, and does what must be done in the world.
+
+This is the practical architectural test: capture live input, normalize it if necessary, get back to construction immediately, and keep the effectful shell outside the semantic center of the program.

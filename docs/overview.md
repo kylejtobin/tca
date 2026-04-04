@@ -12,13 +12,12 @@ Pydantic is a programming language. Python is its runtime.
 This is not analogy. A Pydantic model is an active machine with a four-layer construction pipeline and a lazy projection surface that fires every time data enters it. Construction is proof: if the object exists, it satisfies every constraint declared in its type. If construction fails, no object exists. There is no third outcome.
 
 ```python
-class Customer(BaseModel, frozen=True, extra="forbid"):
-    id: CustomerId           # Annotated[str, MinLen(1), MaxLen(36)]
-    name: CustomerName       # Annotated[str, MinLen(1)]
-    risk: RiskProfile        # nested model, fires its own construction pipeline
-    segment: CustomerSegment # StrEnum, closed vocabulary
+class DomainTrade(BaseModel, frozen=True, extra="forbid"):
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
 
-customer = Customer.model_validate(raw)  # exists = proven. no exceptions = valid.
+trade = DomainTrade.model_validate(raw)  # exists = proven. no exceptions = valid.
 ```
 
 The proof is relative to what the type declares. A type that declares more proves more. Much of the behavior in schema-rich systems emerges from sufficiently precise construction. Model the domain through type shape and the functionality follows from the construction graph.
@@ -31,7 +30,9 @@ Most applications hide the program in service layers. Raw data arrives, gets map
 
 TCA inverts this. The program lives in the domain context — frozen models, enums, constrained types, projections, and construction graphs. Routes expose context-owned contracts. Infrastructure starts the system. Services, if they exist at all, are connectors so thin they are almost embarrassing.
 
-The app interior is railroaded by constructed certainty. There are no uncertain intermediate states.
+The app interior is railroaded by constructed certainty. There are no unmodeled uncertain intermediate states.
+
+Unknown outcomes do not disappear. They become typed. A classifier may emit one case or many. A foreign call may succeed, fail, pend, or require review. Those are still cases, still states, still part of a declared possibility space. TCA rejects improvised controller state, untyped staging payloads, and semantic orchestration by side effect. It does not reject uncertainty; it forces uncertainty to become representable.
 
 The dominant alternative is strings in, strings out: untyped, unproven, unconstrained. TCA replaces hope with proof.
 
@@ -39,15 +40,19 @@ The dominant alternative is strings in, strings out: untyped, unproven, unconstr
 
 ## The Evaluation Model
 
-Type Construction Architecture is the discipline of writing programs in construction semantics. Three mechanisms compose them:
+Type Construction Architecture is the discipline of writing programs in construction semantics. The broad pattern language is larger than any one list: capture live input, normalize foreign payloads, mirror foreign schemas, compose proven models, derive on the model, declare cases instead of branching, unfold composite inputs, let one construction trigger the next, and render final shapes from owned truth.
 
-- **Wiring**: `from_attributes` lets one model read another's surface by name.
-- **Dispatch**: discriminated unions route on tags; smart enums classify inputs into their members.
-- **Orchestration**: projections on proven models construct new proven models via `@cached_property` + `model_validate`.
+For the dependency-ordered build path, the teaching sequence is: name the domain vocabulary, let fields declare their own constraints, own the foreign schema, absorb outer wrappers on that same boundary, hand live input to it, lift into domain truth, compose proven models, read declared surfaces, derive intrinsic facts, dispatch structurally, continue by shape when needed, chain construction from proof, and render a terminal surface. See the [README build path](../README.md#how-to-build-in-tca) for the front-door version of that sequence.
 
-Orchestration is what makes this a programming paradigm. Construction drives derivation. Derivation drives further construction. This construction-derivation loop is the evaluation model of a TCA program. The loop is lazy (projections fire on first access), deterministic (frozen models guarantee evaluation-order independence), and compositional (each model's proof is independent of how it was demanded).
+Under those visible patterns are three core mechanisms that make many of them possible:
 
-Construction is not limited to `model_validate` at a root. A model as a field on another model drives construction. A projection that constructs further proven objects extends the proof graph. A tiny function that connects proven models to further construction is still within the discipline. The measure is whether the program is expressed as a construction/derivation graph with clear ownership, or whether it leaks back into free procedure.
+- **Wiring**: `from_attributes` and aliases let one model read another model's declared surface.
+- **Dispatch**: discriminated unions and enum-owned classification route construction into the correct case.
+- **Orchestration**: projections on proven models trigger further proven construction.
+
+These mechanisms matter because they turn isolated model proofs into programs. Construction drives derivation. Derivation drives further construction. Composition grows a semantic world through fields. Dispatch settles shape. Projection extends proof on demand. This construction-derivation graph is the evaluation model of a TCA program.
+
+Construction is not limited to `model_validate` at a root. A model as a field on another model drives construction. A projection that constructs further proven objects extends the proof graph. A tiny function that connects proven models to further construction can still be within the discipline when it is truly an irreducible seam. The measure is whether the program is expressed as a construction and derivation graph with clear ownership, or whether it leaks back into free procedure.
 
 ---
 
@@ -87,11 +92,11 @@ The docs are split by ownership. Enter at the point that matches your intent.
 |:---|:---|
 | [Manifesto](manifesto.md) | Why TCA exists, what we believe, what we reject |
 | [The Construction Machine](construction-machine.md) | The four-layer pipeline, projection surface, and trust conditions |
-| [Three Mechanisms](mechanisms.md) | Wiring, dispatch, orchestration — how types compose |
+| [Core Mechanisms](mechanisms.md) | Wiring, dispatch, orchestration — the deep machinery behind many construction patterns |
 | [Program Architecture](program-architecture.md) | Where the program lives, the application shape, why services disappear |
 | [Roots and Proof Obligations](roots-and-proof-obligations.md) | How to discover what your program must prove |
 | [Principles](principles.md) | Structural, ownership, naming, and development disciplines |
 | [Irreducible Seams](irreducible-seams.md) | How to tell a real seam from a modeling failure |
-| [Building Block Classifier](building-block-classifier.md) | Worked example demonstrating every mechanism |
+| [Building Block Classifier](building-block-classifier.md) | Advanced worked example showing the mechanisms and seams in a dense recursive program |
 | [Semantic Index Types](semantic-index-types.md) | What changes when the consumer is neural |
 | [Failure Modes](failure-modes.md) | Design diagnostics — every failure is a modeling opportunity |

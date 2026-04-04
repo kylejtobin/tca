@@ -2,6 +2,8 @@
 
 Every Pydantic model is a machine with four eager construction layers and a lazy projection surface. You do not orchestrate these layers manually. You declare fields, aliases, validators, and projections, and the runtime executes the machine. When `model_validate(raw)` fires, the four construction layers execute eagerly. Projection fires on first access, extending the proof graph on demand.
 
+To keep the story concrete, the examples below stay in one world: stock exchange data entering a trading domain.
+
 ```mermaid
 flowchart LR
     raw(["raw input"])
@@ -20,7 +22,7 @@ flowchart LR
 
 ## What The Machine Guarantees
 
-If the machine constructs an object, that object satisfies every obligation declared in the type. If a `Trade` object exists, you know: every field has the correct type, the notional is non-negative, the maturity follows the trade date, and all nested types constructed successfully. There is no separate validation step. There is no "invalid but present" state.
+If the machine constructs an object, that object satisfies every obligation declared in the type. If a `VenueQuote` object exists, you know: every field has the correct type, prices are non-negative, `bid` does not exceed `ask`, and all nested types constructed successfully. There is no separate validation step. There is no "invalid but present" state.
 
 When construction fails, the failure is itself structured: `ValidationError` preserves the field path through the construction graph, the error type, and the rejected input. A failed proof diagnoses exactly where in the construction tree the obligation was not met.
 
@@ -28,22 +30,23 @@ When construction fails, the failure is itself structured: `ValidationError` pre
 
 ## Translation
 
-`mode="before"` validators and field-level aliases reshape raw input before field construction begins. Foreign structure becomes domain structure. Translation is the machine's ingestion preprocessor — as native to the model as its fields, not an escape hatch for messy data.
+`mode="before"` validators and field-level aliases reshape raw input before field construction begins. Foreign structure becomes owned structure. Translation is the machine's ingestion preprocessor, not an adapter layer living somewhere else.
 
-`Field(alias="cp_id")` maps external vocabulary to domain vocabulary at the declaration. A `mode="before"` validator flattens nested payloads or restructures mismatched shapes:
+`Field(alias="sym")` maps external vocabulary to owned vocabulary at the declaration. A `mode="before"` validator can flatten a payload wrapper or restructure a mismatched transport shape once, at the boundary:
 
 ```python
-class Trade(BaseModel, frozen=True, extra="forbid"):
-    counterparty: CounterpartyID = Field(alias="cp_id")
-    notional: Notional = Field(alias="notional_usd")
-    trade_date: date = Field(alias="trd_dt")
-    maturity: date = Field(alias="mat_dt")
+class NasdaqTradeWire(BaseModel, frozen=True, extra="forbid", populate_by_name=True):
+    symbol: Symbol = Field(alias="sym")
+    price: Price = Field(alias="px")
+    quantity: Quantity = Field(alias="qty")
 
     @model_validator(mode="before")
     @classmethod
-    def flatten_wire_format(cls, data: dict) -> dict:
-        return {k: v for k, v in data.items() if k != "trade_details"} | data["trade_details"]
+    def unwrap_payload(cls, data: dict[str, object]) -> dict[str, object]:
+        return data["payload"] if "payload" in data else data
 ```
+
+Translation replaces the reflex to unpack raw blobs in transport code or helper functions. Normalize once, then let construction continue.
 
 ---
 
@@ -54,22 +57,25 @@ class Trade(BaseModel, frozen=True, extra="forbid"):
 This is how abstract base types seal themselves so only concrete variants construct:
 
 ```python
-class Instrument(BaseModel, frozen=True):
+class TradeInstruction(BaseModel, frozen=True):
     @model_validator(mode="wrap")
     @classmethod
-    def _seal(cls, data: object, handler: Callable[..., Instrument]) -> Instrument:
+    def _seal(
+        cls,
+        data: object,
+        handler: Callable[..., TradeInstruction],
+    ) -> TradeInstruction:
         result = handler(data)
-        if type(result) is Instrument:
-            raise TypeError("Construct Bond, Swap, or Option directly")
+        if type(result) is TradeInstruction:
+            raise TypeError("Construct MarketOrder or BasketOrder directly")
         return result
 
-class Bond(Instrument, extra="forbid"):
-    face_value: FaceValue
-    coupon_rate: CouponRate
-    maturity: date
+class MarketOrder(TradeInstruction, extra="forbid"):
+    symbol: Symbol
+    quantity: Quantity
 ```
 
-Wrap also handles reshape patterns where a `mode="before"` validator would cause infinite recursion by re-triggering itself. In the [building block classifier](building-block-classifier.md), `ModelTree` uses a wrap validator to reshape a `BaseModel` class into a dict of classified fields. Wrap avoids recursion because the handler is called exactly once.
+Wrap also handles reshape patterns where a `mode="before"` validator would cause infinite recursion by re-triggering itself. Use it when you truly need control over whether the machine proceeds and how often the inner constructor is called.
 
 ---
 
@@ -78,30 +84,35 @@ Wrap also handles reshape patterns where a `mode="before"` validator would cause
 Every field's type annotation is a construction instruction. Pydantic reads the incoming data and constructs each field value through the type's own pipeline. Nested models fire their own construction machines recursively. This is not type checking — the runtime is constructing the field value, not asking "is this already the right type?"
 
 ```python
-class Customer(BaseModel, frozen=True, extra="forbid"):
-    id: CustomerId           # coerces raw string through CustomerId's pipeline
-    name: CustomerName       # coerces raw string through CustomerName's pipeline
-    risk: RiskProfile        # constructs from nested dict (fires its own pipeline)
-    segment: CustomerSegment # validates against closed StrEnum vocabulary
+class DomainTrade(BaseModel, frozen=True, extra="forbid", from_attributes=True):
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
+
+class CrossVenueContext(BaseModel, frozen=True, extra="forbid"):
+    nasdaq_trade: DomainTrade
+    nyse_trade: DomainTrade
+    nasdaq_quote: VenueQuote
+    nyse_quote: VenueQuote
 ```
 
 Not every domain type needs a full model. `Annotated` types with Pydantic constraints are construction instructions at the field level:
 
 ```python
-CustomerId = Annotated[str, MinLen(1), MaxLen(36)]
-CustomerName = Annotated[str, MinLen(1)]
-Confidence = Annotated[float, Ge(0.0), Le(1.0)]
-DaysToMaturity = Annotated[int, Ge(0)]
-Notional = Annotated[Decimal, Ge(0)]
+Symbol = Annotated[str, MinLen(1), MaxLen(8)]
+Price = Annotated[Decimal, Ge(0)]
+Quantity = Annotated[int, Ge(1)]
+VenueName = Annotated[str, MinLen(1)]
+Spread = Annotated[Decimal, Ge(0)]
 ```
 
-When `from_attributes=True` is set, Pydantic reads attributes from the input object by name — properties included — so one model's projection surface feeds another model's construction. When a field is a discriminated union, Pydantic reads the tag and routes to the correct variant automatically. This is where the [three mechanisms](mechanisms.md) execute: wiring reads attributes by name, dispatch routes on tags, and the types constructed here may themselves trigger further construction through their projections.
+When `from_attributes=True` is set, Pydantic reads attributes from the input object by name — properties included — so one model's projection surface feeds another model's construction. When a field is a discriminated union, Pydantic reads the tag and routes to the correct variant automatically. This is where the [core mechanisms](mechanisms.md) execute: wiring reads attributes by name, dispatch routes on tags, and the types constructed here may themselves trigger further construction through their projections.
 
 Coercion is the heart of the construction machine. If construction isn't working, the fix is almost always a missing intermediary model, a smarter alias, or a discriminated union — not a validator.
 
 Pydantic's default is lax mode, where coercion IS construction: a string becomes an int, a dict becomes a model. `strict=True` requires exact type matches without coercion, appropriate at proven-to-proven boundaries where data has already been constructed upstream and re-coercion would mask type errors.
 
-`TypeAdapter` extends construction beyond models: `TypeAdapter(list[Customer]).validate_python(raw)` fires the construction machine on any type annotation, making standalone validation of unions, collections, and constrained types a first-class operation.
+`TypeAdapter` extends construction beyond models: `TypeAdapter(list[DomainTrade]).validate_python(raw)` fires the construction machine on any type annotation, making standalone validation of unions, collections, and constrained types a first-class operation.
 
 ---
 
@@ -112,18 +123,20 @@ Pydantic's default is lax mode, where coercion IS construction: a string becomes
 After-validators appear only when the relationship between two or more already-constructed fields must be checked:
 
 ```python
-class DateRange(BaseModel, frozen=True, extra="forbid"):
-    start: date
-    end: date
+class VenueQuote(BaseModel, frozen=True, extra="forbid"):
+    venue: VenueName
+    symbol: Symbol
+    bid: Price
+    ask: Price
 
     @model_validator(mode="after")
-    def start_precedes_end(self) -> Self:
-        if self.start >= self.end:
-            raise ValueError("start must precede end")
+    def bid_must_not_exceed_ask(self) -> Self:
+        if self.bid > self.ask:
+            raise ValueError("bid must not exceed ask")
         return self
 ```
 
-A `DateRange` whose `start >= end` does not "fail validation." It fails to construct. The machine will not produce it.
+A `VenueQuote` whose `bid > ask` does not "fail validation." It fails to construct. The machine will not produce it.
 
 ---
 
@@ -142,31 +155,30 @@ Projection is also the mechanism by which proven machines trigger further constr
 When a projection has cases, the cases belong in an enum and the projection delegates:
 
 ```python
-class TenorBucket(StrEnum):
-    SHORT = "short"
-    MEDIUM = "medium"
-    LONG = "long"
+class SpreadSignal(StrEnum):
+    NORMAL = "normal"
+    WIDE = "wide"
 
     @classmethod
-    def from_days(cls, days: DaysToMaturity) -> TenorBucket:
-        if days <= 90: return cls.SHORT
-        if days <= 365: return cls.MEDIUM
-        return cls.LONG
+    def from_spread(cls, spread: Spread) -> SpreadSignal:
+        if spread >= Spread("0.50"):
+            return cls.WIDE
+        return cls.NORMAL
 ```
 
 ```python
 @computed_field
 @cached_property
-def days_to_maturity(self) -> DaysToMaturity:
-    return (self.maturity - self.trade_date).days
+def widest_offer_gap(self) -> Spread:
+    return Spread(self.nyse_quote.ask - self.nasdaq_quote.bid)
 
 @computed_field
 @cached_property
-def tenor_bucket(self) -> TenorBucket:
-    return TenorBucket.from_days(self.days_to_maturity)
+def signal(self) -> SpreadSignal:
+    return SpreadSignal.from_spread(self.widest_offer_gap)
 ```
 
-Bare `@property` is how wrappers and models expose derived attributes for downstream `from_attributes` reads, and how models flatten nested structure for consumption by other models. The [building block classifier](building-block-classifier.md) demonstrates this end-to-end: a smart enum owns classification, a wrapper's `@property` delegates, Pydantic reads the property during coercion, a DU routes on it, and the variant's `Literal` fields settle the answer.
+Bare `@property` is how wrappers and models expose derived attributes for downstream `from_attributes` reads, and how models flatten nested structure for consumption by other models. Projection is where a model starts to feel like an active semantic world rather than a passive record.
 
 ---
 
@@ -187,20 +199,27 @@ Construction is proof only if the construction pipeline is trustworthy. Two mode
 Validation context (`model_validate(data, context={...})`) is the sanctioned mechanism for validators that genuinely need ambient read-only information: locale, feature flags, request-scoped config. The context is explicitly passed at the call site, not smuggled through global state.
 
 ```python
-class Order(BaseModel, frozen=True, extra="forbid"):
-    customer: Customer
-    items: tuple[LineItem, ...]
+class ListedSymbol(BaseModel, frozen=True, extra="forbid"):
+    symbol: Symbol
+    primary_venue: VenueName
+
+class QuoteRequest(BaseModel, frozen=True, extra="forbid"):
+    listed_symbol: ListedSymbol
+    venue: VenueName
 
     @model_validator(mode="before")
     @classmethod
-    def resolve_customer(cls, data: dict, info: ValidationInfo) -> dict:
-        return {**data, "customer": info.context["customer_index"][data["customer_id"]]}
+    def resolve_symbol(cls, data: dict, info: ValidationInfo) -> dict:
+        return {
+            **data,
+            "listed_symbol": info.context["symbol_index"][data["symbol"]],
+        }
 
-customers = load_customer_index(db)
-order = Order.model_validate(raw, context={"customer_index": customers})
+symbol_index = load_symbol_index(db)
+request = QuoteRequest.model_validate(raw, context={"symbol_index": symbol_index})
 ```
 
-The before-validator translates `customer_id` into a proven `Customer` from a pre-fetched index. If anything is wrong, construction fails. The order emerges carrying a proven `Customer`, not a string. Testing passes a dict literal.
+The before-validator translates a raw symbol token into a proven `ListedSymbol` from a pre-fetched index. If anything is wrong, construction fails. The request emerges carrying a proven `ListedSymbol`, not a bare string. Testing passes a dict literal.
 
 **Rule 2: Properties consumed by `from_attributes` must be pure and terminating.** When Pydantic reads a property via `from_attributes` during coercion, that property is participating in construction. It must be a pure function of the object's own frozen fields. This is the one place where the construction machine can be silently undermined, because a property masquerades as data access while executing arbitrary code.
 

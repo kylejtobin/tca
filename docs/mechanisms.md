@@ -1,142 +1,178 @@
-# Three Mechanisms
+# Core Mechanisms
 
-Three construction mechanisms describe how types compose through the pipeline. Each replaces a whole family of procedural code.
+These are not the whole TCA pattern language. They are the deep reusable mechanisms underneath many of the visible moves you see in the README: mirroring foreign schemas, reading another model's surface, declaring cases instead of branching, unfolding composite inputs, and letting one construction trigger the next.
+
+Each mechanism replaces a whole family of procedural code.
 
 | Mechanism | Pydantic feature | What it replaces |
 |:---|:---|:---|
 | **Wiring** | `from_attributes`, aliases | Adapter classes, DTO converters, mapping layers |
-| **Dispatch** | Discriminated unions, smart enums | `if/elif` chains, `match/case` blocks |
-| **Orchestration** | `@cached_property` + `model_validate` | Service-layer orchestration code |
+| **Dispatch** | Discriminated unions, enum-owned classification | `if/elif` chains, `match/case` blocks |
+| **Orchestration** | `@cached_property` + `model_validate` | Service-layer coordination code |
 
 ---
 
 ## Why Mechanisms Matter
 
-A single model proves one thing. Mechanisms are what scale construction from one model to a graph of models. They explain how data flows between machines, how the correct type is selected, and how proven objects drive further proof. Without them, TCA proves individual objects. With them, TCA composes proofs into programs.
+A single model proves one thing. Mechanisms are what scale construction from one proof to a graph of proofs. They explain:
+
+- how one model can read another model's declared surface
+- how a known set of cases can route into the right variant
+- how a proven object can naturally trigger the next proven object
+
+Without these mechanisms, TCA proves individual objects. With them, TCA composes proofs into programs.
+
+To keep the teaching legible, the examples below all stay in one world: stock exchange data entering a trading domain.
 
 ---
 
-## Wiring: `from_attributes`
+## Wiring: Read Another Model's Surface
 
-When a model declares `from_attributes=True`, it constructs by reading attributes from another object by name. Field names are the wiring. Properties count — Pydantic reads them via `getattr`. No mapping code, no adapter functions, no intermediate dictionaries. One object's surface becomes another object's input.
+When a model declares `from_attributes=True`, it constructs by reading attributes from another object by name. Stored fields count. Properties count too. Field names are the wiring.
 
 ```python
-Celsius = Annotated[float, Ge(-273.15)]
-Fahrenheit = Annotated[float, Ge(-459.67)]
-PressureKPa = Annotated[float, Gt(0)]
-
-class RawSensor(BaseModel, frozen=True, extra="forbid"):
-    temperature_celsius: Celsius
-    pressure_kpa: PressureKPa
+class VenueQuote(BaseModel, frozen=True):
+    venue: VenueName
+    symbol: Symbol
+    bid: Price
+    ask: Price
 
     @property
-    def temperature_fahrenheit(self) -> Fahrenheit:
-        return self.temperature_celsius * 9/5 + 32
+    def mid(self) -> Price:
+        return Price((self.bid + self.ask) / 2)
 
-class DisplayReading(BaseModel, frozen=True, extra="forbid", from_attributes=True):
-    temperature_fahrenheit: Fahrenheit  # reads RawSensor's property via getattr
-    pressure_kpa: PressureKPa           # reads RawSensor's stored field
+class QuoteSummary(BaseModel, frozen=True, from_attributes=True):
+    venue: VenueName
+    symbol: Symbol
+    mid: Price
 ```
 
-`DisplayReading.model_validate(raw_sensor)` reads attributes by name. Properties and stored fields are both readable. Name agreement IS the wiring.
+`QuoteSummary.model_validate(venue_quote)` reads `venue`, `symbol`, and `mid` from the `VenueQuote` surface. No mapper function. No intermediate dict. No DTO conversion pass.
 
-Wiring is how data gets INTO machines. External data arrives with external names and external structure. `from_attributes` lets a machine read what it needs from any object whose attributes match its field names. Combined with aliases, this subsumes the entire category of "data mapping" code that proliferates in conventional architectures: adapter classes, DTO converters, serialization layers. In TCA, the field declaration is the mapping. Where bounded contexts maintain deliberately distinct vocabularies, aliases and before-validators declare the translation on the model itself rather than in an external adapter layer.
+This is why wiring matters: it replaces the reflex to copy data from one shape into another procedurally. In TCA, if one model is already exposing the surface another model needs, the next model should read that surface directly.
+
+Aliases extend the same idea across boundaries. A foreign model can accept external names while still exposing owned names internally. A downstream domain model can then keep speaking domain language.
 
 ---
 
-## Dispatch: Discriminated Unions and Smart Enums
+## Dispatch: Declare Cases Instead Of Branching
 
 Instead of branching on raw data to decide which type to construct, declare a variant for each case. Each variant carries a `Literal` tag. Pydantic reads the tag and routes to the correct variant automatically. The variant's fields ARE the result.
 
 ```python
-class Shipped(BaseModel, frozen=True, extra="forbid"):
-    kind: Literal["shipped"] = "shipped"
-    tracking: TrackingNumber
-    carrier: CarrierName
+class TradeEvent(BaseModel, frozen=True):
+    event_type: Literal["trade"] = "trade"
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
 
-class Cancelled(BaseModel, frozen=True, extra="forbid"):
-    kind: Literal["cancelled"] = "cancelled"
-    reason: CancellationReason
-    refund: RefundAmount
+class HaltEvent(BaseModel, frozen=True):
+    event_type: Literal["halt"] = "halt"
+    symbol: Symbol
+    reason: HaltReason
 
-OrderStatus = Annotated[
-    Shipped | Cancelled,
-    Field(discriminator="kind")
+class AuctionEvent(BaseModel, frozen=True):
+    event_type: Literal["auction"] = "auction"
+    symbol: Symbol
+    auction_price: Price
+
+ExchangeEvent = Annotated[
+    TradeEvent | HaltEvent | AuctionEvent,
+    Field(discriminator="event_type"),
 ]
 
-status = TypeAdapter(OrderStatus).validate_python(raw)
+event = TypeAdapter(ExchangeEvent).validate_python(raw_event)
 ```
 
-A discriminated union dispatches INTO a type whose fields already contain the answer. A `match/case` block dispatches and then you write the logic for each case. Here, selecting the variant IS the determination. Construction replaces computation.
+A discriminated union dispatches into a type whose fields already contain the answer. A `match` statement dispatches and then asks you to write the meaning for each branch by hand. Here, selecting `HaltEvent` already means "this is a halt and it carries a halt reason." Construction replaces branch code.
 
-**Enum-first classification.** When classification produces a member of a closed vocabulary, the enum owns the classification logic. A smart enum (`StrEnum` with classmethods and properties) classifies inputs into its members. The enum is the authority on which of its members an input belongs to. Wrappers expose the result via a property that delegates to the enum. Consumers ask the enum; they do not replicate its logic.
+Dispatch also includes enum-owned classification. When the answer is a member of a closed vocabulary, the enum should own the classification logic.
 
 ```python
-class TenorBucket(StrEnum):
-    SHORT = "short"
-    MEDIUM = "medium"
-    LONG = "long"
+class SpreadSignal(StrEnum):
+    NORMAL = "normal"
+    WIDE = "wide"
 
     @classmethod
-    def from_days(cls, days: DaysToMaturity) -> TenorBucket:
-        if days <= 90: return cls.SHORT
-        if days <= 365: return cls.MEDIUM
-        return cls.LONG
+    def from_spread(cls, spread: Spread) -> SpreadSignal:
+        if spread >= Spread("0.50"):
+            return cls.WIDE
+        return cls.NORMAL
 ```
 
-The [building block classifier](building-block-classifier.md) demonstrates enum-first classification at scale: `AnnotationKind.from_annotation` classifies a type annotation, a wrapper exposes the result as a property, and a discriminated union routes on it. Both are dispatch. The construction pipeline selects the correct case and the answer is baked into the type.
+The important point is ownership. Consumers should not replicate classification logic in scattered helpers. They should ask the union or the enum that owns the cases.
 
 ---
 
-## Orchestration: Projection-Driven Construction
+## Orchestration: Let One Construction Trigger The Next
 
-The first two mechanisms describe how values flow between models (wiring) and how the correct type is selected (dispatch). The third mechanism describes how proven objects drive further proof.
+The first two mechanisms describe how values flow between models and how the correct case is selected. The third mechanism describes how proven objects drive further proof.
 
-A `@cached_property` that calls `model_validate` is a lazy construction trigger. The projection fires on first access, constructs a new proven object, and caches it permanently on the frozen model. Each step produces a proven object from a proven object. The chain is: construction, derivation, construction, derivation, terminal.
+A `@cached_property` that calls `model_validate` is a lazy construction trigger. The projection fires on first access, constructs a new proven object, and caches it permanently on the frozen model.
 
 ```python
-class ClassifierRun(BaseModel, frozen=True, extra="forbid"):
-    target: ImportPath
+class DomainTrade(BaseModel, frozen=True, from_attributes=True):
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
+
+class TradeTicket(BaseModel, frozen=True, from_attributes=True):
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
+
+class CapturedNasdaqTrade(BaseModel, frozen=True):
+    raw_message: str
 
     @cached_property
-    def model_class(self) -> type[BaseModel]:
-        return self.target.resolve()
+    def foreign_trade(self) -> NasdaqTradeWire:
+        return NasdaqTradeWire.model_validate_json(self.raw_message)
 
     @cached_property
-    def tree(self) -> ModelTree:
-        return ModelTree.model_validate(self.model_class)
+    def domain_trade(self) -> DomainTrade:
+        return DomainTrade.model_validate(self.foreign_trade)
 
     @cached_property
-    def report(self) -> TreeReport:
-        return TreeReport.model_validate(self.tree)
-
-    @cached_property
-    def text(self) -> str:
-        return self.report.text
+    def ticket(self) -> TradeTicket:
+        return TradeTicket.model_validate(self.domain_trade)
 ```
 
-`run.text` forces `report`, which forces `tree`, which forces `model_class`. Nothing fires until demanded.
+`captured.ticket` forces `domain_trade`, which forces `foreign_trade`. Nothing fires until demanded. Once it fires, each stage is a proven object and the result is cached on the frozen root.
 
-Orchestration is what separates TCA from a validation framework. It replaces the service-layer coordination code that normally connects proven inputs to proven outputs through procedural steps. In a well-shaped TCA program, that coordination collapses into projections on frozen models.
+Orchestration is what makes TCA a programming paradigm instead of a validation library. It replaces the service-layer reflex to coordinate stages procedurally. In a well-shaped TCA program, that coordination collapses into projections on the model that owns the semantic path.
+
+---
+
+## How Mechanisms Produce Broader Patterns
+
+The broader construction patterns are what architects usually feel first. The mechanisms are what make those patterns work.
+
+- **Mirror the foreign schema** uses aliases and before-normalization at the boundary.
+- **Read another model's surface** is wiring directly.
+- **Declare cases instead of branching** is dispatch directly.
+- **Unfold composite inputs** is dispatch plus shape-driven recursion.
+- **Let one construction trigger the next** is orchestration directly.
+- **Render the final shape** is usually a projection emerging from an already-proven world.
+
+This is why the broader pattern language is larger than three, while the deep mechanism set can still remain small.
 
 ---
 
 ## How The Mechanisms Compose
 
-Real TCA programs do not use the mechanisms in isolation. They interlock:
+Real TCA programs do not use the mechanisms in isolation. They interlock.
 
-1. **Wiring feeds dispatch.** A model reads another's surface via `from_attributes`. One of the attributes it reads is a tag property. That tag drives a discriminated union during coercion. Wiring delivers the data; dispatch selects the type.
-
-2. **Dispatch settles shape.** The selected variant's fields carry the answer. `Literal` fields on the variant are proof obligations validated during construction. The variant IS the classification result.
-
-3. **Shape triggers orchestration.** A variant with a `children` field causes Pydantic to read `.children` from the source — which fires `model_validate` on the inner type. A variant without that field stops recursion. The shape IS the orchestration decision.
+1. A foreign message is normalized into a mirror model with owned names.
+2. A downstream model wires from that surface through name agreement.
+3. If the input contains known cases, dispatch selects the right variant.
+4. If the proven result naturally leads to another proof, orchestration triggers the next construction.
 
 The construction graph has two kinds of edges that correspond to this composition:
 
 **Field edges** are eager. A field annotation creates a dependency that must be satisfied at construction time. If the child fails, the parent cannot exist.
 
-**Derivation edges** are lazy. A `@cached_property` that calls `model_validate` creates a dependency that fires on first access. The parent exists whether or not the derivation is ever demanded.
+**Derivation edges** are lazy. A `@cached_property` that calls `model_validate` creates a dependency that fires only when demanded.
 
-Inheritance is not a graph edge in this operational sense. When `Bond` inherits from `Instrument`, Bond's pipeline includes Instrument's fields and validators, but Bond does not depend on an Instrument instance. Inheritance defines machine families — related types that share construction logic. The type families from which discriminated unions select.
+Inheritance is not a graph edge in this operational sense. Inheritance defines related machine families that share construction behavior. Composition and derivation are what build the proof graph.
 
-The full proof graph is the union of field edges and derivation edges. The three mechanisms are how those edges fire.
+The full proof graph is the union of eager field edges and lazy derivation edges. Wiring, dispatch, and orchestration are the primary ways that graph executes.

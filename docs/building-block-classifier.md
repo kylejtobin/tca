@@ -1,6 +1,8 @@
 # Building Block Classifier
 
-The building block classifier is a recursive Pydantic type tree walker that classifies every field on any `BaseModel` into its structural building block. It is a pure TCA program: no LLM, no external services, one `model_validate` at the root cascades the entire classification. It demonstrates every mechanism in the specification — wiring, dispatch, orchestration, and the irreducible seam — in a single working program.
+The building block classifier is a recursive Pydantic type tree walker that classifies every field on any `BaseModel` into its structural building block. It is a pure TCA program: no LLM, no external services, one `model_validate` at the root cascades the entire classification.
+
+This is an advanced worked example, not the first teaching example a new reader should see. If you are new to TCA, start with the README and [Core Mechanisms](mechanisms.md). Come here once you already know the pattern language and want to watch those moves execute in a dense recursive program.
 
 The full implementation is in [`tca/building_block.py`](../tca/building_block.py).
 
@@ -9,6 +11,8 @@ The full implementation is in [`tca/building_block.py`](../tca/building_block.py
 ## Why This Example Matters
 
 This is not just a handy tool. It is proof that a non-trivial recursive program can live almost entirely in frozen models, self-classifying wrappers, discriminated unions, and projections. The calling code does almost nothing. The type tree wires itself. That is the TCA claim made concrete.
+
+It matters for a second reason too: it shows that the broader pattern language is not just for transport edges or business APIs. The same construction moves still work in a recursive structural analysis program. Once you can recognize wiring, dispatch, orchestration, recursive unfolding, and the irreducible seam here, you know the ideas are genuinely general.
 
 Every type in a Pydantic program is one of eight building blocks:
 
@@ -109,7 +113,7 @@ class DirectAnnotation(BaseModel, frozen=True, extra="forbid", from_attributes=T
     collection: Literal[False]    # no computation needed
 ```
 
-Selecting `OptionalAnnotation` IS the determination that `nullable=True`. Construction replaces computation.
+Selecting `OptionalAnnotation` IS the determination that `nullable=True`. This is the same move as "declare cases instead of branching," just in a more abstract domain. Construction replaces classification code.
 
 **Type role.** `ResolvedType` is a second `RootModel[object]` wrapper that classifies the inner type into one of the eight building blocks. Same pattern, different domain.
 
@@ -138,6 +142,8 @@ class ClassifiedNode(FieldEntry, extra="forbid"):
 
 No intermediate dictionaries. No extraction functions. No adapter code. The models read from each other through name agreement and property delegation. The type tree wires itself.
 
+This section is easy to underestimate because the domain is abstract. The common-sense architectural point is simple: one model exposes a surface, the next model reads it, and the mapping layer disappears.
+
 ---
 
 ## Recursion By Shape
@@ -146,7 +152,7 @@ No intermediate dictionaries. No extraction functions. No adapter code. The mode
 
 When Pydantic constructs `RecordBlock` from a `ResolvedType` via `from_attributes`, it reads `.children` — which fires `ModelTree.model_validate` on the inner type, producing more `ClassifiedNode` instances. When Pydantic constructs `LeafBlock`, it never reads `.children` because the field does not exist on the variant.
 
-Nobody writes "if record: descend." The variant's shape IS the recursion decision. The DU selects the variant. The variant's field declarations determine whether recursion happens. Construction IS descent.
+Nobody writes "if record: descend." The variant's shape IS the recursion decision. The DU selects the variant. The variant's field declarations determine whether recursion happens. This is the same move the README teaches as "unfold composite inputs": some variants are complete now, some are only complete once they construct more of their own kind.
 
 ---
 
@@ -157,6 +163,8 @@ The entire cascade has one procedural seam: the wrap validator on `ModelTree` th
 The seam also handles cycle detection via a `ContextVar[frozenset[type]]` that tracks visited types. Each recursive call sees the parent's frozenset plus the current type. If a type was already seen, construction short-circuits with `cycle=True` and empty fields.
 
 Everything else in the cascade — coercion, DU routing, construction chaining, property delegation, recursive descent — is pure construction. The seam is tiny, explicit, and justified.
+
+That matters because this is exactly how TCA wants procedure to behave: small, named, local, and terminal. The seam does one thing the type system cannot naturally express, and then construction resumes.
 
 ---
 
@@ -173,10 +181,12 @@ print(report)
 
 Two audiences, zero extra code: for humans, `__str__` returns indented text. For bots, `model_dump_json()` serializes the full recursive tree. The projection model IS the API.
 
+This is the same architectural move as "render the final shape" in the README. Output is not rebuilt in a presenter layer. It emerges from owned truth already proven upstream.
+
 ---
 
 ## What This Example Still Leaves Open
 
-The classifier is outstanding but not perfect. Some boundaries are still weakly modeled — bare `object` types where domain types could be tighter, `pyright: ignore` comments at the boundaries where the typing is not yet fully owned, and `ClassifierRun.target` as a bare `str` where a domain type could constrain it. The predicate table in `ResolvedType._BLOCK_MAP` is elegant but still closer to procedural classification than fully owned modeled classification.
+The classifier is outstanding but not perfect. Some boundaries are still weakly modeled: bare `object` types where domain types could be tighter, `pyright: ignore` comments at the boundaries where the typing is not yet fully owned, and `ClassifierRun.target` as a bare `str` where a domain type could constrain it. The predicate table in `ResolvedType._BLOCK_MAP` is elegant but still closer to procedural classification than fully owned modeled classification.
 
 These are not criticisms of the example. They are the frontier where the classifier itself could become more TCA — and they demonstrate that progressive hardening is an ongoing discipline, not a one-time achievement.

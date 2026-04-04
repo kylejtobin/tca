@@ -1,6 +1,6 @@
 # Program Architecture
 
-TCA is not merely a style for writing better models inside an otherwise conventional application. It is a claim about where the program should live. The domain context is the program. Routes expose it. Infrastructure starts it. Services, if they exist at all, are connectors so thin they are almost embarrassing. The app interior is railroaded by constructed certainty — there are no uncertain intermediate states.
+TCA is not merely a style for writing better models inside an otherwise conventional application. It is a claim about where the program should live. The domain context is the program. Routes expose it. Infrastructure starts it. Services, if they exist at all, are connectors so thin they are almost embarrassing. The app interior is railroaded by constructed certainty — there are no unmodeled uncertain intermediate states.
 
 ---
 
@@ -18,7 +18,7 @@ The inversion has a measurable consequence: the service layer should shrink unde
 
 **`main.py`** starts infrastructure: web server, database connections, dependency injection. It does not contain domain logic.
 
-**`api/`** handles transport: routes, middleware, HTTP concerns. One route per context. The route handler receives raw data, hands it to a context-owned contract, and returns the result. It does not interpret, enrich, or compute.
+**`api/`** handles transport: routes, middleware, HTTP concerns. One route per context. The route handler receives raw data, hands it to a context-owned contract, and returns the result. It may capture live input and hand it to construction, but it does not interpret, enrich, or compute domain meaning.
 
 **`domain/context/`** holds the actual program: frozen models, enums, constrained types, projections, and construction graphs. This is where construction, derivation, and program semantics live. The vast majority of the application's logic belongs here.
 
@@ -53,12 +53,12 @@ Request types, response projections, and route-level boundary contracts belong i
 A route handler should look something like:
 
 ```python
-@router.post("/retention/analyze")
-async def analyze_retention(request: AnalyzeRetentionRequest) -> RetentionAnalysis:
-    return RetentionAnalysis.model_validate(request)
+@router.post("/spread/evaluate")
+async def evaluate_spread(request: EvaluateSpreadRequest) -> SpreadOpportunity:
+    return SpreadOpportunity.model_validate(request)
 ```
 
-`AnalyzeRetentionRequest` and `RetentionAnalysis` are defined in the context, not in the API layer. The route handler is pure transport delegation. If the handler contains logic beyond wiring a request to a construction call and returning the result, that logic likely belongs in the context.
+`EvaluateSpreadRequest` and `SpreadOpportunity` are defined in the context, not in the API layer. The route handler is pure transport delegation. If the handler contains logic beyond capturing transport input, wiring a request to a construction call, and returning the result, that logic likely belongs in the context.
 
 ---
 
@@ -99,4 +99,5 @@ Even in these cases, the service should be so thin that it contains no domain in
 - **No route handlers with domain logic.** The route handler is transport. The domain context owns the meaning.
 - **No adapter layers between contexts that could share types directly.** If a translation layer exists only because of organizational tidiness, it is information loss.
 - **No helper functions that duplicate dispatch expressible as a discriminated union.** If branching selects behavior based on a tag, a DU should dispatch during construction.
-- **No uncertain intermediate states.** The app interior is proven context. Uncertainty belongs at the boundary. Effects belong after proof.
+- **No unmodeled uncertain intermediate states.** The app interior is proven context. Boundary uncertainty is still typed: foreign contracts, pending states, failure states, review states, and declared outcome variants. What TCA rejects is stringly, procedural uncertainty smeared through controllers and service code.
+- **Effects belong after proof or at irreducible seams that trigger/resume proof.** Transport, persistence, retries, checkpointing, and wake-up mechanics may exist, but they are not where semantics live. They hand raw reality to construction or resume from a previously known state.
