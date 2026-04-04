@@ -17,36 +17,39 @@ Type Construction Architecture is the discipline of writing programs in these co
 
 Most software hides the program in a service layer. Raw data arrives, service code interprets it, helper functions map it, branching code classifies it, and passive domain objects carry the results. TCA inverts that arrangement.
 
-The question to hold while reading the diagram is simple: **where does the program live?** On the left, it lives in the service layer. On the right, it moves into the domain types, and everything around it gets thinner.
+Read the diagram as two columns. In the conventional column, the program lives in the service layer. In the TCA column, it moves into the domain types, and the surrounding layers thin out.
 
 ```mermaid
-flowchart LR
-    subgraph conv[" "]
-        direction TB
+block-beta
+    columns 2
+
+    block:conv:1
+        columns 1
         cHead["Conventional"]
-        cAPI["API"]
-        cService["Service<br/>the program lives here"]
-        cDomain["Domain<br/>passive DTOs"]
-        cPersist["Persistence"]
-        cHead --- cAPI --> cService --> cDomain --> cPersist
+        cAPI["<b>api/</b><br/>receives raw requests"]
+        cService["<b>service/</b><br/>interprets and coordinates"]
+        cDomain["<b>domain/</b><br/>passive data shapes"]
+        cPersist["<b>persistence/</b><br/>stores produced state"]
     end
 
-    subgraph tca[" "]
-        direction TB
+    block:tca:1
+        columns 1
         tHead["TCA"]
-        tInfra["main.py<br/>starts infrastructure"]
-        tAPI["api/<br/>hands raw data to contracts"]
-        tDomain["domain/context/<br/>the program lives here"]
-        tService["service/<br/>thin connector, often empty"]
-        tHead --- tInfra --> tAPI --> tDomain --> tService
+        tInfra["<b>main.py</b><br/>starts infrastructure"]
+        tAPI["<b>api/</b><br/>hands raw data to contracts"]
+        tDomain["<b>domain/context/</b><br/>construction is the program"]
+        tService["<b>service/</b><br/>thin connector, often empty"]
     end
 
-    classDef heavy fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px
+    classDef heavy fill:#0f172a,color:#f8f4e8,stroke:#0f172a,stroke-width:2px
     classDef light fill:#eff6ff,color:#0f172a,stroke:#2563eb,stroke-width:1.5px
-    classDef header fill:#f8fafc,color:#0f172a,stroke:#94a3b8,stroke-width:2px,font-weight:bold
+    classDef header fill:#0f172a,color:#f8f4e8,stroke:#0f172a,stroke-width:2px,font-weight:bold
+    classDef bad fill:#991b1b,color:#f8f4e8,stroke:#7f1d1d,stroke-width:2px
+    classDef good fill:#166534,color:#f8f4e8,stroke:#14532d,stroke-width:2px
 
     class cHead,tHead header
-    class cService,tDomain heavy
+    class cService bad
+    class tDomain good
     class cAPI,cDomain,cPersist,tInfra,tAPI,tService light
 ```
 
