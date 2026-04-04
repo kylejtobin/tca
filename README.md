@@ -9,44 +9,43 @@
 
 A Pydantic model is not a schema. It is a machine with a four-layer construction pipeline that fires every time data enters it. If the object exists, every constraint declared in its type was satisfied. If construction fails, no object exists. There is no third outcome.
 
-Type Construction Architecture is the discipline of writing programs in these construction semantics. Define the types. Wire them as fields on other types. Let `model_validate` execute the graph. Construction is proof. Derivation extends proof. The program is the construction graph — not the procedural glue around it.
+Type Construction Architecture is the discipline of writing programs in these construction semantics. Define the types. Compose proven models as fields. Let projections derive further truth. Let declared dispatch, staged lifting, and `model_validate` execute the graph. Construction is proof. Derivation extends proof. The program is the construction graph — not the procedural glue around it.
 
 ---
 
 ## Why TCA Exists
 
-Most programs look like this:
+Most software hides the program in a service layer. Raw data arrives, service code interprets it, helper functions map it, branching code classifies it, and passive domain objects carry the results. TCA inverts that arrangement.
 
-| Layer | What it does |
-|:---|:---|
-| API | Receives raw data |
-| Service | Interprets, maps, coordinates, enriches, decides |
-| Domain | Passive DTOs the service operates on |
-| Persistence | Stores whatever the service produced |
-
-The service layer is where "the program" lives. It is full of mapping code, adapter functions, if/elif chains, intermediate dictionaries, and uncertain states. Domain types are bags the service fills.
-
-TCA inverts this. The program moves from the service layer into the domain types:
+The question to hold while reading the diagram is simple: **where does the program live?** On the left, it lives in the service layer. On the right, it moves into the domain types, and everything around it gets thinner.
 
 ```mermaid
 flowchart LR
-    subgraph conv["Conventional"]
+    subgraph conv[" "]
         direction TB
-        cAPI["API"] --> cService["SERVICE — the program lives here"]
-        cService --> cDomain["Domain — passive DTOs"]
-        cDomain --> cPersist["Persistence"]
+        cHead["Conventional"]
+        cAPI["API"]
+        cService["Service<br/>the program lives here"]
+        cDomain["Domain<br/>passive DTOs"]
+        cPersist["Persistence"]
+        cHead --- cAPI --> cService --> cDomain --> cPersist
     end
 
-    subgraph tca["TCA"]
+    subgraph tca[" "]
         direction TB
-        tInfra["main.py"] --> tAPI["api/"]
-        tAPI --> tDomain["DOMAIN/CONTEXT/ — the program lives here"]
-        tDomain --> tService["service/ — thin or empty"]
+        tHead["TCA"]
+        tInfra["main.py<br/>starts infrastructure"]
+        tAPI["api/<br/>hands raw data to contracts"]
+        tDomain["domain/context/<br/>the program lives here"]
+        tService["service/<br/>thin connector, often empty"]
+        tHead --- tInfra --> tAPI --> tDomain --> tService
     end
 
-    classDef heavy fill:#0f172a,color:#ffffff,stroke:#0f172a
-    classDef light fill:#eff6ff,color:#0f172a,stroke:#2563eb
+    classDef heavy fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px
+    classDef light fill:#eff6ff,color:#0f172a,stroke:#2563eb,stroke-width:1.5px
+    classDef header fill:#f8fafc,color:#0f172a,stroke:#94a3b8,stroke-width:2px,font-weight:bold
 
+    class cHead,tHead header
     class cService,tDomain heavy
     class cAPI,cDomain,cPersist,tInfra,tAPI,tService light
 ```
@@ -55,10 +54,10 @@ What disappears when the program moves into the types:
 
 | Conventional artifact | Why it disappears |
 |:---|:---|
-| Adapter classes and DTO converters | `from_attributes` and aliases are the mapping |
-| `if/elif` chains that classify inputs | Discriminated unions dispatch during construction |
-| Service methods that compute from model fields | Projections on the model own intrinsic derivation |
-| Intermediate dictionaries and uncertain states | Frozen construction leaves no partial objects |
+| Mapper classes, DTO converters, and adapter layers | Foreign schema mirroring and foreign-to-domain lifting turn translation into staged construction |
+| `if/elif` chains that classify inputs | Declared dispatch routes structurally during construction |
+| Service methods that compute from model fields | Composition and projection let models own and derive semantics directly |
+| Intermediate dictionaries and uncertain states | Frozen construction replaces partial translation artifacts with proven objects |
 
 The domain types are not passive. They carry the construction logic. They own classification, derivation, and boundary translation. Services shrink to almost nothing because the models already did the work. The app interior is railroaded by constructed certainty.
 
@@ -89,58 +88,105 @@ flowchart LR
 
 The loop is lazy (projections fire on first access), deterministic (frozen models guarantee evaluation-order independence), and compositional (each model's proof is independent of how it was demanded).
 
-**Procedure has a proper place.** Some boundaries resist pure construction — foreign runtime objects, positional data structures, untyped external surfaces. At those boundaries, a small piece of procedure normalizes foreign input into owned truth: a wrapper derives `kind`, `nullable`, `resolved_type` from a raw annotation, and from that point forward the construction graph takes over. The discipline is that these seams must be irreducible, contained, and terminal — they bridge into the graph, never spread through it. See **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)**.
+**Procedure has a proper place.** Some boundaries resist pure construction — live transport edges, positional data structures, and untyped external surfaces. At those boundaries, a small piece of procedure catches the junk, normalizes it into owned truth, or stages it into a foreign model that can then be lifted into domain semantics. The discipline is that these seams must be irreducible, contained, and terminal — they bridge into the graph, never spread through it. See **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)**.
 
 ---
 
-## Three Mechanisms
+## Construction Patterns
 
-Three construction mechanisms describe how types compose. Each eliminates an entire category of procedural code.
+These patterns describe how construction computes. They are not a closed taxonomy, but they are the moves an architect actually needs to see: how foreign input becomes owned truth, how semantic worlds accumulate, how structure routes, how proof extends, and how a finished program realizes output.
 
-```mermaid
-flowchart LR
-    W["Wiring<br/>moves data between models"]
-    Di["Dispatch<br/>selects which model"]
-    O["Orchestration<br/>chains proven models into further proof"]
+### Ingress Capture
 
-    W -->|feeds| Di -->|settles shape that triggers| O
+Some systems have a live edge that must catch unstable transport reality before construction can own it. Websocket frames, stream chunks, and raw JSON strings belong here. This active seam is not the program. Its job is to catch the junk and hand it to construction as quickly as possible.
 
-    classDef mech fill:#eff6ff,color:#0f172a,stroke:#2563eb
+```python
+async for raw_message in websocket:
+    event = ExchangeMessage.model_validate_json(raw_message)
+```
 
-    class W,Di,O mech
+### Boundary Normalization
+
+Some boundaries arrive in shapes that cannot be consumed directly by named fields. A small seam converts foreign structure into owned truth, then construction resumes.
+
+```python
+@model_validator(mode="before")
+@classmethod
+def _from_tuple(cls, data: tuple[str, FieldInfo]) -> dict[str, object]:
+    return {"field_name": data[0], "annotation": data[1].annotation}
+```
+
+### Composition
+
+One model owns other proven models as fields. This is how a program accumulates a larger semantic world without writing coordination code.
+
+```python
+class FieldEntry(BaseModel, frozen=True, from_attributes=True):
+    field_name: str
+    shape: AnnotationShape = Field(alias="annotation")
+
+class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
+    block_shape: BlockShape = Field(alias="resolved_type")
+```
+
+### Projection
+
+Once a model owns proven structure, it can derive further truth from that owned proof. The projection surface is not a formatting trick. It is where models think.
+
+```python
+@property
+def nullable(self) -> bool:
+    return self.shape.nullable
+
+@property
+def children(self) -> tuple[ClassifiedNode, ...]:
+    return self.block_shape.children
 ```
 
 ### Wiring
 
-`from_attributes=True` lets one model read another's surface by name. Properties count. No adapter classes, no mapping layers, no intermediate dictionaries. The field names are the wiring.
+`from_attributes=True` lets one model borrow another model's declared surface. Stored fields and properties both count. The surface is the contract.
 
 ```python
-class DisplayReading(BaseModel, frozen=True, extra="forbid", from_attributes=True):
-    temperature_fahrenheit: Fahrenheit  # reads RawSensor's @property
-    pressure_kpa: PressureKPa           # reads RawSensor's stored field
+class TreeReport(BaseModel, frozen=True, from_attributes=True):
+    reports: tuple[FieldReport, ...] = Field(alias="fields")
 ```
 
-### Dispatch
+### Foreign Schema Mirroring
 
-Discriminated unions route on tags. Smart enums classify inputs into their members. Instead of branching on raw data, declare a variant for each case. The variant's fields are the answer.
+Sometimes the fastest way to own a foreign boundary is to model the foreign surface faithfully in its own vocabulary, then give your field names aliases that match the external schema. The foreign model owns the exchange's language. Your domain model does not need to.
 
 ```python
-class Shipped(BaseModel, frozen=True, extra="forbid"):
-    kind: Literal["shipped"] = "shipped"
-    tracking: TrackingNumber
-    carrier: CarrierName
+class ExchangeTrade(BaseModel, frozen=True, populate_by_name=True):
+    symbol: Symbol = Field(alias="sym")
+    price: Price = Field(alias="px")
+    quantity: Quantity = Field(alias="qty")
+```
 
-class Cancelled(BaseModel, frozen=True, extra="forbid"):
-    kind: Literal["cancelled"] = "cancelled"
-    reason: CancellationReason
-    refund: RefundAmount
+### Declared Dispatch
 
-OrderStatus = Annotated[Shipped | Cancelled, Field(discriminator="kind")]
+Routing facts are declared structurally, not computed imperatively. Pydantic can dispatch on shared fields, nested discriminators, callable discriminators, or shape-exposing wrappers. In the classifier, annotation form and type kind both route through discriminated unions.
+
+```python
+class FieldEntry(BaseModel, frozen=True, from_attributes=True):
+    shape: AnnotationShape = Field(alias="annotation")
+
+class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
+    block_shape: BlockShape = Field(alias="resolved_type")
+```
+
+### Recursive Descent
+
+Structure decides whether construction continues deeper. No traversal function asks whether to recurse. The selected variant either has children or it does not.
+
+```python
+class ModelTree(BaseModel, frozen=True, from_attributes=True, populate_by_name=True):
+    fields: tuple[ClassifiedNode, ...]
 ```
 
 ### Orchestration
 
-A `@cached_property` that calls `model_validate` is a lazy construction trigger. Each step produces a proven object from a proven object. This is what makes TCA a programming paradigm, not a validation framework.
+Projection becomes orchestration when it triggers further construction. This is the construction-derivation loop made concrete.
 
 ```python
 @cached_property
@@ -151,6 +197,39 @@ def tree(self) -> ModelTree:
 def report(self) -> TreeReport:
     return TreeReport.model_validate(self.tree)
 ```
+
+### Terminal Realization
+
+Programs eventually surface their proven structure as text, JSON, reports, or another final artifact. That last rendering step is part of the construction program too.
+
+```python
+@computed_field
+@cached_property
+def text(self) -> str:
+    ...
+```
+
+---
+
+## Foreign-to-Domain Lifting
+
+Transport capture and foreign mirroring are not the end of the boundary story. Once a foreign model exists, owned semantics can take over by constructing the domain model directly from that proven foreign object. This is not mapper code. It is staged construction.
+
+```python
+class DomainTrade(BaseModel, frozen=True, from_attributes=True):
+    symbol: Symbol
+    price: Price
+    quantity: Quantity
+```
+
+The sequence is:
+
+1. catch unstable transport input at the live seam
+2. construct a foreign model that owns the external schema
+3. construct the domain model from that proven foreign object
+4. continue the program in owned semantics
+
+This is why TCA runs circles around ports and adapters. The boundary still exists, but the translation lives in executable type surfaces instead of mapper classes, DTO churn, and handwritten conversion code.
 
 ---
 
@@ -244,23 +323,31 @@ This phenomenon is formalized as **[Semantic Index Types](https://github.com/kyl
 
 ## What's In This Repo
 
-| Path | What it is |
-|:---|:---|
-| **[`docs/manifesto.md`](docs/manifesto.md)** | Why TCA exists, what we believe, what we reject |
-| **[`CLAUDE.md`](CLAUDE.md)** | Reusable always-on Claude charter for TCA projects |
-| **[`.claude/README.md`](.claude/README.md)** | Reusable Claude architecture for resisting TCA drift during generation |
-| **[`docs/`](docs/)** | The specification, split by ownership |
-| **[`docs/overview.md`](docs/overview.md)** | Front door to the spec — thesis, evaluation model, navigation |
-| **[`docs/program-architecture.md`](docs/program-architecture.md)** | Where the program lives — the application shape |
-| **[`docs/construction-machine.md`](docs/construction-machine.md)** | The four-layer pipeline, projection surface, and trust conditions |
-| **[`docs/mechanisms.md`](docs/mechanisms.md)** | Wiring, dispatch, orchestration — how types compose |
-| **[`docs/roots-and-proof-obligations.md`](docs/roots-and-proof-obligations.md)** | What constitutes a root, how to find proof obligations |
-| **[`docs/principles.md`](docs/principles.md)** | Governing rules — structural discipline, ownership, naming |
-| **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)** | Where procedure belongs — the governing test for seams |
-| **[`docs/semantic-index-types.md`](docs/semantic-index-types.md)** | When the compilation target reads natural language |
-| **[`docs/failure-modes.md`](docs/failure-modes.md)** | Catalog of TCA failures — every error is a design error |
-| **[`docs/building-block-classifier.md`](docs/building-block-classifier.md)** | Worked example demonstrating every mechanism |
-| **[`tca/building_block.py`](tca/building_block.py)** | The classifier implementation — one file, heavily annotated |
+### Start Here
+
+- **[`docs/manifesto.md`](docs/manifesto.md)**: Why TCA exists, what we believe, what we reject
+- **[`docs/overview.md`](docs/overview.md)**: Front door to the specification — thesis, evaluation model, navigation
+
+### Core Theory
+
+- **[`docs/program-architecture.md`](docs/program-architecture.md)**: Where the program lives — the application shape
+- **[`docs/construction-machine.md`](docs/construction-machine.md)**: The four-layer pipeline, projection surface, and trust conditions
+- **[`docs/roots-and-proof-obligations.md`](docs/roots-and-proof-obligations.md)**: What constitutes a root, how to find proof obligations
+- **[`docs/principles.md`](docs/principles.md)**: Governing rules — structural discipline, ownership, naming
+- **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)**: Where procedure belongs — the governing test for seams
+- **[`docs/semantic-index-types.md`](docs/semantic-index-types.md)**: When the compilation target reads natural language
+- **[`docs/failure-modes.md`](docs/failure-modes.md)**: Catalog of TCA failures — every error is a design error
+
+### Patterns And Example
+
+- **[`docs/mechanisms.md`](docs/mechanisms.md)**: Pattern language for how construction computes
+- **[`docs/building-block-classifier.md`](docs/building-block-classifier.md)**: Worked example showing the pattern language in a live program
+- **[`tca/building_block.py`](tca/building_block.py)**: The classifier implementation — one file, heavily annotated
+
+### Reusable Claude Scaffolding
+
+- **[`CLAUDE.md`](CLAUDE.md)**: Reusable always-on Claude charter for TCA projects
+- **[`.claude/README.md`](.claude/README.md)**: Reusable Claude architecture for resisting TCA drift during generation
 
 ---
 
@@ -274,7 +361,7 @@ This phenomenon is formalized as **[Semantic Index Types](https://github.com/kyl
 
 **I want the architecture.** Read **[`docs/program-architecture.md`](docs/program-architecture.md)** — where the program lives and why services disappear.
 
-**I want the code.** Read **[`tca/building_block.py`](tca/building_block.py)** — one file demonstrating every mechanism in the spec.
+**I want the code.** Read **[`tca/building_block.py`](tca/building_block.py)** — one file showing many of the patterns in the spec working together.
 
 **I need to know where procedure belongs.** Read **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)** — how to tell a real seam from a modeling failure.
 
