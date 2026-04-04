@@ -2,7 +2,38 @@
 
 This file is intentionally modular.
 
-Most of it should be reusable across TCA projects. The section that should change most from repo to repo is `Project Identity`.
+Treat it as the always-on charter for a TCA project. The reusable scaffold is not this file alone. It is this file plus the minimal `.claude/` package.
+
+## Universal TCA Frame
+
+The main failure mode is not misunderstanding TCA in chat. The main failure mode is generation drift while producing code.
+
+Do not trust momentary confidence over this frame. Extended generation drifts toward default training. The reusable Claude scaffold exists to force repeated self-correction before, during, and after that drift.
+
+The universal defaults are:
+
+- the type system is the semantic layer
+- the model is the program
+- construction is proof
+- derivation extends proof
+- unknown outcomes should become typed possibility spaces, not procedural control state
+- procedure belongs only at irreducible seams that capture, normalize, trigger, or resume construction
+
+When in doubt:
+
+- model more
+- name the concept
+- strengthen the type
+- prefer `RootModel` and focused `BaseModel` over bare primitives
+- prefer `Field(...)`, `Annotated`, aliases, `Literal`, and `Field(discriminator=...)` before validators or free procedure
+- prefer `model_validate`, `model_validate_json`, and `from_attributes` for staged lifting and wiring
+- prefer `@computed_field`, `@cached_property`, and `@property` for intrinsic derivation
+- use `model_validator(mode="before")` or `mode="wrap"` only at irreducible boundaries; use `mode="after"` or `field_validator` only when the proof cannot be carried more declaratively
+- keep effects small, terminal, and justified
+
+Do not solve design weakness with casts, suppressions, ignores, generic containers, semantic controllers, or stringly control state.
+
+Every error is a design error. The fix is always more modeling. Never less.
 
 ## Project Identity
 
@@ -15,46 +46,15 @@ The goal here is not only to explain TCA, but to build examples, docs, and agent
 
 When working here, assume the quality bar is architectural. Good output is not merely valid Python or coherent prose. Good output strengthens TCA as a programming paradigm and resists the patterns that usually weaken it.
 
-## Core Drift Warning
+## Optional Local Reading Pointers
 
-The main failure mode is not misunderstanding TCA in chat. The main failure mode is generation drift while producing code.
+These are optional deepening surfaces for this repository. They are not required for the reusable scaffold to behave correctly:
 
-Two drifts matter most:
-
-1. procedural fallback
-2. flat modeling
-
-Procedural fallback means helper functions, service logic, mapping layers, branching code, and free procedure appearing where stronger structure should have carried the work.
-
-Flat modeling means collapsing named domain meaning into `str`, `dict`, `Any`, `object`, loose primitives, and other generic shapes where sharper domain types should exist.
-
-## Default Response
-
-When in doubt:
-
-- model more
-- name the concept
-- strengthen the type
-- use wiring, dispatch, and projection instead of free procedure
-- keep procedure only at irreducible seams
-
-Do not solve design weakness with casts, suppressions, ignores, or generic containers.
-
-Every error is a design error. The fix is always more modeling. Never less.
-
-## Build In TCA Mode
-
-Use these defaults unless the domain proves otherwise:
-
-- the model is the program
-- construction is proof
-- frozen models carry certainty
-- `domain/context/` is the home of the program
-- API and service layers are transport and plumbing
-- derivation belongs on the model that owns the proven fields
-- discriminated unions replace branching on tags or categories
-- named products replace anonymous dictionaries
-- enums, wrappers, and constrained types replace bare primitives for named concepts
+- `README.md` for the front door and build path
+- `docs/manifesto.md` for the why
+- `docs/overview.md` for the spec map
+- `docs/irreducible-seams.md` for where procedure belongs
+- `tca/building_block.py` for a concrete TCA program
 
 ## Use The Shared Frame
 
@@ -63,30 +63,21 @@ Do not duplicate the TCA reasoning frame into every prompt or workflow surface.
 This repository uses a rules-first, hook-driven Claude architecture:
 
 - `.claude/rules/` carries the shared cognitive frame
-- `.claude/settings.json` runs edit audits after generation
-- `.claude/README.md` explains the Claude architecture itself
+- `.claude/settings.json` runs prompt-time reminders, edit audits, and stop-time self-reflection hooks
+- `.claude/skills/` holds a few real Claude skills for reusable TCA workflows
+- `.claude/README.md` explains the scaffold itself
 
-Treat those files as the primary operational surface for keeping Claude aligned during generation.
-The reusable scaffold is not this file alone. It is this file plus the minimal `.claude/` package.
+Treat those files as the primary operational surface for keeping Claude aligned during generation. The hooks are not optional optimization. They are part of the safety system.
 
-## Read Next
-
-If you need deeper grounding while working:
-
-- `docs/manifesto.md` for the why
-- `docs/overview.md` for the front door to the theory
-- `docs/irreducible-seams.md` for where procedure belongs
-- `tca/building_block.py` for a concrete TCA program
-
-## Reuse Pattern
+## Reuse / Adaptation Instructions
 
 If this setup is copied into another TCA repository:
 
-- copy `CLAUDE.md`
-- copy the minimal `.claude/` directory with it
-- rewrite `Project Identity`
-- keep the drift warning unless the target repo has a sharper known failure mode
-- keep the default response unless the target repo has stronger local discipline
-- update the reading pointers to that repo's theory and example surfaces
+1. copy `CLAUDE.md`
+2. copy the minimal `.claude/` directory with it
+3. rewrite `Project Identity`
+4. replace `Local Reading Pointers` with that repo's theory and example surfaces
+5. keep the universal anti-drift frame unless the target repo has a stronger proven alternative
+6. add or sharpen project-specific rules only when the new repo has a sharper known drift than the default set
 
-The point of this file is to keep the always-on frame compact, reusable, and anti-drift. The point of the accompanying `.claude/` directory is to help Claude actually stay in that mode while generating.
+The point of this file is to keep the always-on frame compact, reusable, and anti-drift. The point of the accompanying `.claude/` package is to help Claude actually stay in that mode while generating.

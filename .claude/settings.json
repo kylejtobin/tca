@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Reframing prompt through TCA",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Reframe the request into TCA construction semantics before reasoning. Prefer RootModel, focused BaseModel, Field(...), Annotated, aliases, Literal with Field(discriminator=...), from_attributes, model_validate/model_validate_json, and projection. Use model_validator(mode=\\\"before\\\") or mode=\\\"wrap\\\" only at irreducible seams; use mode=\\\"after\\\" or field_validator only when proof cannot be carried more declaratively. Resist controllers, translators, helper layers, staging dicts, and procedural coordination as the semantic center.\"}}'"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -9,7 +20,31 @@
             "model": "sonnet",
             "timeout": 90,
             "statusMessage": "Auditing edit for TCA drift",
-            "prompt": "You are a TCA audit hook. Use this hook input to identify the edited file and inspect the current codebase state: $ARGUMENTS\n\nAudit only for the two core failure modes in this project:\n1. procedural fallback\n2. flat modeling\n\nA failure means the edit introduced free procedure where stronger structure should exist, or collapsed domain meaning into generic primitives like dict, str, Any, object, or other flat shapes.\n\nFocus on real structural violations, not style. Ignore unrelated issues. Read only the edited file and any immediately necessary local context.\n\nIf the edit is acceptable, respond with exactly: {\"ok\": true}\n\nIf the edit introduces TCA drift, respond with exactly: {\"ok\": false, \"reason\": \"...\"}\n\nThe reason must be concise and concrete. Name the exact procedural or flat construct introduced, explain why it violates TCA, and name the stronger model or construct that should replace it."
+            "prompt": "You are a TCA audit hook. Use this hook input to identify the edited file and inspect the current codebase state: $ARGUMENTS\n\nAudit only for real structural TCA drift. Focus on these failure shapes:\n1. procedural fallback\n2. flat modeling\n3. unmodeled uncertainty where `Literal`, enums, or discriminated unions should have declared the cases\n4. seam inflation where operational code becomes the semantic center instead of construction and projection\n5. validator, helper, or service logic used where `Field(...)`, `Annotated`, aliases, `RootModel`, focused `BaseModel`, `from_attributes`, `model_validate`, `model_validate_json`, `Literal`, `Field(discriminator=...)`, `@computed_field`, or `@cached_property` should carry the proof\n6. misuse of `field_validator` or `model_validator(mode=\"before\" | \"wrap\" | \"after\")`\n\nImportant validator discipline:\n- `model_validator(mode=\"before\")` is acceptable for irreducible boundary normalization\n- `mode=\"wrap\"` is acceptable only when the seam must surround inner validation\n- `mode=\"after\"` and `field_validator` are acceptable only for integrity checks that cannot be expressed more declaratively\n- do not treat validators as drift when they are truly justified seams\n\nIgnore style and unrelated issues. Read only the edited file and any immediately necessary local context.\n\nIf the edit is acceptable, respond with exactly: {\"ok\": true}\n\nIf the edit introduces TCA drift, respond with exactly: {\"ok\": false, \"reason\": \"...\"}\n\nThe reason must be concise and concrete. Name the exact construct introduced, explain why it violates TCA, and name the stronger Pydantic construct or model move that should replace it."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "timeout": 90,
+            "statusMessage": "Reflecting on TCA alignment",
+            "prompt": "You are a TCA self-reflection hook. Evaluate whether Claude's last response should be allowed to stop.\n\nContext: $ARGUMENTS\n\nAllow stop only if the response keeps the type system as the semantic center, treats uncertainty as typed possibility space, keeps procedure at irreducible seams, and does not reason away the need for anti-drift safeguards.\n\nBlock stop if the response:\n1. carries domain state as strings, dicts, flags, or vague procedural language where `RootModel`, focused `BaseModel`, enums, `Literal`, or discriminated unions should exist\n2. recommends helper logic, service logic, or free procedure where `Field(...)`, `Annotated`, aliases, `from_attributes`, `model_validate`, `model_validate_json`, `Field(discriminator=...)`, `@computed_field`, or `@cached_property` should carry the proof\n3. treats validators as a generic escape hatch instead of distinguishing declarative field proof from justified `model_validator(mode=\"before\" | \"wrap\" | \"after\")` or `field_validator` usage\n4. lets seams grow into the place where semantics live\n5. argues against hooks or self-correction mechanisms because of confidence or local judgment\n\nDo not block merely because validators or thin services are mentioned. Block only when they are recommended in the wrong role.\n\nRespond with exactly {\"ok\": true} if stopping is safe.\n\nIf stopping is unsafe, respond with exactly {\"ok\": false, \"reason\": \"...\"}. The reason must be short, concrete, and tell Claude what to correct before stopping."
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "timeout": 90,
+            "statusMessage": "Reflecting on subagent TCA alignment",
+            "prompt": "You are a TCA self-reflection hook for a subagent. Evaluate whether the subagent's final response should be allowed to stop.\n\nContext: $ARGUMENTS\n\nBlock stop if the subagent drifted toward free procedure, flat modeling, unmodeled uncertainty, seam inflation, or misuse of `field_validator` / `model_validator(mode=\"before\" | \"wrap\" | \"after\")`. Allow stop only if the subagent stayed aligned with TCA's core frame and kept Pydantic constructs in their right roles.\n\nDo not block merely because validators or thin services appear. Block when they are used as semantic centers or escape hatches instead of irreducible seams or plumbing.\n\nRespond with exactly {\"ok\": true} if stopping is safe.\n\nIf stopping is unsafe, respond with exactly {\"ok\": false, \"reason\": \"...\"}. The reason must be short, concrete, and tell the subagent what to fix before stopping."
           }
         ]
       }

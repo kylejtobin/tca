@@ -1,91 +1,133 @@
 # Claude Architecture
 
-This directory defines how Claude Code should operate in this repository.
-It is also intended to travel as part of reusable TCA project scaffolding.
+This directory defines how Claude Code should operate under TCA.
 
-It exists because the main challenge is not whether an LLM can explain Type Construction Architecture in chat. The real challenge is whether it continues to build in that mode while generating code. Left to default training, LLMs drift toward two failures:
+It is designed to travel cleanly to any TCA project. The root `CLAUDE.md` carries the always-on charter. This directory carries the reusable machinery that helps Claude actually stay aligned while generating.
+
+## Why This Package Exists
+
+The main challenge is not whether an LLM can explain Type Construction Architecture in chat. The real challenge is whether it continues to build in that mode while generating code.
+
+Left to default training, LLMs drift toward:
 
 1. procedural fallback
 2. flat modeling
+3. unmodeled uncertainty expressed as strings, dicts, flags, and helper logic
+4. seams, validators, or service logic growing where field declarations, aliases, discriminated unions, `from_attributes`, or projection should have carried the work
 
-Procedural fallback means writing helper functions, services, mapping layers, and branching logic where stronger types should have carried the work.
+This package exists to push against those defaults without turning itself into a giant duplicated prompt surface.
 
-Flat modeling means collapsing named domain meaning into generic shapes like `str`, `dict`, `Any`, `object`, and other loose primitives.
-
-This `.claude/` setup exists to push against those defaults.
+The key design assumption is that Claude's own confidence is not a reliable safety mechanism. The package must repeatedly reintroduce the TCA frame during editing and before completion.
 
 ## Design
 
-The architecture is rules-first and hook-driven.
+The architecture is rules-first, hook-driven, and modular.
 
 The important idea is that repeating "do TCA" in more prompts is not enough. A model can describe the correct TCA approach and still emit procedural code when token generation begins. So this setup does not depend on instruction alone. It uses a feedback loop.
 
 The pattern is:
 
-- shared rules hold the project's reasoning frame
-- agent hooks audit actual edits after generation
-- prompts stay short
-- duplication stays low
+- shared rules hold the reasoning frame
+- a prompt-time hook reintroduces the TCA frame before generation begins
+- hooks audit edits and force self-reflection before stopping
+- skills stay few and role-based
+- the root charter stays short
+- project-local identity stays separate from universal TCA cognition
 
 This keeps the cognitive frame in one place and makes every edit answer to it.
-
-This is meant to be reusable. A good TCA project template should include both a compact root `CLAUDE.md` and a minimal `.claude/` directory like this one. The root file carries the charter. This directory carries the machinery that helps Claude actually obey it during generation.
 
 ## What Lives Here
 
 ### `rules/`
 
-`rules/` contains the project's shared reasoning frame.
+`rules/` contains reusable TCA cognition split by concern:
 
-These files should capture what "correct" means in this repository at the level of architecture and structural judgment. They are not meant to be a duplicate of the full TCA docs, and they are not meant to be generic coding standards.
+- `tca-core.md` for construction-as-proof, model-as-program, and core anti-drift standards
+- `tca-build-patterns.md` for the generic build path and its canonical Pydantic surfaces
+- `tca-review.md` for review standards, dominant failure shapes, and preferred structural repairs
 
-The current core rule names the two dominant failure modes and tells Claude what to look for in code:
-
-- free procedure where stronger structure should exist
-- flat primitive modeling where sharper domain types should exist
+These files should capture what "correct" means at the level of architecture and structural judgment. They are not a copy of the full TCA docs and they are not generic coding standards. They should name the actual Pydantic constructs that carry proof: `RootModel`, focused `BaseModel`, `Field(...)`, `Annotated`, aliases, `Literal`, discriminated unions, `from_attributes`, `model_validate`, `model_validate_json`, `@computed_field`, `@cached_property`, and tightly justified validator modes.
 
 ### `settings.json`
 
 `settings.json` contains the hook configuration.
 
-The current hook is a `PostToolUse` audit on `Edit|Write`. It uses an agent hook rather than a prompt hook because judging TCA drift requires reading the actual edited code, not just the hook event metadata.
+The current hooks are:
 
-The hook prompt stays short on purpose. The rules carry the frame. The hook points at the task: inspect this edit and decide whether it introduced procedural fallback or flat modeling.
+- a `UserPromptSubmit` reminder that injects a short anti-procedural TCA frame into context
+- a `PostToolUse` audit on `Edit|Write`
+- a `Stop` self-reflection hook
+- a `SubagentStop` self-reflection hook
 
-## Why There Is No More Here Yet
+The edit hook uses an agent hook rather than a prompt hook because judging TCA drift requires reading the actual edited code, not just the event metadata.
+
+The hook prompts stay short on purpose. The rules carry the frame. The hooks cover three moments:
+
+- before reasoning: inject a concise anti-procedural reminder into prompt-time context
+- after edits: audit structural drift in actual code
+- before stopping: force self-reflection if the answer or design drifted back toward default training
+
+The edit and stop hooks should name the concrete failure shapes to audit for:
+
+- free procedure
+- flat modeling
+- unmodeled uncertainty
+- seam inflation
+- validator overuse where `Field(...)`, `Annotated`, aliases, discriminated unions, `from_attributes`, or projection should carry the proof instead
+- misuse of `field_validator` or `model_validator(mode="before" | "wrap" | "after")` outside legitimate irreducible seams or integrity checks
+
+### `skills/`
+
+`skills/` contains a very small set of reusable workflows that rules and hooks alone do not cover well.
+
+These are not generic coding skills. They are TCA-specific workflows that recur across many projects.
+
+They should be real Claude skills in native format:
+
+- one directory per skill
+- `SKILL.md` entrypoint
+- YAML frontmatter
+- descriptions written in language users naturally use before they know TCA terms
+- descriptions front-loaded with the main use case, because Claude Code uses them for automatic loading and truncates long descriptions in the skill listing
+
+If a skill is not reusable across many TCA repos, it should probably not live here.
+
+## Why This Package Stays Small
 
 This directory is intentionally minimal.
 
-There is no giant `CLAUDE.md`, no large custom subagent prompt, and no pile of skills. That is deliberate. We are avoiding the same failure mode in the Claude architecture that TCA avoids in application architecture: duplication, indirection, and procedural sprawl.
+We are avoiding the same failure mode in the Claude architecture that TCA avoids in application architecture: duplication, indirection, and procedural sprawl.
 
-If the rules are correct and the hook is placed well, that gives us the core self-correcting loop. Additional skills or subagents should only be added when they serve a distinct role that cannot be handled by shared rules plus edit auditing.
-
-Minimal does not mean local-only. Minimal means this package can travel cleanly to other TCA repositories without bringing a pile of duplicated prompts and one-off workflow surfaces with it.
-
-## Relationship To The TCA Docs
-
-The TCA docs in `docs/` explain the paradigm itself.
-
-This directory does something different. It explains and configures how Claude Code should operate under that paradigm. The docs define the architecture we believe in. `.claude/` defines the agent architecture we use to keep the model aligned with it during generation.
-
-## Practical Standard
-
-When extending this directory, prefer this order:
+Add surfaces in this order:
 
 1. strengthen a shared rule
 2. improve the audit hook
-3. add a narrowly-scoped skill only if a reusable workflow clearly exists
-4. add a subagent only if isolated specialization is genuinely needed
+3. add a narrowly-scoped reusable skill
+4. add repo-specific specialization only when the prior three are insufficient
 
-The default answer should be stronger shared cognition, not more surfaces.
+The default answer should be a stronger shared TCA frame, not more surfaces.
 
-## Reuse Standard
+## Relationship To The TCA Docs
 
-When starting another TCA repository, copy the minimal package first:
+The TCA docs explain the paradigm itself.
+
+This directory does something different. It explains and configures how Claude Code should operate under that paradigm. The docs define the architecture we believe in. `.claude/` defines the agent architecture we use to keep the model aligned with it during generation.
+
+## Adaptation Protocol
+
+When starting another TCA repository, copy the minimal scaffold first:
 
 1. root `CLAUDE.md`
 2. `.claude/rules/`
 3. `.claude/settings.json`
 4. `.claude/README.md`
+5. `.claude/skills/`
 
-Then adapt the project identity, local reading pointers, and any domain-specific rule content. Keep the anti-drift architecture unless the new project has a stronger proven alternative.
+Then adapt it in this order:
+
+1. rewrite `Project Identity` in the root `CLAUDE.md`
+2. replace `Local Reading Pointers` with that repo's theory and example surfaces
+3. keep the universal TCA anti-drift frame unless the new repo has a stronger proven alternative
+4. add or sharpen project-specific rule content only when that repo has a sharper known drift than the defaults
+
+The point is not to copy this repository's local context. The point is to copy a portable anti-drift cognitive architecture for building any TCA project.
