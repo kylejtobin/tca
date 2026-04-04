@@ -154,7 +154,7 @@ class TreeReport(BaseModel, frozen=True, from_attributes=True):
 
 ### Foreign Schema Mirroring
 
-Sometimes the fastest way to own a foreign boundary is to model the foreign surface faithfully in its own vocabulary, then give your field names aliases that match the external schema. The foreign model owns the exchange's language. Your domain model does not need to.
+Sometimes the fastest way to own a foreign boundary is to mirror the foreign surface with a model whose internal field names already match your domain vocabulary, while aliases match the external schema. The foreign model owns both names at once: the exchange's name at the seam and the domain's name in the field surface.
 
 ```python
 class ExchangeTrade(BaseModel, frozen=True, populate_by_name=True):
@@ -216,10 +216,18 @@ def text(self) -> str:
 Transport capture and foreign mirroring are not the end of the boundary story. Once a foreign model exists, owned semantics can take over by constructing the domain model directly from that proven foreign object. This is not mapper code. It is staged construction.
 
 ```python
+class ExchangeTrade(BaseModel, frozen=True, populate_by_name=True):
+    symbol: Symbol = Field(alias="sym")
+    price: Price = Field(alias="px")
+    quantity: Quantity = Field(alias="qty")
+
 class DomainTrade(BaseModel, frozen=True, from_attributes=True):
     symbol: Symbol
     price: Price
     quantity: Quantity
+
+exchange_trade = ExchangeTrade.model_validate_json(raw_message)
+domain_trade = DomainTrade.model_validate(exchange_trade)
 ```
 
 The sequence is:
