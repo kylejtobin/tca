@@ -1,83 +1,62 @@
 # Claude Instructions
 
-This file is intentionally modular.
+This file plus the `.claude/` directory form the reusable scaffold for any TCA project.
 
-Treat it as the always-on charter for a TCA project. The reusable scaffold is not this file alone. It is this file plus the minimal `.claude/` package.
-
-## Universal TCA Frame
-
-The main failure mode is not misunderstanding TCA in chat. The main failure mode is generation drift while producing code.
-
-Do not trust momentary confidence over this frame. Extended generation drifts toward default training. The reusable Claude scaffold exists to force repeated self-correction before, during, and after that drift.
-
-The universal defaults are:
-
-- the type system is the semantic layer
-- the model is the program
-- construction is proof
-- derivation extends proof
-- unknown outcomes should become typed possibility spaces, not procedural control state
-- procedure belongs only at irreducible seams that capture, normalize, trigger, or resume construction
-
-When in doubt:
-
-- model more
-- name the concept
-- strengthen the type
-- prefer `RootModel` and focused `BaseModel` over bare primitives
-- prefer `Field(...)`, `Annotated`, aliases, `Literal`, and `Field(discriminator=...)` before validators or free procedure
-- prefer `model_validate`, `model_validate_json`, and `from_attributes` for staged lifting and wiring
-- prefer `@computed_field`, `@cached_property`, and `@property` for intrinsic derivation
-- use `model_validator(mode="before")` or `mode="wrap"` only at irreducible boundaries; use `mode="after"` or `field_validator` only when the proof cannot be carried more declaratively
-- keep effects small, terminal, and justified
-
-Do not solve design weakness with casts, suppressions, ignores, generic containers, semantic controllers, or stringly control state.
-
-Every error is a design error. The fix is always more modeling. Never less.
+The hooks and rules enforce TCA structurally through a closed evidence vocabulary. This file carries what evidence matching alone cannot: the judgment defaults that resolve ambiguity when the gates escalate.
 
 ## Project Identity
 
 This repository develops and documents Type Construction Architecture.
 
-The goal here is not only to explain TCA, but to build examples, docs, and agent architecture that actually preserve TCA during generation. This repo is therefore both:
+It is both a theory surface and a working enforcement environment. The quality bar is architectural — good output strengthens TCA as a programming paradigm, not just produces valid Python.
 
-- a theory surface
-- a working anti-drift environment for building in that theory
+## When The Gates Escalate
 
-When working here, assume the quality bar is architectural. Good output is not merely valid Python or coherent prose. Good output strengthens TCA as a programming paradigm and resists the patterns that usually weaken it.
+The hooks and gate rubrics handle clear cases structurally. When classification is ambiguous, these defaults resolve it:
 
-## Optional Local Reading Pointers
+- the type system is the semantic layer — the model is the program
+- construction is proof — derivation extends proof
+- unknown outcomes are typed possibility spaces, not procedural control state
+- procedure belongs only at irreducible seams
+- every error is a design error — the fix is always more modeling, never less
 
-These are optional deepening surfaces for this repository. They are not required for the reusable scaffold to behave correctly:
+When choosing between constructs:
 
-- `README.md` for the front door and build path
-- `docs/manifesto.md` for the why
-- `docs/overview.md` for the spec map
-- `docs/irreducible-seams.md` for where procedure belongs
-- `tca/building_block.py` for a concrete TCA program
+- `RootModel` and focused `BaseModel` over bare primitives
+- `Field(...)`, `Annotated`, aliases, `Literal`, `Field(discriminator=...)` before validators or free procedure
+- `model_validate`, `model_validate_json`, `from_attributes` for staged lifting and wiring
+- `@computed_field`, `@cached_property`, `@property` for intrinsic derivation
+- `model_validator(mode="before")` or `mode="wrap"` only at irreducible boundaries
+- `mode="after"` or `field_validator` only when proof cannot be carried declaratively
 
-## Use The Shared Frame
+Do not solve design weakness with casts, suppressions, ignores, generic containers, or stringly control state.
 
-Do not duplicate the TCA reasoning frame into every prompt or workflow surface.
+## The Scaffold
 
-This repository uses a rules-first, hook-driven Claude architecture:
+The `.claude/` directory enforces TCA through evidence matching, not cognitive framing:
 
-- `.claude/rules/` carries the shared cognitive frame
-- `.claude/settings.json` runs prompt-time reminders, edit audits, and stop-time self-reflection hooks
-- `.claude/skills/` holds a few real Claude skills for reusable TCA workflows
-- `.claude/README.md` explains the scaffold itself
+- **Gate rubrics** (`.claude/rules/gate-rubrics.md`): three gates — Type Integrity, Construction Carries Meaning, Program Shape — each with allowed shapes, disallowed shapes, approved mechanisms, and escalation triggers
+- **Path-scoped rules** (`.claude/rules/`): six rules scoped to program layers (`type.py`, `value.py`, `domain/`, `api/`, `service/`, `main.py`)
+- **Hooks** (`.claude/settings.json`): five hooks forming a pipeline — `UserPromptSubmit` loads the evidence vocabulary, `PreToolUse` fast-fails against 11 invariants, `PostToolUse` adjudicates against gate rubrics, `Stop` and `SubagentStop` check output for disallowed shapes
+- **Bounded adjudication** (`.claude/skills/bounded-adjudication/`): the skill that generated the gates, rubrics, and hooks through a structured worksheet
 
-Treat those files as the primary operational surface for keeping Claude aligned during generation. The hooks are not optional optimization. They are part of the safety system.
+The hooks are the enforcement system. They are not optional.
 
-## Reuse / Adaptation Instructions
+## Local Reading Pointers
 
-If this setup is copied into another TCA repository:
+- `README.md` — front door
+- `docs/build-patterns.md` — 13 before/after build patterns
+- `docs/program-topology.md` — where each file belongs
+- `docs/manifesto.md` — the why
+- `docs/overview.md` — spec map
+- `docs/irreducible-seams.md` — where procedure belongs
+- `tca/building_block.py` — a concrete TCA program
 
-1. copy `CLAUDE.md`
-2. copy the minimal `.claude/` directory with it
-3. rewrite `Project Identity`
-4. replace `Local Reading Pointers` with that repo's theory and example surfaces
-5. keep the universal anti-drift frame unless the target repo has a stronger proven alternative
-6. add or sharpen project-specific rules only when the new repo has a sharper known drift than the default set
+## Reuse
 
-The point of this file is to keep the always-on frame compact, reusable, and anti-drift. The point of the accompanying `.claude/` package is to help Claude actually stay in that mode while generating.
+To adapt this scaffold to another TCA project:
+
+1. Copy `CLAUDE.md` and the `.claude/` directory
+2. Rewrite `Project Identity`
+3. Replace `Local Reading Pointers` with the new repo's surfaces
+4. Run the bounded adjudication skill to generate domain-specific evidence shapes, gates, and hooks
