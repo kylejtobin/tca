@@ -2,7 +2,7 @@
 
 The building block classifier is a recursive Pydantic type tree walker that classifies every field on any `BaseModel` into its structural building block. It is a pure TCA program: no LLM, no external services, one `model_validate` at the root cascades the entire classification.
 
-This is an advanced worked example, not the first teaching example a new reader should see. If you are new to TCA, start with the README and [Core Mechanisms](mechanisms.md). Come here once you already know the pattern language and want to watch those moves execute in a dense recursive program.
+This is an advanced worked example, not the first teaching example a new reader should see. If you are new to TCA, start with the README and [build patterns](build-patterns.md). Come here once you already know the pattern language and want to watch those moves execute in a dense recursive program.
 
 The full implementation is in [`tca/building_block.py`](../tca/building_block.py).
 

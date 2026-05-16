@@ -200,7 +200,7 @@ Invariants are not implementation instructions. They don't say HOW to enforce th
 
 **Template:**
 
-INV-{N}: {Statement of what must always be true}
+{InvariantName}: {Statement of what must always be true}
 
   Governs: {Condition number(s)}
 
@@ -212,7 +212,7 @@ INV-{N}: {Statement of what must always be true}
 
 **Example (inventory management):**
 
-INV-1: Never use POS-reported stock as ground truth without
+PosStockBuffered: Never use POS-reported stock as ground truth without
 
   applying the maximum reporting delay as a buffer.
 
@@ -230,7 +230,7 @@ INV-1: Never use POS-reported stock as ground truth without
 
   and stockouts.
 
-INV-2: Never place a reorder for a SKU while a confirmed but
+NoDuplicateReorder: Never place a reorder for a SKU while a confirmed but
 
   undelivered order for that SKU exists.
 
@@ -246,7 +246,7 @@ INV-2: Never place a reorder for a SKU while a confirmed but
 
   Rationale: Duplicate orders create overstock and wasted capital.
 
-INV-3: A reorder that cannot be placed due to supplier
+SupplierUnavailableQueues: A reorder that cannot be placed due to supplier
 
   unavailability must be queued, not dropped.
 
@@ -262,7 +262,7 @@ INV-3: A reorder that cannot be placed due to supplier
 
   means the stockout the system detected goes unaddressed.
 
-INV-4: Projected depletion rate must use the faster of
+DepletionUsesFasterVelocity: Projected depletion rate must use the faster of
 
   the trailing 24-hour velocity and the trailing 7-day velocity.
 
@@ -278,7 +278,7 @@ INV-4: Projected depletion rate must use the faster of
 
   in sales, leading to stockouts during spikes.
 
-INV-5: A delivery is not confirmed until physical receipt is
+DeliveryRequiresPhysicalReceipt: A delivery is not confirmed until physical receipt is
 
   recorded, not when the supplier API acknowledges the order.
 
@@ -296,7 +296,7 @@ INV-5: A delivery is not confirmed until physical receipt is
 
   necessary reorders.
 
-INV-6: Actual shelf count, when available, overrides
+PhysicalCountOverridesCalculated: Actual shelf count, when available, overrides
 
   POS-calculated inventory.
 
@@ -312,7 +312,7 @@ INV-6: Actual shelf count, when available, overrides
 
   Calculated inventory drifts from reality over time.
 
-INV-7: Safety stock thresholds must be reviewed against actual
+ThresholdsReviewedOnCadence: Safety stock thresholds must be reviewed against actual
 
   demand data on a defined cadence, not set once and assumed valid.
 

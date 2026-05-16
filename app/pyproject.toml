@@ -1,0 +1,14 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "TCA example application"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "nats-py",
+    "pydantic>=2.12",
+]
+
+[dependency-groups]
+dev = []

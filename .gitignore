@@ -35,3 +35,8 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+env/.env.*
+!env/.env.*.example
+
+# Compose local override
+compose.local.override.yml

@@ -68,4 +68,20 @@ The program was always there, latent in the domain. Procedure obscured it. Weak 
 
 ---
 
+## Where This Comes From
+
+TCA draws on and extends several traditions.
+
+**Parse, Don't Validate** (Alexis King, 2019). TCA is a direct realization of this principle. Construction is parsing. If it constructs, it's valid. There is no unvalidated representation. TCA extends the principle from a design heuristic into a full programming paradigm with a concrete construction language.
+
+**Domain-Driven Design** (Eric Evans, 2003). TCA shares DDD's emphasis on ubiquitous language, bounded contexts, and making the domain model central. TCA diverges in that the domain model is not a separate representation that application code operates on — it carries the construction logic directly. Orchestration chains proofs through projections on a frozen model, not through method calls on a service class.
+
+**Algebraic Data Types.** TCA's structural foundation is algebraic. Product types are `BaseModel` with multiple fields. Sum types are discriminated unions with `Literal` tags. Identity types are `NewType` and constrained primitives. These building blocks compose into construction graphs.
+
+**Type-Driven Development.** TCA shares the commitment to types as the primary design tool. TCA extends it by treating types not merely as constraints on computation but as computation itself. The construction pipeline is the program, not a safety net around it.
+
+**Lazy Evaluation.** TCA's construction-derivation loop is demand-driven evaluation over a directed graph of proven values. `@cached_property` is the laziness primitive. `model_dump()` is the forcing function. Each forced property extends the proof graph.
+
+---
+
 *Every system we build is a bet on where truth lives. We bet on structure.*

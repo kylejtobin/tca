@@ -1,23 +1,23 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Read(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Agent(*)"
+    ]
+  },
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "statusMessage": "Loading TCA evidence vocabulary",
-            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Your edits will be adjudicated against three gates: Type Integrity, Construction Carries Meaning, Program Shape. Consult .claude/rules/gate-rubrics.md for evidence shapes.\\n\\nThese shapes are ALWAYS wrong — do not plan toward them:\\n1. Bare str/int/float/Decimal as a model field type (not Literal, not bool)\\n2. Function returning dict\\n3. Function parameter typed as dict\\n4. Class named *Mapper/*Translator/*Converter/*Adapter/*Builder/*Factory/*Normalizer/*Presenter\\n5. if/elif chain branching on a string or field value to select among known categories\\n6. isinstance() check inside a loop body over model types\\n7. type.py importing from any other module in the program\\n8. value.py importing from anything other than type.py in its own context\\n9. A frozen domain model importing from the active model of its context\\n10. A file in domain/ named for a technology pattern: store.py, repository.py, handler.py, controller.py, crud.py, manager.py, processor.py, router.py\\n11. A file in domain/ named utils.py, helpers.py, common.py, or misc.py\\n\\nProgram layer structure (each layer sees only downward):\\ntype.py → value.py → domain models → active model → api.py → service/ → api/ routes → main.py\"}}'"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Pre-edit invariant check. DENY if the proposed edit introduces any fast-fail pattern below. PASS if none match.\n\nFast-fail patterns:\n1. Bare `str`, `int`, `float`, or `Decimal` as a model field type (not `Literal`, not `bool`) — domain values need scalar owners\n2. Function returning `dict` — unowned truth; data with shape is a model\n3. Function parameter typed as `dict` — construction skipped at boundary; use `model_validate`\n4. Class named `*Mapper`, `*Translator`, `*Converter`, `*Adapter`, `*Builder`, `*Factory`, `*Normalizer`, `*Presenter` — procedural layers TCA replaces\n5. `if`/`elif` chain branching on a string or field value to select among known categories — `Literal` + discriminated union replaces this\n6. `isinstance()` check inside a loop body over model types — a DU hiding inside iteration\n7. `type.py` importing from any other module in the program — `type.py` is the dependency root\n8. `value.py` importing from anything other than `type.py` in its own context — `value.py` is the second layer\n9. A frozen domain model importing from the active model of its context — inverts dependency direction\n10. A file in `domain/` named for a technology pattern: `store.py`, `repository.py`, `handler.py`, `controller.py`, `crud.py`, `manager.py`, `processor.py`, `router.py`\n11. A file in `domain/` named `utils.py`, `helpers.py`, `common.py`, or `misc.py` — code without a domain identity\n\nReturn PASS or DENY. On DENY, cite the pattern number and the exact shape that triggered it."
+            "prompt": "Pre-edit invariant check. DENY on any fast-fail pattern match. PASS if none match.\n\nFast-fail patterns (all visible from a partial diff):\n\n- **BarePrimitiveField** — Bare `str`, `int`, `float`, or `Decimal` as a field type on a `BaseModel`. Excludes `RootModel[scalar]` definitions in `type.py`, which ARE the scalar declarations.\n- **DictReturn** — Function returning `dict`.\n- **DictParameter** — Function parameter typed `dict`.\n- **ProceduralClassName** — Class named `*Mapper`, `*Translator`, `*Converter`, `*Adapter`, `*Builder`, `*Factory`, `*Normalizer`, `*Presenter`.\n- **LiteralIfElifChain** — `if`/`elif` chain dispatching on string or `Literal` values. Single `if` guards (zero-division, empty-input) are fine.\n- **IsinstanceInLoop** — `isinstance()` check inside a loop body.\n- **TypePyImportingProject** — `type.py` importing from another project `.py` file (stdlib and third-party are fine).\n- **ValuePyImportingNonType** — `value.py` importing from anything other than `type.py` in the same directory.\n- **DomainImportsActiveModel** — A frozen domain model importing from the active model of its context (inverts dependency direction).\n- **DomainTechFilename** — File in `domain/` named for a technology pattern: `store.py`, `repository.py`, `handler.py`, `controller.py`, `crud.py`, `manager.py`, `processor.py`, `router.py`.\n- **DomainDumpFilename** — File in `domain/` named `utils.py`, `helpers.py`, `common.py`, or `misc.py`.\n\nReturn PASS or DENY. On DENY, cite the pattern name and the exact triggering shape. Body-level structural patterns (decorator stacks, method internals, mutables in derivations, try/except, void methods, parallel tuples) are covered by the post-edit `smell.py` script — do not infer those from partial diffs."
           }
         ]
       }
@@ -27,31 +27,16 @@
         "matcher": "Edit|Write",
         "hooks": [
           {
+            "type": "command",
+            "command": ".claude/scripts/smell.py",
+            "timeout": 5
+          },
+          {
             "type": "agent",
             "model": "sonnet",
             "timeout": 90,
             "statusMessage": "Adjudicating edit against gate rubrics",
-            "prompt": "Post-edit gate adjudication. Use this hook input to identify the edited file and inspect its current state: $ARGUMENTS\n\nFor each gate, consult the rubric at `.claude/rules/gate-rubrics.md`. For each gate:\n\n1. Answer the gate's Question against the edit.\n2. Classify the edit against Allowed and Disallowed evidence shapes.\n3. If the edit matches an Approved Mechanism, the gate PASSES unless a specific Disallowed shape also applies.\n4. FAIL only when you can cite a specific Disallowed shape.\n5. If classification is ambiguous, ESCALATE to the named authority.\n\nGates: Type Integrity, Construction Carries Meaning, Program Shape\n\nFor each gate return PASS, FAIL, or ESCALATE. On FAIL cite the gate, the disallowed shape, and the approved mechanism alternative if one exists. Overall FAIL if any gate is FAIL."
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before stopping, check your work against the TCA evidence vocabulary.\n\nDid any recommendation in this response include one of these shapes?\n1. Bare str/int/float/Decimal as a model field type\n2. Function returning or accepting dict\n3. A mapper, translator, converter, adapter, builder, factory, normalizer, or presenter class\n4. if/elif branching on a value to select among known categories\n5. isinstance() in a loop over model types\n6. A service method sequencing multiple model_validate calls instead of construction cascade via @cached_property\n7. A function computing from a model's own proven fields instead of a derivation on that model\n8. A route file defining its own request/response models instead of importing from domain/context/api.py\n9. A service file containing domain logic beyond binding transport to the active model\n10. Scalars defined outside type.py or value objects defined outside value.py\n11. Domain files named for technology patterns or dumping-ground names\n\nIf any shape is present, name it and correct it before stopping. If none match, stop."
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before stopping, check your work against the TCA evidence vocabulary.\n\nDid any recommendation in this response include one of these shapes?\n1. Bare str/int/float/Decimal as a model field type\n2. Function returning or accepting dict\n3. A mapper, translator, converter, adapter, builder, factory, normalizer, or presenter class\n4. if/elif branching on a value to select among known categories\n5. isinstance() in a loop over model types\n6. A service method sequencing multiple model_validate calls instead of construction cascade via @cached_property\n7. A function computing from a model's own proven fields instead of a derivation on that model\n8. A route file defining its own request/response models instead of importing from domain/context/api.py\n9. A service file containing domain logic beyond binding transport to the active model\n10. Scalars defined outside type.py or value objects defined outside value.py\n11. Domain files named for technology patterns or dumping-ground names\n\nIf any shape is present, name it and correct it before stopping. If none match, stop."
+            "prompt": "Post-edit gate adjudication. Rubric: `.claude/rules/gate-rubrics.md`.\n\nEach gate has a Question, Allowed shapes, Disallowed shapes, and Approved Mechanisms.\n\n- PASS: the edit matches only Allowed shapes or Approved Mechanisms\n- FAIL: the edit matches a specific Disallowed shape — cite it\n- ESCALATE: classification is genuinely ambiguous — name the authority from the rubric\n\nAn Approved Mechanism overrides a concern unless a Disallowed shape also applies.\n\nGates: Type Integrity, Construction Carries Meaning, Program Shape\n\nReturn PASS, FAIL, or ESCALATE per gate. On FAIL cite the gate, the disallowed shape, and the approved mechanism alternative if one exists. Overall FAIL if any gate is FAIL."
           }
         ]
       }

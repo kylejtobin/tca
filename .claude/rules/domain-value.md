@@ -9,10 +9,10 @@ The second dependency layer. Composes scalars into richer proven structures.
 
 **Shape:**
 ```python
-class LineItem(BaseModel, frozen=True):
-    sku: Sku
-    unit_price: Money
-    quantity: Quantity
+class SourceLocation(BaseModel, frozen=True):
+    line: LineNumber
+    class_name: ClassName | None = None
+    method_name: MethodName | None = None
 ```
 
 **Contains:** `BaseModel` subclasses with `frozen=True` composing scalars from `type.py`.

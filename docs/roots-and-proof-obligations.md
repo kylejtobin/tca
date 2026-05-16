@@ -22,7 +22,7 @@ The number is not fixed. It follows from the domain. Name the obligations first.
 
 A root is a type whose successful construction discharges one proof obligation. Every non-root type exists because some root needs it — directly or transitively through field annotations.
 
-Roots are not the same as "important types." A `VenueQuote` model may be important, but it is probably not a root. It exists because some larger root such as `TradingEnvironment` or `SpreadOpportunity` references it. The root is the type whose construction proves something about the whole program's correctness.
+Roots are not the same as "important types." A `FieldSlot` model may be important, but it is probably not a root. It exists because some larger root such as `ModelTree` or `ClassifierRun` references it. The root is the type whose construction proves something about the whole program's correctness.
 
 Roots are computable. Collect all `BaseModel` subclasses in a codebase, subtract every type that appears in another type's field annotations, and the remainder are the roots. This works in both directions: forward in greenfield development (name the roots, define their fields, everything cascades), and backward in existing code (compute roots, follow annotations, discover the construction graph).
 
@@ -44,34 +44,33 @@ tree = ModelTree.model_validate(Team)
 
 A context program that takes typed input and produces typed output within a typed context has three proof obligations:
 
-**That the environment is ready.** The program can only act if its context is valid: the feed is connected, venues are known, constraints are loaded. The **Environment** root discharges this:
+**That the environment is ready.** The program can only act if its context is valid: dependencies are loaded, registries are populated, configuration is parsed. The **Environment** root discharges this:
 
 ```python
-class TradingEnvironment(BaseModel, frozen=True, extra="forbid"):
-    nasdaq_feed: FeedConnection
-    nyse_feed: FeedConnection
-    venue_registry: VenueRegistry
+class CatalogEnvironment(BaseModel, frozen=True, extra="forbid"):
+    product_registry: ProductRegistry
+    inventory_snapshot: InventorySnapshot
+    pricing_rules: PricingRules
 ```
 
 **That the action is expressible.** The program can only act on requests its vocabulary can represent. The **Action** root discharges this:
 
 ```python
-class EvaluateSpread(BaseModel, frozen=True, extra="forbid"):
-    symbol: Symbol
-    minimum_edge: Spread
+class PlaceOrder(BaseModel, frozen=True, extra="forbid"):
+    customer_id: CustomerId
+    line_items: tuple[OrderLine, ...]
 ```
 
 **That the result is complete and consistent.** The **Result** root discharges this:
 
 ```python
-class SpreadOpportunity(BaseModel, frozen=True, extra="forbid"):
-    symbol: Symbol
-    buy_from: VenueQuote
-    sell_to: VenueQuote
-    edge: Spread
+class OrderConfirmation(BaseModel, frozen=True, extra="forbid"):
+    order_id: OrderId
+    reserved_items: tuple[ReservedItem, ...]
+    fulfillment_estimate: FulfillmentEstimate
 ```
 
-Three roots because three distinct proof obligations. The semantic link between Environment + Action and Result is still the construction-derivation graph: eager field ownership plus lazy projections that extend proof. Only the transport, persistence, triggering, or wake-up mechanics around that graph are plumbing. The better framing is three roots for a context program, not "three roots for a service" — the [service is thin or absent](program-architecture.md).
+Three roots because three distinct proof obligations. The semantic link between Environment + Action and Result is still the construction-derivation graph: eager field ownership plus lazy projections that extend proof. Only the transport, persistence, triggering, or wake-up mechanics around that graph are plumbing. The better framing is three roots for a context program, not "three roots for a service" — the [service is thin or absent](program-topology.md).
 
 ### More roots: a pipeline
 
@@ -84,15 +83,16 @@ A data pipeline may have five or ten proof obligations: source schema, transform
 The same type may appear under multiple roots, but its meaning changes with its path.
 
 ```
-TradingEnvironment
-├── VenueRegistry
-│   └── VenueQuote        ← "a quote known to the running environment"
+CatalogEnvironment
+├── ProductRegistry
+│   └── Product            ← "a product known to the running catalog"
 
-SpreadOpportunity
-├── buy_from: VenueQuote  ← "the quote selected as the buy side"
+OrderConfirmation
+├── reserved_items: tuple[ReservedItem, ...]
+│   └── Product            ← "the product reserved on behalf of this order"
 ```
 
-`VenueQuote` appears under both roots, but the positional meaning differs. Under `TradingEnvironment`, a `VenueQuote` is part of the live world the program can see. Under `SpreadOpportunity`, a `VenueQuote` is the quote chosen as one side of a specific outcome. The field path from root to leaf is a sentence in the domain's language.
+`Product` appears under both roots, but the positional meaning differs. Under `CatalogEnvironment`, a `Product` is part of the live world the program can see. Under `OrderConfirmation`, a `Product` is the item committed to a specific outcome. The field path from root to leaf is a sentence in the domain's language.
 
 Shared nodes are natural and correct. They indicate that different parts of the program need the same proof about the same concept. If the meaning genuinely diverges between contexts, they should be distinct types.
 
@@ -118,4 +118,4 @@ Roots anchor eager field graphs — the DAG of what must succeed for the root to
 
 In the building block classifier, `ClassifierRun.tree` is a derivation edge from `ClassifierRun` to `ModelTree`. `ClassifierRun.report` is a derivation edge from `ClassifierRun` to `TreeReport`. These edges are lazy: the objects they produce exist only when something demands them. The full proof graph is the union of field edges and derivation edges.
 
-Pydantic generic models (`class Envelope(BaseModel, Generic[T])`) create parametric construction machines. `Envelope[DomainTrade]` and `Envelope[VenueQuote]` are different nodes in the construction graph generated from the same template. This is parametric polymorphism applied to construction: define the proof structure once, instantiate it for any payload type.
+Pydantic generic models (`class Envelope(BaseModel, Generic[T])`) create parametric construction machines. `Envelope[Order]` and `Envelope[Product]` are different nodes in the construction graph generated from the same template. This is parametric polymorphism applied to construction: define the proof structure once, instantiate it for any payload type.

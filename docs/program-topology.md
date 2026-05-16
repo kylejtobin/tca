@@ -1,6 +1,6 @@
 # TCA Program Topology
 
-The structural companion to the [TCA pattern language](type-construction-architecture.md). The pattern language defines how to write construction-driven code. This document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
+The structural companion to TCA's pattern language — the [manifesto](manifesto.md), [build patterns](build-patterns.md), and [pydantic machinery](pydantic-machinery.md) taken together. The pattern language defines how to write construction-driven code. This document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
 
 ---
 
@@ -8,30 +8,38 @@ The structural companion to the [TCA pattern language](type-construction-archite
 
 A TCA program has gravitational structure. The densest layer — the scalars — sits at the bottom. Everything above composes from below. Nothing below depends on what is above.
 
-```
-                        main.py
-                       ╱       ╲
-                      ╱         ╲
-            service/context.py   api/context.py
-                      ╲         ╱
-                       ╲      ╱
-                  domain/context/
-                  ┌─────────────────────────┐
-                  │  api.py                 │
-                  │    ↓                    │
-                  │  [active_model].py      │
-                  │    ↓                    │
-                  │  [concept].py  ←→ peer  │
-                  │    ↓           contexts │
-                  │  value.py               │
-                  │    ↓                    │
-                  │  type.py                │
-                  └─────────────────────────┘
+```mermaid
+flowchart TD
+    M["main.py"] --> SV["service/"]
+    M --> R["api/"]
+    SV --> ACT
+    R --> DAPI
+
+    subgraph DOM ["domain / context"]
+        direction TD
+        DAPI["api.py"] --> ACT["active model"]
+        ACT --> FRZ["frozen models"]
+        FRZ <-.-> PEER["peer contexts"]
+        FRZ --> VAL["value.py"]
+        VAL --> TYP["type.py"]
+    end
+
+    classDef sky fill:#dbeafe,color:#1e3a8a,stroke:#93c5fd
+    classDef blue fill:#93c5fd,color:#1e3a8a,stroke:#3b82f6
+    classDef mid fill:#3b82f6,color:#ffffff,stroke:#1d4ed8
+    classDef deep fill:#1e40af,color:#dbeafe,stroke:#1e3a8a
+    classDef abyss fill:#172554,color:#bfdbfe,stroke:#1e3a8a
+
+    class M sky
+    class R,SV blue
+    class DAPI mid
+    class ACT,FRZ,PEER deep
+    class VAL,TYP abyss
 ```
 
 `main.py` is the composition root — it reaches across to both `service/` and `api/` to wire the program together. Service and route both reach inward to `domain/`. Inside `domain/`, a strict layered dependency descends from the active model down to `type.py`. The arrow means "imports from."
 
-Peer domain contexts compose freely at the frozen model layer. `domain/signal/type.py` may be imported by `domain/trading/order.py`. Domains are primitives, forged to be combined.
+Peer domain contexts compose freely at the frozen model layer. `domain/catalog/type.py` may be imported by `domain/inventory/stock.py`. Domains are primitives, forged to be combined.
 
 ---
 
@@ -88,7 +96,7 @@ Inside each context, files have a strict layered dependency. Each layer composes
 **Imports from:** Standard library and third-party only. Nothing from the program.
 **Imported by:** Everything. Every file in this context and every peer context may import from `type.py`.
 
-Each scalar owns a single value with identity, constraints, and semantic distinction. `Price` is not `Decimal` — it carries `gt=0` and is a different type than `Quantity`, which is also `Decimal` with `gt=0`. The type system distinguishes them. Bare primitives do not.
+Each scalar owns a single value with identity, constraints, and semantic distinction. `LineNumber` is not `int` — it carries `ge=1` and is a different type than `ColumnOffset`, which is also `int` with `ge=0`. The type system distinguishes them. Bare primitives do not.
 
 ### `value.py`
 
@@ -97,18 +105,18 @@ Each scalar owns a single value with identity, constraints, and semantic distinc
 **Imports from:** `type.py` in its own context. Nothing else from the program.
 **Imported by:** Frozen domain models, the active model, `api.py` in this context.
 
-A `PriceLevel` composes `Price` and `BookQuantity`. A `Fill` composes `Price`, `Size`, and `FeeAmount`. These are small proven compositions — richer than a single scalar, simpler than a full domain model.
+A `SourceLocation` composes `LineNumber` with optional `ClassName` and `MethodName`. A `Smell` composes `InvariantName`, `Message`, and `SourceLocation`. These are small proven compositions — richer than a single scalar, simpler than a full domain model.
 
 ### `[concept].py` — Frozen Domain Models
 
-**Is:** A domain concept, named for what it represents. `signal.py`, `order.py`, `regime.py`, `position.py`.
+**Is:** A domain concept, named for what it represents. `product.py`, `order.py`, `inventory.py`, `customer.py`.
 **Contains:** `BaseModel` subclasses with `frozen=True`. Derivations as `@cached_property`, `@computed_field`, or `@property`.
 **Imports from:** `type.py` and `value.py` in this context. Scalars, values, and frozen models from peer contexts.
 **Imported by:** The active model, `api.py`, other frozen models in this context or peer contexts.
 
 Each frozen model is a proven snapshot — correct as of the moment it was built. Its derivations extend that proof. A `@cached_property` that computes from the model's own proven fields is an intrinsic fact that belongs to this model and no other.
 
-Cross-context imports at this layer are natural. Domains are primitives, not sealed bounded contexts. A frozen model in `domain/trading/` composing with a scalar from `domain/signal/type.py` is expected — the dependency graph permits peer-level composition.
+Cross-context imports at this layer are natural. Domains are primitives, not sealed bounded contexts. A frozen model in `domain/order/` composing with a scalar from `domain/catalog/type.py` is expected — the dependency graph permits peer-level composition.
 
 ### `[active_model].py`
 
@@ -117,7 +125,7 @@ Cross-context imports at this layer are natural. Domains are primitives, not sea
 **Imports from:** `type.py`, `value.py`, frozen domain models in this context, peer context types.
 **Imported by:** `service/context.py` for transport binding. `api.py` for contract composition.
 
-Named for the domain concept it represents: `bus.py`, `engine.py`, `session.py`. Not `active_model.py`, not `state_manager.py`, not `orchestrator.py`.
+Named for the domain concept it represents: `catalog.py`, `cart.py`, `session.py`. Not `active_model.py`, not `state_manager.py`, not `orchestrator.py`.
 
 **The single frozen exception.** The active model may be unfrozen — the only model in the program permitted to be. It represents live state of a bounded context that evolves through model operations on this single object. The mutability is contained:
 
@@ -140,7 +148,7 @@ The contracts live in the domain because the domain owns what crosses the bounda
 
 Every file in `domain/` is named for a concept the domain contains. This is a consequence of the types owning the program: if the types are the program, and each type represents a domain concept, then the files that contain those types are the domain vocabulary made visible as directory structure.
 
-**Domain-concept names** describe what the program contains: `signal`, `order`, `event`, `regime`, `session`, `position`, `trade`. They differ between projects because domains differ.
+**Domain-concept names** describe what the program contains: `product`, `order`, `event`, `inventory`, `session`, `customer`, `invoice`. They differ between projects because domains differ.
 
 **Technology-pattern names** describe what frameworks do: `store`, `repository`, `handler`, `controller`, `manager`, `processor`, `router`, `crud`. They appear in every project regardless of domain.
 
@@ -154,7 +162,7 @@ The test: does this filename describe something the domain *contains*, or someth
 
 ## Cross-Context Composition
 
-Domains compose freely across context boundaries at the frozen model layer and below. A model in `domain/trading/` may import scalars from `domain/signal/type.py` and frozen models from `domain/signal/signal.py`. The dependency graph permits this — frozen models see their own type and value layers plus peer context types.
+Domains compose freely across context boundaries at the frozen model layer and below. A model in `domain/order/` may import scalars from `domain/catalog/type.py` and frozen models from `domain/catalog/product.py`. The dependency graph permits this — frozen models see their own type and value layers plus peer context types.
 
 The constraints:
 

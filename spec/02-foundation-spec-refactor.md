@@ -8,7 +8,7 @@ The goal is: all the complexity you need, nothing you don't. Make things as simp
 
 ## Step 1: Tag by Shape
 
-Read every invariant. Ignore the specific nouns (which handler, which signal, which asset). Ask: what is the structural pattern this proposition expresses?
+Read every invariant. Ignore the specific nouns (which handler, which event, which entity). Ask: what is the structural pattern this proposition expresses?
 
 Common shapes:
 
@@ -27,7 +27,7 @@ Tag each invariant with its shape. Use whatever labels fit your domain. The labe
 
 **Template:**
 
-INV-{N}: {shape}. {one-sentence summary ignoring specific nouns}
+{invariant-name}: {shape}. {one-sentence summary ignoring specific nouns}
 
 ---
 
@@ -49,7 +49,7 @@ For each multi-member cluster, write the general proposition that all members ar
 
 Candidate: {general proposition}
 
-Members: INV-{A}, INV-{B}, ...
+Members: {invariant-name-A}, {invariant-name-B}, ...
 
 ---
 

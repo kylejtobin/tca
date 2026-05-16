@@ -11,16 +11,16 @@ These two inputs contain 100% of the information the catalog requires. Every nam
 
 ## Governing Principles
 
-- **Names are transcriptions.** The spec says "signal event," the type is `SignalEvent`. The spec says "NormSpread," the scalar is `NormSpread`. If a name cannot be derived from the spec's language, the spec has a gap.
-- **Every domain value is a named scalar.** `Price(RootModel[Decimal])` with `Field(gt=0)`. Never bare `str`, `int`, `float`, `Decimal`. Constraints live on the scalar, not on consuming models.
-- **Computed values are both scalar and derivation.** `Microprice` is a scalar type for identity and constraint. It is also a `@cached_property` on the model that owns its inputs, constructing and returning a proven `Microprice`.
+- **Names are transcriptions.** The spec says "order event," the type is `OrderEvent`. The spec says "ItemCount," the scalar is `ItemCount`. If a name cannot be derived from the spec's language, the spec has a gap.
+- **Every domain value is a named scalar.** `LineNumber(RootModel[int])` with `Field(ge=1)`. Never bare `str`, `int`, `float`, `Decimal`. Constraints live on the scalar, not on consuming models.
+- **Computed values are both scalar and derivation.** `Subtotal` is a scalar type for identity and constraint. It is also a `@cached_property` on the model that owns its inputs, constructing and returning a proven `Subtotal`.
 - **Configuration values are domain scalars** composed into a frozen configuration model. Not a separate concept.
 - **Every model is frozen.** A frozen model is a sealed proof. No mutation. No staleness.
 - **States are discriminated unions.** Each state is a separate frozen model with a `Literal` discriminator. Fields on the variant define what is valid in that state. Fields absent from the variant are unrepresentable in that state.
 - **The type definition IS the adapter.** `Field(alias="foreign_key")` is the translation. `model_validator(mode="before")` is the normalization. `from_attributes=True` is the surface reader. No adapter layer. No procedural mapping. Two constructions cross the boundary: `model_validate_json` absorbs, `model_validate` lifts.
 - **Dispatch is declared.** `Annotated[A | B | C, Field(discriminator="kind")]` replaces branching. Construction selects the variant.
 - **Derivation belongs on the model.** If a computation depends only on a model's proven fields, it is a `@property`, `@cached_property`, or `@computed_field` on that model.
-- **A composed model's derivation produces the next event in the graph.** `EntryEvaluation.entry_intent` constructs and returns a `MakerBuyIntent` or `IocBuyIntent`. The model is the factory. The handler publishes what the derivation already built.
+- **A composed model's derivation produces the next event in the graph.** `OrderEvaluation.fulfillment_intent` constructs and returns the proven action event (`ReserveStock | DenyOrder`). The model is the factory. The handler publishes what the derivation already built.
 - **The irreducible seam is the only handler content.** One I/O operation: a REST call, a websocket send, a stream temporal wait. Everything before the seam is construction. Everything after is dispatch. If a handler contains a comparison, evaluation, or selection, a composed model is missing.
 
 ---
@@ -33,9 +33,9 @@ This is the center of the catalog. Every invariant in the spec takes one of thre
 
 The invariant IS a constraint on a composed model. Construction succeeds and the invariant is satisfied. Construction fails and no output exists. No seam. No handler logic.
 
-A composed model that embodies a pure construction invariant composes proven inputs as fields: signal snapshots, regime assessments, configuration models, state variants. Its `model_validator` enforces the conditions the invariant declares. Its `@cached_property` derivations construct and return the action events that follow from a successful evaluation.
+A composed model that embodies a pure construction invariant composes proven inputs as fields: observation snapshots, state assessments, configuration models, state variants. Its `model_validator` enforces the conditions the invariant declares. Its `@cached_property` derivations construct and return the action events that follow from a successful evaluation.
 
-The entry gate is pure construction. A single `EntryEvaluation` model composes signal, regime, and risk posture. Its model_validator enforces signal convergence, spread tolerance, fee-adjusted expectancy, cascade direction, and data freshness simultaneously. If `EntryEvaluation` constructs, every gate passed. Its `entry_intent` derivation constructs and returns the proven `MakerBuyIntent` or `IocBuyIntent` via dispatch on regime.entry_method. The handler's entire job: attempt `EntryEvaluation` construction. If an object comes back, publish `entry_evaluation.entry_intent`. If construction fails, publish nothing.
+An order-fulfillment gate is pure construction. A single `OrderEvaluation` model composes the order, the inventory snapshot, and the customer's credit posture. Its model_validator enforces stock availability, credit limit, payment validity, and address eligibility simultaneously. If `OrderEvaluation` constructs, every gate passed. Its `fulfillment_intent` derivation constructs and returns the proven `ReserveStock` or `BackorderRequest` via dispatch on the customer's fulfillment preference. The handler's entire job: attempt `OrderEvaluation` construction. If an object comes back, publish `order_evaluation.fulfillment_intent`. If construction fails, publish nothing.
 
 Every invariant that governs a decision without external I/O is pure construction. The composed model IS the invariant.
 
@@ -49,7 +49,7 @@ The invariant governs a decision that triggers an external action with multiple 
 
 **The outcome dispatch** is a discriminated union of results from the seam. Each outcome variant is a frozen model with a `Literal` discriminator. Each variant carries only the fields valid for that result. Each variant's derivations construct the next event in the graph. CANCELLED carries released balance and derivations that resume the prior evaluation. FILLED carries fill price and size and derivations that transition state. The outcome union replaces branching on the result.
 
-An invariant governing resting order cancellation decomposes into: a `RestingOrderEvaluation` whose construction validates that conditions have degraded (decision), a REST cancel call (seam), and a `CancelOutcome = OrderCancelled | OrderFilled` union where each variant's derivations produce the appropriate next event (dispatch).
+An invariant governing reservation cancellation decomposes into: a `ReservationEvaluation` whose construction validates that conditions have changed (decision), an inventory-system release call (seam), and a `ReleaseOutcome = StockReleased | StockAlreadyAllocated` union where each variant's derivations produce the appropriate next event (dispatch).
 
 Every invariant that involves external I/O decomposes into exactly these three types. If the decision is in the handler, a composed model is missing. If the outcome handling is branching, a dispatch union is missing.
 
@@ -57,11 +57,17 @@ Every invariant that involves external I/O decomposes into exactly these three t
 
 The invariant requires a condition to persist across multiple events over a time window measured by stream-derived timestamps.
 
-The per-event evaluation IS a composed model. A `DrawdownEvaluation` whose construction proves the threshold is breached on this event. The evaluation uses the correct metric (BestBid for MtM, not Microprice). The evaluation is pure construction.
+The per-event evaluation IS a composed model. A `BackorderEvaluation` whose construction proves the threshold is breached on this event. The evaluation uses the correct metric (current on-hand count, not projected on-hand). The evaluation is pure construction.
 
 The persistence tracking across events is the handler's content: the breach start timestamp (from the event stream, never system clock) and the comparison on subsequent events. This is the irreducible temporal seam. It cannot be a single construction because it spans multiple events. But the evaluation on each event IS construction.
 
-A temporal persistence invariant decomposes into: a composed evaluation model (pure construction, per event) and a temporal seam (handler tracks breach duration using event timestamps). The handler constructs the evaluation on each event. If the evaluation shows breach and the elapsed event-stream time exceeds the threshold, the handler publishes the halt event. The evaluation is construction. The temporal tracking is the seam.
+A temporal persistence invariant decomposes into: a composed evaluation model (pure construction, per event) and a temporal seam (handler tracks breach duration using event timestamps). The handler constructs the evaluation on each event. If the evaluation shows breach and the elapsed event-stream time exceeds the threshold, the handler publishes the escalation event. The evaluation is construction. The temporal tracking is the seam.
+
+---
+
+## Context Assignment
+
+Derive contexts from the invariant map's handler groupings — each handler that subscribes to events and publishes events is a context. Assign each type its structural address (context + file) during extraction. The context is the directory. The file is named for the domain concept the type represents, per the naming principle in [program-topology.md](../docs/program-topology.md). If a type cannot be assigned to a context, the context boundaries are not yet clear.
 
 ---
 
@@ -69,7 +75,7 @@ A temporal persistence invariant decomposes into: a composed evaluation model (p
 
 ### Scalars
 
-Every constrained value in any invariant is a scalar. Every configuration parameter is a scalar. Every computed signal value is a scalar (with a corresponding derivation on its parent model). The invariant names the value. The constraint declares itself on the `Field`.
+Every constrained value in any invariant is a scalar. Every configuration parameter is a scalar. Every computed value is a scalar (with a corresponding derivation on its parent model). The invariant names the value. The constraint declares itself on the `Field`.
 
 ### Domain Events
 
@@ -99,11 +105,26 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
 
 ```json
 {
+  "contexts": [
+    {
+      "name": "string (domain concept name)",
+      "path": "domain/{name}/",
+      "purpose": "string (what this context owns)",
+      "has_type_py": "boolean",
+      "has_value_py": "boolean",
+      "active_model": "string or null (filename of the single active model)",
+      "files": ["string (filenames in dependency order)"],
+      "invariants": ["INV-N"]
+    }
+  ],
+
   "scalars": [
     {
       "name": "string (PascalCase transcription from spec)",
       "base": "string (Decimal, float, str, int, datetime)",
       "root_model": true,
+      "context": "string (context name)",
+      "file": "type.py",
       "constraints": "string (Field args: gt=0, ge=0, le=1, min_length=1, etc.)",
       "source_invariants": ["INV-N"],
       "semantic_purpose": "string (what this value is in the domain)",
@@ -116,6 +137,8 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
     {
       "name": "string (PascalCase transcription from spec)",
       "frozen": true,
+      "context": "string (context name)",
+      "file": "string (filename, e.g. event.py)",
       "fields": [
         {
           "name": "string (snake_case)",
@@ -132,6 +155,8 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
   "state_types": {
     "union_name": "string",
     "discriminator_field": "string",
+    "context": "string (context name)",
+    "file": "string (filename, e.g. state.py)",
     "variants": [
       {
         "discriminator_value": "string (Literal value)",
@@ -158,6 +183,8 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
     {
       "name": "string (PascalCase)",
       "frozen": true,
+      "context": "string (context name)",
+      "file": "string (filename, e.g. evaluation.py)",
       "purpose": "string (what this model proves when it constructs)",
       "fields": [
         {
@@ -190,6 +217,8 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
       "source": "string (API endpoint or websocket channel)",
       "model_name": "string (PascalCase)",
       "frozen": true,
+      "context": "string (context name)",
+      "file": "string (filename, e.g. boundary.py)",
       "populate_by_name": true,
       "model_validator_before": "string or null (what the model_validator(mode='before') normalizes, null if no wrapper)",
       "fields": [
@@ -209,6 +238,8 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
       "union_name": "string (PascalCase)",
       "triggered_by_seam": "string (which seam produces these outcomes)",
       "discriminator_field": "string",
+      "context": "string (context name)",
+      "file": "string (filename, e.g. outcome.py)",
       "variants": [
         {
           "discriminator_value": "string (Literal value)",
@@ -264,6 +295,9 @@ Every seam that produces multiple possible results IS a discriminated union. Eac
 - Every handler residual contains only a seam operation. A residual that contains a comparison, evaluation, or selection means a composed model is missing. This is the primary failure mode. It is the thing most likely to be wrong
 - Every composed model declares what invariants its construction enforces and what event its derivation produces
 - Every derivation that produces an event names that event in the `produces_event` field
+- Every type has a context and file assignment
+- Every context's files list matches the types assigned to it
+- Every scalar's file is `type.py`
 - All names are PascalCase transcriptions from spec language
 
 ## Output Convention

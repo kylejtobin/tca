@@ -2,7 +2,7 @@
 
 These patterns describe how construction computes, but more importantly they describe how to actually build in TCA. They are not a closed taxonomy. They are the moves an architect actually needs to reach for, in dependency order: name the domain vocabulary, let fields prove themselves at construction, own the foreign schema, absorb transport wrappers on that same boundary, hand live input to it, lift into domain truth, build richer semantic worlds, let other models read declared surfaces, derive intrinsic facts, route structurally, and finally render a terminal result from owned proof.
 
-To keep the build path legible, the examples below all use the same world: a stock exchange feed entering a trading domain.
+To keep the build path legible, the examples below all use the same world: a structural smell detector that walks Python source. The running types — `LineNumber`, `ClassName`, `MethodName`, `SourceLocation`, `Smell`, `FileContext`, plus the AST-classification types from `tca/building_block.py` (`TypeAnnotation`, `AnnotationShape`, `BlockShape`, `ClassifiedNode`, `ModelTree`, `TreeReport`) — all live in this repo. The patterns are domain-agnostic; the running example just keeps the build path coherent.
 
 ### Name The Domain Scalars First
 
@@ -11,12 +11,12 @@ First, own the domain values themselves before any larger model starts using the
 **Bad Procedural Pattern**
 
 ```python
-class TradeRecord(BaseModel, frozen=True):
-    trade_id: str
-    symbol: str
-    price: Decimal
-    quantity: int
-    venue: str
+class Smell(BaseModel, frozen=True):
+    invariant_name: str
+    message: str
+    line: int
+    class_name: str | None
+    method_name: str | None
 ```
 
 **Why it is bad:** The model has field names, but the values are still flat unowned primitives, so the domain is only half modeled.
@@ -24,22 +24,22 @@ class TradeRecord(BaseModel, frozen=True):
 **TCA Pattern**
 
 ```python
-class Symbol(RootModel[str], frozen=True):
-    root: str
-
-class Price(RootModel[Decimal], frozen=True):
-    root: Decimal
-
-class Quantity(RootModel[int], frozen=True):
+class LineNumber(RootModel[int], frozen=True):
     root: int
 
-class DomainTrade(BaseModel, frozen=True, from_attributes=True):
-    symbol: Symbol
-    price: Price
-    quantity: Quantity
+class InvariantName(RootModel[str], frozen=True):
+    root: str
+
+class Message(RootModel[str], frozen=True):
+    root: str
+
+class Smell(BaseModel, frozen=True):
+    invariant_name: InvariantName
+    message: Message
+    location: SourceLocation
 ```
 
-This is correct because the domain vocabulary exists as owned scalar types before larger models start composing with it, and the first composed model closes the contrast pair completely. The same scalar move is what later legitimizes `VenueName`, `Spread`, `BasketName`, and the closed vocabulary `HaltReason`.
+This is correct because the domain vocabulary exists as owned scalar types before larger models start composing with it, and the first composed model closes the contrast pair completely. The same scalar move is what later legitimizes `ClassName`, `MethodName`, and the closed vocabulary `Block`.
 
 ### Let Fields Declare Their Own Constraints
 
@@ -48,26 +48,26 @@ Once the domain fields exist, let their declarations carry as much proof as poss
 **Bad Procedural Pattern**
 
 ```python
-class TradePayloadNormalizer:
-    def normalize(self, raw_trade: dict[str, object]) -> dict[str, object]:
-        normalized_trade: dict[str, object] = {}
+class SmellPayloadNormalizer:
+    def normalize(self, raw: dict[str, object]) -> dict[str, object]:
+        normalized: dict[str, object] = {}
 
-        symbol = str(raw_trade["symbol"]).strip().upper()
-        if not symbol:
-            raise ValueError("symbol is required")
-        normalized_trade["symbol"] = symbol
+        name = str(raw["invariant_name"]).strip()
+        if not name:
+            raise ValueError("invariant_name is required")
+        normalized["invariant_name"] = name
 
-        price = Decimal(str(raw_trade["price"]))
-        if price <= 0:
-            raise ValueError("price must be positive")
-        normalized_trade["price"] = price
+        message = str(raw["message"]).strip()
+        if not message:
+            raise ValueError("message is required")
+        normalized["message"] = message
 
-        quantity = int(raw_trade["quantity"])
-        if quantity <= 0:
-            raise ValueError("quantity must be positive")
-        normalized_trade["quantity"] = quantity
+        line = int(raw["line"])
+        if line < 1:
+            raise ValueError("line must be positive")
+        normalized["line"] = line
 
-        return normalized_trade
+        return normalized
 ```
 
 **Why it is bad:** Field-level proof has escaped into a procedural normalizer layer, so every new field becomes more parser code, more staging dicts, and more hand-written cleanup before the model gets to own its own boundary.
@@ -75,19 +75,14 @@ class TradePayloadNormalizer:
 **TCA Pattern**
 
 ```python
-class Symbol(RootModel[str], frozen=True):
-    root: str = Field(min_length=1, pattern=r"^[A-Z]+$")
+class LineNumber(RootModel[int], frozen=True):
+    root: int = Field(ge=1)
 
-class Price(RootModel[Decimal], frozen=True):
-    root: Decimal = Field(gt=0)
+class InvariantName(RootModel[str], frozen=True):
+    root: str = Field(min_length=1, pattern=r"^[A-Z][A-Za-z0-9_]*$")
 
-class Quantity(RootModel[int], frozen=True):
-    root: int = Field(gt=0)
-
-class DomainTrade(BaseModel, frozen=True, from_attributes=True):
-    symbol: Symbol
-    price: Price
-    quantity: Quantity
+class Message(RootModel[str], frozen=True):
+    root: str = Field(min_length=1)
 ```
 
 This is correct because the constraints now live directly on the fields that own them, and Pydantic enforces them at construction without forcing the program to grow a separate normalizer service. Reach for validators later only when the proof cannot be expressed declaratively on the field itself.
@@ -99,19 +94,16 @@ Next, own the foreign payload shape declaratively at the boundary instead of tra
 **Bad Procedural Pattern**
 
 ```python
-class NasdaqTradeAdapter:
-    def translate_trade_message(
-        self, payload: dict[str, object]
-    ) -> dict[str, object]:
-        symbol = str(payload["sym"]).strip().upper()
-        price = Decimal(str(payload["px"]))
-        quantity = int(payload["qty"])
+class HookPayloadAdapter:
+    def translate_hook_message(self, payload: dict[str, object]) -> dict[str, object]:
+        tool_name = str(payload["tool_name"])
+        tool_input = payload["tool_input"]
+        file_path = str(tool_input["file_path"])
 
-        translated_payload: dict[str, object] = {}
-        translated_payload["symbol"] = symbol
-        translated_payload["price"] = price
-        translated_payload["quantity"] = quantity
-        return translated_payload
+        translated: dict[str, object] = {}
+        translated["tool_name"] = tool_name
+        translated["file_path"] = file_path
+        return translated
 ```
 
 **Why it is bad:** The foreign field translation is now trapped in a procedural adapter layer that rebuilds an unowned payload shape by hand.
@@ -119,16 +111,12 @@ class NasdaqTradeAdapter:
 **TCA Pattern**
 
 ```python
-class NasdaqTradeWire(BaseModel, frozen=True, populate_by_name=True):
-    symbol: Symbol = Field(alias="sym")
-    price: Price = Field(alias="px")
-    quantity: Quantity = Field(alias="qty")
+class HookToolInput(BaseModel, frozen=True):
+    file_path: FilePath
 
-# Same move, different exchange schema.
-class NyseTradeWire(BaseModel, frozen=True, populate_by_name=True):
-    symbol: Symbol = Field(alias="ticker")
-    price: Price = Field(alias="last")
-    quantity: Quantity = Field(alias="size")
+class HookEvent(BaseModel, frozen=True):
+    tool_name: ToolName
+    tool_input: HookToolInput
 ```
 
 This is correct because the seam models foreign truth faithfully while the rest of the program keeps speaking owned domain language. This is still foreign ownership, not domain truth yet.
@@ -140,34 +128,29 @@ After mirroring the foreign schema, absorb any outer transport wrapper on that s
 **Bad Procedural Pattern**
 
 ```python
-class NasdaqFeedRouter:
-    def route_trade(self, message: dict[str, object]) -> None:
-        payload = message["payload"]
-        self._trade_service.handle_trade(payload)
-
-    def route_correction(self, message: dict[str, object]) -> None:
-        payload = message["payload"]
-        self._correction_service.handle_trade_correction(payload)
+class FieldSlotRouter:
+    def route_field(self, item: dict[str, object]) -> None:
+        name = item["name"]
+        info = item["info"]
+        self._field_handler.handle_field(name, info)
 ```
 
-**Why it is bad:** The wrapper-removal logic now leaks into procedural handlers, so the seam stops being terminal and the outer transport shape keeps spreading.
+**Why it is bad:** The wrapper-removal logic now leaks into procedural handlers, so the seam stops being terminal and the positional tuple shape keeps spreading.
 
 **TCA Pattern**
 
 ```python
-class NasdaqTradeWire(BaseModel, frozen=True, populate_by_name=True):
-    # Same boundary model as above, now grown to absorb the wrapper too.
-    symbol: Symbol = Field(alias="sym")
-    price: Price = Field(alias="px")
-    quantity: Quantity = Field(alias="qty")
+class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=True):
+    field_name: str = Field(alias="name")
+    annotation: TypeAnnotation
 
     @model_validator(mode="before")
     @classmethod
-    def unwrap_payload(cls, data: dict[str, object]) -> dict[str, object]:
-        return data["payload"] if "payload" in data else data
+    def _from_tuple(cls, data: tuple[str, FieldInfo]) -> dict[str, object]:
+        return {"field_name": data[0], "annotation": data[1].annotation}
 ```
 
-This is correct because the same boundary model now absorbs the outer wrapper once instead of forcing procedural code to peel it open over and over.
+This is correct because the same boundary model now absorbs the positional `(name, FieldInfo)` tuple once instead of forcing procedural code to unpack it over and over. (Real example: `FieldSlot` in `tca/building_block.py`.)
 
 ### Capture Live Input
 
@@ -176,32 +159,25 @@ Once that boundary model is ready, keep the live seam thin: catch raw transport 
 **Bad Procedural Pattern**
 
 ```python
-async for raw_message in nasdaq_socket:
-    envelope = json.loads(raw_message)
-    payload = envelope["payload"]
-
-    if payload["event_type"] != "trade":
-        continue
-
-    trade = {
-        "symbol": payload["sym"],
-        "price": Decimal(payload["px"]),
-        "quantity": int(payload["qty"]),
-    }
-    trade_store.publish(trade)
+raw = sys.stdin.read()
+envelope = json.loads(raw)
+tool_input = envelope["tool_input"]
+if not tool_input["file_path"].endswith(".py"):
+    sys.exit(0)
+path = tool_input["file_path"]
+process(path)
 ```
 
-**Why it is bad:** The socket loop now owns parsing, wrapper access, field extraction, and business meaning instead of handing raw transport reality off immediately.
+**Why it is bad:** The hook entry point now owns parsing, wrapper access, field extraction, and business meaning instead of handing raw transport reality off immediately.
 
 **TCA Pattern**
 
 ```python
-async for raw_message in nasdaq_socket:
-    trade = NasdaqTradeWire.model_validate_json(raw_message)
-    yield trade
+event = HookEvent.model_validate_json(sys.stdin.read())
+yield event
 ```
 
-This is correct because the live edge does one job only: catch unstable input and hand it straight to the boundary model that already knows how to absorb the wrapper and own the payload. The socket loop is now just an intake edge.
+This is correct because the live edge does one job only: catch unstable input and hand it straight to the boundary model that already knows how to absorb the envelope and own the payload. The hook intake is now just an edge.
 
 ### Lift Into Domain Truth
 
@@ -210,18 +186,12 @@ Once the foreign object is proven, cross directly into owned domain truth by con
 **Bad Procedural Pattern**
 
 ```python
-class TradeTranslator:
-    def __init__(self, symbol_formatter) -> None:
-        self._symbol_formatter = symbol_formatter
-
-    def to_domain_trade(self, exchange_trade: NasdaqTradeWire) -> DomainTrade:
-        translated_payload: dict[str, object] = {}
-        translated_payload["symbol"] = self._symbol_formatter.format(
-            exchange_trade.symbol
-        )
-        translated_payload["price"] = exchange_trade.price
-        translated_payload["quantity"] = exchange_trade.quantity
-        return DomainTrade(**translated_payload)
+class HookEventTranslator:
+    def to_file_context(self, event: HookEvent) -> FileContext:
+        translated: dict[str, object] = {}
+        translated["path"] = event.tool_input.file_path.root
+        translated["source"] = Path(event.tool_input.file_path.root).read_text()
+        return FileContext(**translated)
 ```
 
 **Why it is bad:** The foreign-to-domain crossing is now trapped in a procedural translation step that manually rebuilds domain values one field at a time.
@@ -229,11 +199,11 @@ class TradeTranslator:
 **TCA Pattern**
 
 ```python
-exchange_trade = NasdaqTradeWire.model_validate_json(raw_message)
-domain_trade = DomainTrade.model_validate(exchange_trade)
+event = HookEvent.model_validate_json(raw_message)
+ctx = FileContext(path=event.tool_input.file_path, source=event.tool_input.file_path.read_text())
 ```
 
-This is correct because the foreign object is already proven, and because the foreign model already exposes domain names, the crossing into owned semantics stays declarative and becomes another construction step instead of a mapper layer. This is the first point where owned domain truth begins.
+This is correct because the foreign object is already proven, and the domain construction reads from it directly without a translator layer. This is the first point where owned domain truth begins.
 
 ### Compose Proven Models
 
@@ -242,20 +212,17 @@ Now construct a richer semantic world by owning already-proven models as fields.
 **Bad Procedural Pattern**
 
 ```python
-class SpreadService:
+class ClassificationService:
     def build_context(
         self,
-        nasdaq_trade: DomainTrade,
-        nyse_trade: DomainTrade,
-        nasdaq_quote: VenueQuote,
-        nyse_quote: VenueQuote,
+        field_name: str,
+        annotation_shape: AnnotationShape,
+        block_shape: BlockShape,
     ) -> dict[str, object]:
         context_payload: dict[str, object] = {}
-        context_payload["nasdaq_trade"] = nasdaq_trade
-        context_payload["nyse_trade"] = nyse_trade
-        context_payload["nasdaq_quote"] = nasdaq_quote
-        context_payload["nyse_quote"] = nyse_quote
-        context_payload["alert_threshold"] = Decimal("0.50")
+        context_payload["field_name"] = field_name
+        context_payload["shape"] = annotation_shape
+        context_payload["block_shape"] = block_shape
         return context_payload
 ```
 
@@ -264,20 +231,19 @@ class SpreadService:
 **TCA Pattern**
 
 ```python
-class VenueQuote(BaseModel, frozen=True):
-    venue: VenueName
-    symbol: Symbol
-    bid: Price
-    ask: Price
+class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
+    block_shape: BlockShape = Field(alias="resolved_type")
 
-class CrossVenueContext(BaseModel, frozen=True):
-    nasdaq_trade: DomainTrade
-    nyse_trade: DomainTrade
-    nasdaq_quote: VenueQuote
-    nyse_quote: VenueQuote
+    @property
+    def block(self) -> Block:
+        return self.block_shape.block_kind
+
+    @property
+    def children(self) -> tuple[ClassifiedNode, ...]:
+        return self.block_shape.children
 ```
 
-This is correct because the richer semantic world now exists as one proven object instead of a temporary coordination payload. `VenueQuote` is introduced here in its final shape, and `CrossVenueContext` is the first actual semantic world in the story.
+This is correct because the richer semantic world now exists as one proven object instead of a temporary coordination payload. `ClassifiedNode` is introduced here in its final shape: inherits `FieldEntry`, adds `BlockShape`, exposes flat delegation properties for downstream readers. (Real example: `ClassifiedNode` in `tca/building_block.py`.)
 
 ### Read Another Model's Surface
 
@@ -286,19 +252,17 @@ Once a model exposes a declared surface, let downstream construction read it dir
 **Bad Procedural Pattern**
 
 ```python
-class QuoteSummaryDTO(BaseModel, frozen=True):
-    venue: VenueName
-    symbol: Symbol
-    best_bid: Price
-    best_ask: Price
+class FieldEntryDTO(BaseModel, frozen=True):
+    field_name: str
+    nullable: bool
+    collection: bool
 
-class QuoteSummaryMapper:
-    def from_quote(self, quote: VenueQuote) -> QuoteSummaryDTO:
-        return QuoteSummaryDTO(
-            venue=quote.venue,
-            symbol=quote.symbol,
-            best_bid=quote.bid,
-            best_ask=quote.ask,
+class FieldEntryMapper:
+    def from_slot(self, slot: FieldSlot) -> FieldEntryDTO:
+        return FieldEntryDTO(
+            field_name=slot.field_name,
+            nullable=slot.annotation.nullable,
+            collection=slot.annotation.collection,
         )
 ```
 
@@ -307,16 +271,26 @@ class QuoteSummaryMapper:
 **TCA Pattern**
 
 ```python
-class QuoteSummary(BaseModel, frozen=True, from_attributes=True):
-    venue: VenueName
-    symbol: Symbol
-    best_bid: Price = Field(alias="bid")
-    best_ask: Price = Field(alias="ask")
+class FieldEntry(BaseModel, frozen=True, from_attributes=True):
+    field_name: str
+    shape: AnnotationShape = Field(alias="annotation")
 
-summary = QuoteSummary.model_validate(quote)
+    @property
+    def resolved_type(self) -> object:
+        return self.shape.resolved_type
+
+    @property
+    def nullable(self) -> bool:
+        return self.shape.nullable
+
+    @property
+    def collection(self) -> bool:
+        return self.shape.collection
+
+entry = FieldEntry.model_validate(slot)
 ```
 
-This is correct because the next model reads the declared surface that already exists instead of forcing the program to rebuild it procedurally. This is borrowed truth, not newly derived truth.
+This is correct because the next model reads the declared surface that already exists — `TypeAnnotation`'s `@property` outputs flow through `getattr` during `model_validate`. This is borrowed truth, not newly derived truth. (Real example: `FieldEntry` in `tca/building_block.py`.)
 
 ### Derive On The Model
 
@@ -325,36 +299,27 @@ Once a model owns enough proven structure, extend that same model with a named i
 **Bad Procedural Pattern**
 
 ```python
-class SpreadAlertService:
-    def maybe_publish(self, context: CrossVenueContext) -> None:
-        edge = context.nyse_quote.bid - context.nasdaq_quote.ask
-
-        if edge > Decimal("0.50"):
-            self._publisher.publish(
-                {
-                    "symbol": context.nasdaq_quote.symbol,
-                    "edge": edge,
-                }
-            )
+class SmellRendererService:
+    def render(self, smell: Smell) -> str:
+        return f"{smell.invariant_name}: {smell.message} ({smell.location.qualified})"
 ```
 
-**Why it is bad:** The derivation is not owned at all. It is just inline arithmetic at the call site, so the program keeps rediscovering intrinsic truth instead of naming and owning it.
+**Why it is bad:** The derivation is not owned at all. It is just inline string construction at the call site, so the program keeps rediscovering intrinsic truth instead of naming and owning it.
 
 **TCA Pattern**
 
 ```python
-class CrossVenueContext(BaseModel, frozen=True):
-    nasdaq_trade: DomainTrade
-    nyse_trade: DomainTrade
-    nasdaq_quote: VenueQuote
-    nyse_quote: VenueQuote
+class Smell(BaseModel, frozen=True):
+    invariant_name: InvariantName
+    message: Message
+    location: SourceLocation
 
-    @property
-    def cross_venue_edge(self) -> Spread:
-        return Spread(self.nyse_quote.bid - self.nasdaq_quote.ask)
+    @cached_property
+    def rendered(self) -> str:
+        return f"{self.invariant_name.root}: {self.message.root} ({self.location.qualified})"
 ```
 
-This is correct because the same `CrossVenueContext` now owns the intrinsic fact that can be derived from the fields it already proved.
+This is correct because the same `Smell` now owns the intrinsic fact that can be derived from the fields it already proved. (Real example: `Smell.rendered` in `.claude/scripts/smell.py`.)
 
 ### Declare Cases Instead Of Branching
 
@@ -363,30 +328,32 @@ Once the domain world exists, let type selection replace branch-based control fl
 **Bad Procedural Pattern**
 
 ```python
-class ExchangeEventRouter:
-    def route(self, raw_event: dict[str, object]) -> None:
-        if raw_event["event_type"] == "trade":
+class AnnotationRouter:
+    def route(self, raw: dict[str, object]) -> None:
+        if raw["kind"] == "direct":
             event = {
-                "event_type": "trade",
-                "symbol": raw_event["symbol"],
-                "price": raw_event["price"],
-                "quantity": raw_event["quantity"],
+                "kind": "direct",
+                "resolved_type": raw["resolved_type"],
+                "nullable": False,
+                "collection": False,
             }
-            self._trade_handler.handle(event)
-        elif raw_event["event_type"] == "halt":
+            self._direct_handler.handle(event)
+        elif raw["kind"] == "optional":
             event = {
-                "event_type": "halt",
-                "symbol": raw_event["symbol"],
-                "reason": raw_event["reason"],
+                "kind": "optional",
+                "resolved_type": raw["resolved_type"],
+                "nullable": True,
+                "collection": False,
             }
-            self._halt_handler.handle(event)
-        else:
+            self._optional_handler.handle(event)
+        elif raw["kind"] == "tuple":
             event = {
-                "event_type": "auction",
-                "symbol": raw_event["symbol"],
-                "auction_price": raw_event["auction_price"],
+                "kind": "tuple",
+                "resolved_type": raw["resolved_type"],
+                "nullable": False,
+                "collection": True,
             }
-            self._auction_handler.handle(event)
+            self._tuple_handler.handle(event)
 ```
 
 **Why it is bad:** The procedure is doing dispatch that structure already knows how to do, so the case logic lives in branch code instead of in the types that own the cases.
@@ -394,31 +361,33 @@ class ExchangeEventRouter:
 **TCA Pattern**
 
 ```python
-class TradeEvent(BaseModel, frozen=True):
-    event_type: Literal["trade"] = "trade"
-    symbol: Symbol
-    price: Price
-    quantity: Quantity
+class DirectAnnotation(BaseModel, frozen=True, from_attributes=True):
+    kind: Literal[AnnotationKind.DIRECT] = AnnotationKind.DIRECT
+    resolved_type: object
+    nullable: Literal[False]
+    collection: Literal[False]
 
-class HaltEvent(BaseModel, frozen=True):
-    event_type: Literal["halt"] = "halt"
-    symbol: Symbol
-    reason: HaltReason
+class OptionalAnnotation(BaseModel, frozen=True, from_attributes=True):
+    kind: Literal[AnnotationKind.OPTIONAL] = AnnotationKind.OPTIONAL
+    resolved_type: object
+    nullable: Literal[True]
+    collection: Literal[False]
 
-class AuctionEvent(BaseModel, frozen=True):
-    event_type: Literal["auction"] = "auction"
-    symbol: Symbol
-    auction_price: Price
+class TupleAnnotation(BaseModel, frozen=True, from_attributes=True):
+    kind: Literal[AnnotationKind.TUPLE] = AnnotationKind.TUPLE
+    resolved_type: object
+    nullable: Literal[False]
+    collection: Literal[True]
 
-ExchangeEvent = Annotated[
-    TradeEvent | HaltEvent | AuctionEvent,
-    Field(discriminator="event_type"),
+AnnotationShape = Annotated[
+    DirectAnnotation | OptionalAnnotation | TupleAnnotation,
+    Field(discriminator="kind"),
 ]
 
-event = TypeAdapter(ExchangeEvent).validate_python(raw_event)
+shape = TypeAdapter(AnnotationShape).validate_python(raw)
 ```
 
-This is correct because the cases are declared once as types, and construction selects the right one structurally. Construction is now the switch statement.
+This is correct because the cases are declared once as types, and construction selects the right one structurally. Construction is now the switch statement. (Real example: `AnnotationShape` in `tca/building_block.py` has six variants total.)
 
 ### Unfold Composite Inputs
 
@@ -427,22 +396,19 @@ Some declared cases are complete immediately, while others continue construction
 **Bad Procedural Pattern**
 
 ```python
-class InstructionBuilder:
+class TypeTreeBuilder:
     def build(self, raw: dict[str, object]) -> object:
-        if raw["kind"] == "basket":
-            built_orders = []
-            for child in raw["orders"]:
-                built_orders.append(self.build(child))
+        if raw["block_kind"] == "record":
+            built_children = []
+            for child in raw["children"]:
+                built_children.append(self.build(child))
             return {
-                "kind": "basket",
-                "name": raw["name"],
-                "orders": built_orders,
+                "block_kind": "record",
+                "children": built_children,
             }
 
         return {
-            "kind": "market",
-            "symbol": raw["symbol"],
-            "quantity": int(raw["quantity"]),
+            "block_kind": raw["block_kind"],
         }
 ```
 
@@ -451,26 +417,23 @@ class InstructionBuilder:
 **TCA Pattern**
 
 ```python
-class MarketOrder(BaseModel, frozen=True):
-    kind: Literal["market"] = "market"
-    symbol: Symbol
-    quantity: Quantity
+class RecordBlock(BaseModel, frozen=True, from_attributes=True):
+    block_kind: Literal[Block.RECORD] = Block.RECORD
+    children: tuple[ClassifiedNode, ...]
 
-class BasketOrder(BaseModel, frozen=True):
-    kind: Literal["basket"] = "basket"
-    name: BasketName
-    orders: tuple["TradeInstruction", ...]
+class LeafBlock(BaseModel, frozen=True, from_attributes=True):
+    block_kind: Literal[
+        Block.ENUM, Block.NEWTYPE, Block.COLLECTION, Block.SCALAR, Block.UNION
+    ]
+    # No children field — the variant's shape IS the decision not to recurse
 
-TradeInstruction = Annotated[
-    MarketOrder | BasketOrder,
-    Field(discriminator="kind"),
+BlockShape = Annotated[
+    RecordBlock | LeafBlock,
+    Field(discriminator="block_kind"),
 ]
-
-class TradingSession(BaseModel, frozen=True):
-    instructions: tuple[TradeInstruction, ...]
 ```
 
-This is correct because the selected variant's shape determines whether construction is complete now or must continue into children. This is declared dispatch plus recursive continuation by shape.
+This is correct because the selected variant's shape determines whether construction is complete now or must continue into children. `RecordBlock.children` reads `ResolvedType.children`, which fires `ModelTree.model_validate` recursively. `LeafBlock` has no children field, so the property never fires. The variant's shape IS the recursion decision. (Real example: `BlockShape` in `tca/building_block.py`.)
 
 ### Let One Construction Trigger The Next
 
@@ -479,18 +442,18 @@ Once the seam and domain path are stable, introduce a dedicated root object whos
 **Bad Procedural Pattern**
 
 ```python
-class TicketWorkflowService:
-    def __init__(self, parser, normalizer, translator, ticket_factory) -> None:
-        self._parser = parser
-        self._normalizer = normalizer
-        self._translator = translator
-        self._ticket_factory = ticket_factory
+class ClassifierWorkflowService:
+    def __init__(self, importer, classifier, reporter, renderer) -> None:
+        self._importer = importer
+        self._classifier = classifier
+        self._reporter = reporter
+        self._renderer = renderer
 
-    def build_ticket(self, raw_message: str) -> TradeTicket:
-        parsed_message = self._parser.parse(raw_message)
-        normalized_payload = self._normalizer.normalize(parsed_message)
-        domain_trade = self._translator.to_domain_trade(normalized_payload)
-        return self._ticket_factory.create(domain_trade)
+    def run(self, target: str) -> str:
+        model_class = self._importer.resolve(target)
+        tree = self._classifier.classify(model_class)
+        report = self._reporter.build(tree)
+        return self._renderer.render(report)
 ```
 
 **Why it is bad:** The coordinator now owns the semantic path of the program, so construction becomes a script instead of a graph that extends itself through proven objects.
@@ -498,28 +461,26 @@ class TicketWorkflowService:
 **TCA Pattern**
 
 ```python
-class TradeTicket(BaseModel, frozen=True, from_attributes=True):
-    symbol: Symbol
-    price: Price
-    quantity: Quantity
-
-class CapturedNasdaqTrade(BaseModel, frozen=True):
-    raw_message: str
+class ClassifierRun(BaseModel, frozen=True):
+    target: str
+    json_output: bool = False
 
     @cached_property
-    def foreign_trade(self) -> NasdaqTradeWire:
-        return NasdaqTradeWire.model_validate_json(self.raw_message)
+    def model_class(self) -> type[BaseModel]:
+        module_path, class_name = self.target.rsplit(":", 1)
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
 
     @cached_property
-    def domain_trade(self) -> DomainTrade:
-        return DomainTrade.model_validate(self.foreign_trade)
+    def tree(self) -> ModelTree:
+        return ModelTree.model_validate(self.model_class)
 
     @cached_property
-    def ticket(self) -> TradeTicket:
-        return TradeTicket.model_validate(self.domain_trade)
+    def report(self) -> TreeReport:
+        return TreeReport.model_validate(self.tree)
 ```
 
-This is correct because each proven result becomes the natural source for the next construction, and the path lives on the model instead of in a coordinator script. The new root type is justified here because the lesson is orchestration-by-construction.
+This is correct because each proven result becomes the natural source for the next construction, and the path lives on the model instead of in a coordinator script. The new root type is justified here because the lesson is orchestration-by-construction. (Real example: `ClassifierRun` in `tca/building_block.py`.)
 
 ### Render The Final Shape
 
@@ -528,15 +489,14 @@ Finally, let the terminal human-facing or machine-facing surface emerge from own
 **Bad Procedural Pattern**
 
 ```python
-class OpportunityPresenter:
-    def render(self, context: CrossVenueContext) -> str:
+class TreePresenter:
+    def render(self, tree: ModelTree) -> str:
         parts: list[str] = []
-        parts.append(f"buy venue={context.nasdaq_quote.venue}")
-        parts.append(f"buy ask={context.nasdaq_quote.ask}")
-        parts.append(f"sell venue={context.nyse_quote.venue}")
-        parts.append(f"sell bid={context.nyse_quote.bid}")
-        parts.append(f"edge={context.nyse_quote.bid - context.nasdaq_quote.ask}")
-        return " | ".join(parts)
+        for node in tree.fields:
+            parts.append(f"{node.field_name}: {node.block}")
+            for child in node.children:
+                parts.append(f"  {child.field_name}: {child.block}")
+        return "\n".join(parts)
 ```
 
 **Why it is bad:** The output layer is rebuilding truth it does not own, so the final artifact is no longer emerging directly from the proof source.
@@ -544,21 +504,21 @@ class OpportunityPresenter:
 **TCA Pattern**
 
 ```python
-class SpreadOpportunity(BaseModel, frozen=True, from_attributes=True):
-    buy_from: VenueQuote = Field(alias="nasdaq_quote")
-    sell_to: VenueQuote = Field(alias="nyse_quote")
-    edge: Spread = Field(alias="cross_venue_edge")
+class TreeReport(BaseModel, frozen=True, from_attributes=True):
+    reports: tuple[FieldReport, ...] = Field(alias="fields")
 
     @computed_field
     @cached_property
-    def line(self) -> str:
-        return (
-            f"Buy on {self.buy_from.venue} at {self.buy_from.ask}; "
-            f"sell on {self.sell_to.venue} at {self.sell_to.bid}; "
-            f"edge={self.edge}"
-        )
+    def text(self) -> str:
+        def _indent(report: FieldReport, depth: int) -> tuple[str, ...]:
+            prefix = "  " * depth
+            return (
+                f"{prefix}{report.line}",
+                *(line for child in report.children for line in _indent(child, depth + 1)),
+            )
+        return "\n".join(line for r in self.reports for line in _indent(r, 0))
 
-opportunity = SpreadOpportunity.model_validate(context)
+report = TreeReport.model_validate(tree)
 ```
 
-This is correct because the terminal artifact now emerges directly from the semantic world already established above instead of being reconstructed in a presenter layer. The program is now emitting its final surface.
+This is correct because the terminal artifact now emerges directly from the semantic world already established above instead of being reconstructed in a presenter layer. The program is now emitting its final surface. (Real example: `TreeReport.text` in `tca/building_block.py`.)
