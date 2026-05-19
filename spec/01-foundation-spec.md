@@ -4,7 +4,7 @@ A planning artifact for establishing shared understanding before implementation.
 
 ## How to use this document
 
-Each layer derives from the one above it. If a domain invariant doesn't trace to a condition, it shouldn't exist. If a condition doesn't have at least one invariant governing it, you have a gap. Work top-down to build it. Validate bottom-up to verify it.
+The spec has eight layers. Each derives from the one above. If a domain invariant doesn't trace to a condition, it shouldn't exist. If a condition doesn't have at least one invariant governing it, you have a gap. If an invariant doesn't name its proof level, it floats without a mechanism. Work top-down to build it. Validate bottom-up to verify it. The order is Scope → Strategy → Conditions → Proof Hierarchy Classification → Premises → Configuration Models → Domain Invariants → Coverage.
 
 ---
 
@@ -134,7 +134,39 @@ Everything that can go wrong, needs to be managed, or represents a scenario the 
 
 ---
 
-## 4\. Premises
+## 4\. Proof Hierarchy Classification
+
+The mechanisms by which invariants are proven, ordered from strongest to weakest. Every invariant in section 7 names the level it sits at. A weaker mechanism is admissible only when every stronger mechanism is demonstrably insufficient for that invariant. This section is a fixed taxonomy, not a free design space — the classification names which slot each invariant occupies.
+
+**Level 1 — Field constraint on a narrowed scalar.** The strongest. A constraint expressed declaratively on a single-value root model. The type's existence IS the proof: if the instance exists, the bound holds. Use when the invariant is a static bound on one value against a constant.
+
+**Level 2 — Narrowed type as a field on a composed model.** The composed model declares a Level-1 type as a field. Construction of the parent triggers construction of the field, which triggers the Level-1 proof. Use when the invariant is carried into a larger model by the field type alone.
+
+**Level 3 — Cross-field validator over composed fields.** A validator that rejects a state composed of individually-valid values whose composition is structurally impossible. Reserved for invariants that cannot be carried by any Level-1 or Level-2 shape. A validator referencing one field against a constant is a Level-1 unforged. A validator comparing fields against a configured threshold is a decision, not an integrity check — its home is a derivation returning a typed result variant, not a Level-3 validator.
+
+**Level 4 — Handler-gated absence.** External state that no field on any model represents. The handler refuses to attempt construction when the prerequisite is missing. The composed model's absence is the proof. Use for connection liveness, scheduled cadence, prerequisite events, halt conditions.
+
+**Decisions are not validators.** When a rule answers "should the system act on this?" rather than "is this value well-formed?", the answer is not a validator at any level. Its home is a derivation on a composed evaluation model that returns a typed result variant. Construction always succeeds; the consumer dispatches on the variant. A spec line that reads like a decision must say so — it carries Level-2 inputs into a derivation, not a validator.
+
+**Strongest available wins.** Each invariant is tested at Level 1 first, then 2, then 3, then 4. The first level that holds is the home. Reaching for a weaker level when a stronger one would carry the proof is the deepest specification defect this section prevents.
+
+**Example (inventory management):**
+
+Mechanisms this system uses:
+
+Level 1 — `Sku`, `StockLevel`, `Quantity`, `Duration`, `SupplierId` as narrowed scalars with declarative constraints (non-negativity, format, range bounds).
+
+Level 2 — `ReorderIntent`, `PhysicalCount`, `SalesEvent` as composed models carrying Level-1 types as fields. The composed model's existence proves the field-level constraints hold.
+
+Level 3 — `OrderTransition` rejecting impossible (state, event) cells. A delivered order receiving an acknowledgment is a meaningless composition; the validator refuses it. Not used for thresholds.
+
+Level 4 — Supplier business hours, scheduled threshold review cadence, pending-order absence. The order placement handler does not exist as a construction site outside business hours. The threshold review handler does not exist outside its scheduled cadence.
+
+Decisions appear as derivations, not levels. `ReorderEvaluation` composes proven inputs and returns `ReorderResult = ReorderTriggered(intent) | ReorderSuppressed(reason)`. The reorder handler dispatches on the variant; construction of `ReorderEvaluation` always succeeds for well-formed inputs.
+
+---
+
+## 5\. Premises
 
 The foundational assumptions about how the system is structured that determine how invariants are expressed and enforced. Premises are not domain rules. They are axioms about the system's architecture that shape where domain rules live and how they work. They sit between the conditions (what can go wrong) and the invariants (what must be true) because invariants cannot be properly grounded without knowing these structural commitments.
 
@@ -192,7 +224,83 @@ PRE-4: Validation happens at construction. If a data object
 
 ---
 
-## 5\. Domain Invariants
+## 6\. Configuration Models
+
+Every system has parameters that are not constants and not domain truths — they sit between. Configuration is typed and validated at construction; this section names what is parameterized, who owns each parameter, and how often it changes. A parameter discovered during invariant writing belongs here, not in the invariant's body.
+
+Decomposition by owner and change cadence prevents two failure modes: parameters scattered across the codebase with no canonical home, and configuration treated as a uniform bag when it actually contains distinct lifecycles.
+
+**Template:**
+
+CFG-{N}: {ConfigModelName}
+
+  Owner: {who changes this}
+
+  Cadence: {how often it changes}
+
+  Parameters: {field name with type and constraint, one per line}
+
+  Consumed by: {which handler or evaluation model takes this as input}
+
+**Example (inventory management):**
+
+CFG-1: SkuPolicy
+
+  Owner: Operations team
+
+  Cadence: Daily to weekly per SKU; lifecycle changes when SKUs
+    are introduced or retired
+
+  Parameters:
+
+    sku: Sku
+
+    safety_stock: StockLevel (ge=0)
+
+    target_reorder_level: StockLevel (ge=safety_stock)
+
+    preferred_supplier: SupplierId
+
+  Consumed by: ReorderEvaluation
+
+CFG-2: VenueProfile
+
+  Owner: System operator
+
+  Cadence: Set at deployment; changes when the venue itself changes
+    (new POS, new supplier integration)
+
+  Parameters:
+
+    max_pos_reporting_delay: Duration (gt=0)
+
+    supplier_business_hours: TimeWindow
+
+    delivery_lead_time_bounds: DurationRange (lower ge=0, upper ge=lower)
+
+  Consumed by: Stock projection handler, order placement handler
+
+CFG-3: ReviewCadence
+
+  Owner: Operations team
+
+  Cadence: Adjusted when demand patterns shift seasonally
+
+  Parameters:
+
+    threshold_review_interval: Duration (gt=0)
+
+    velocity_window_short: Duration (gt=0)
+
+    velocity_window_long: Duration (gt=velocity_window_short)
+
+  Consumed by: Threshold review handler, depletion projection handler
+
+Configuration models are frozen composed models whose fields are Level-1 narrowed scalars or Level-2 value objects from section 4. They enter the construction graph at startup; the act of constructing them is the validation. A handler receives configuration as a proven model, never as a dict.
+
+---
+
+## 7\. Domain Invariants
 
 The rules that govern the system's behavior. Each invariant is a proposition that must always be true. Each one must trace to at least one condition it governs. If an invariant doesn't connect to a condition, it's either protecting against something that can't happen in your venue (dead weight) or you're missing a condition (gap in your analysis).
 
@@ -203,6 +311,9 @@ Invariants are not implementation instructions. They don't say HOW to enforce th
 {InvariantName}: {Statement of what must always be true}
 
   Governs: {Condition number(s)}
+
+  Proof level: {Level 1-4 from section 4, or "derivation" for decisions
+    returning a typed result variant rather than a validator}
 
   Home: {Which handler enforces this, on what input, 
 
@@ -217,6 +328,11 @@ PosStockBuffered: Never use POS-reported stock as ground truth without
   applying the maximum reporting delay as a buffer.
 
   Governs: Condition 1 (POS delay)
+
+  Proof level: derivation — `BufferedStockProjection` composes proven
+    `PosStockReading` and `Duration` (max reporting delay) and yields
+    a buffered stock value via `@cached_property`. Construction always
+    succeeds for well-formed inputs.
 
   Home: The stock projection handler. When computing current
 
@@ -236,6 +352,11 @@ NoDuplicateReorder: Never place a reorder for a SKU while a confirmed but
 
   Governs: Condition 6 (Duplicate orders)
 
+  Proof level: derivation — `ReorderEvaluation` returns
+    `ReorderResult = ReorderTriggered(intent) | ReorderSuppressed(reason)`.
+    When a pending order exists for the SKU, the result is
+    `ReorderSuppressed(reason=PendingOrderExists)`.
+
   Home: The reorder handler. When it receives a reorder signal
 
     event, it projects pending orders from the ledger. If a
@@ -251,6 +372,10 @@ SupplierUnavailableQueues: A reorder that cannot be placed due to supplier
   unavailability must be queued, not dropped.
 
   Governs: Condition 2 (Supplier unavailability)
+
+  Proof level: derivation — `OrderPlacementResult = OrderPlaced(ack) |
+    OrderQueued(intent)`. The result is `OrderQueued` outside business
+    hours; the queued intent is held until the next admissible window.
 
   Home: The order placement handler. When it attempts to place
 
@@ -268,6 +393,10 @@ DepletionUsesFasterVelocity: Projected depletion rate must use the faster of
 
   Governs: Condition 3 (Demand spikes)
 
+  Proof level: derivation — `DepletionProjection` composes the two
+    proven velocity windows and yields the projected depletion rate
+    via `@cached_property`, taking the maximum.
+
   Home: The depletion projection handler. When computing
 
     projected depletion from sales events, it calculates both
@@ -283,6 +412,12 @@ DeliveryRequiresPhysicalReceipt: A delivery is not confirmed until physical rece
   recorded, not when the supplier API acknowledges the order.
 
   Governs: Condition 4 (Delivery failure)
+
+  Proof level: Level 4 — the delivery confirmation handler does not
+    exist as a construction site for `SupplierAcknowledgedEvent`. The
+    handler is constructed only when a `PhysicalReceiptEvent` arrives.
+    Distinct event types are Level-2 narrowings; the handler's gating
+    by event type is the Level-4 prerequisite.
 
   Home: The delivery confirmation handler. It only publishes a
 
@@ -302,6 +437,11 @@ PhysicalCountOverridesCalculated: Actual shelf count, when available, overrides
 
   Governs: Condition 5 (Data mismatch)
 
+  Proof level: derivation — the stock projection composes the most
+    recent `PhysicalCount` (when present) with subsequent ledger
+    entries; the projection's `@cached_property` for current stock
+    uses the physical count as the baseline.
+
   Home: The stock projection handler. When it receives a
 
     physical-count event, it publishes an adjustment event
@@ -318,6 +458,12 @@ ThresholdsReviewedOnCadence: Safety stock thresholds must be reviewed against ac
 
   Governs: Condition 7 (Stale thresholds)
 
+  Proof level: Level 4 + derivation — the threshold review handler
+    is gated by the scheduled cadence (Level 4: handler absent
+    between scheduled fires). When it fires, `ThresholdReview`
+    composes proven demand projections and returns
+    `ReviewResult = ThresholdHeld | ThresholdAdjusted(new_value)`.
+
   Home: The threshold review handler. On a scheduled cadence,
 
     it projects recent demand from sales events and publishes
@@ -332,20 +478,70 @@ ThresholdsReviewedOnCadence: Safety stock thresholds must be reviewed against ac
 
 ---
 
-## Validation checklist
+## 8\. Coverage
 
-After completing all five sections, verify:
+The verification step that closes the loop. Every condition must have at least one invariant. Every invariant must trace to at least one condition. Every invariant must name its proof level from section 4. Every configuration parameter from section 6 must be consumed somewhere. Coverage is the artifact that makes the trace explicit — without it, gaps and orphans hide.
 
-- [ ] Every invariant traces to at least one condition  
-- [ ] Every condition has at least one invariant governing it  
-- [ ] Every invariant names its home: which handler, what input, what output it governs  
-- [ ] Every invariant is grounded in the premises  
-- [ ] No invariant references a constraint that doesn't exist in your venue  
-- [ ] No invariant prescribes implementation (HOW) rather than stating a rule (WHAT)  
-- [ ] Premises are structural axioms, not domain rules disguised as premises  
-- [ ] The scope explicitly excludes things that participants might assume  
-- [ ] The strategy is explainable without referencing technology  
+**Coverage matrix — conditions to invariants:**
+
+| Condition | Governing Invariants |
+|---|---|
+| {N} {name} | {invariant names that govern this condition} |
+
+A row with no invariants is a gap. Either the condition does not actually happen in the venue (delete it from section 3) or an invariant is missing.
+
+**Coverage matrix — invariants to conditions and proof level:**
+
+| Invariant | Condition(s) | Proof Level |
+|---|---|---|
+| {InvariantName} | {N} | {Level 1-4 or derivation} |
+
+An invariant row not traceable to any condition is dead weight — either the condition is missing or the invariant exists for a reason outside the venue.
+
+**Validation checklist:**
+
+- [ ] Every condition has at least one invariant governing it
+- [ ] Every invariant traces to at least one condition
+- [ ] Every invariant names its proof level from section 4
+- [ ] Every Level-3 invariant has been tested for whether it is a Level-1 or Level-2 in disguise, or a decision returning a typed result variant rather than a validator
+- [ ] Every Level-4 invariant has been tested for whether the prerequisite is genuinely external state, not a field that was never forged
+- [ ] Every invariant names its home: which handler, what input, what output it governs
+- [ ] Every invariant is grounded in the premises
+- [ ] Every configuration parameter from section 6 is consumed by at least one handler or evaluation model
+- [ ] No invariant references a constraint that doesn't exist in your venue
+- [ ] No invariant prescribes implementation (HOW) rather than stating a rule (WHAT)
+- [ ] Premises are structural axioms, not domain rules disguised as premises
+- [ ] The scope explicitly excludes things that participants might assume
+- [ ] The strategy is explainable without referencing technology
 - [ ] The conditions list includes things that WILL happen, not hypotheticals
 
-If all boxes check, the downstream implementation work (architecture, models, infrastructure, deployment) has a stable foundation to build on. If any box fails, the foundation has a crack that will propagate into every decision built on top of it.
+**Example (inventory management):**
+
+Conditions → Invariants:
+
+| Condition | Governing Invariants |
+|---|---|
+| 1 POS delay | PosStockBuffered |
+| 2 Supplier unavailability | SupplierUnavailableQueues |
+| 3 Demand spikes | DepletionUsesFasterVelocity |
+| 4 Delivery failure | DeliveryRequiresPhysicalReceipt |
+| 5 Data mismatch | PhysicalCountOverridesCalculated |
+| 6 Duplicate orders | NoDuplicateReorder |
+| 7 Stale thresholds | ThresholdsReviewedOnCadence |
+
+Invariants → Conditions and Proof Level:
+
+| Invariant | Condition | Proof Level |
+|---|---|---|
+| PosStockBuffered | 1 | derivation (BufferedStockProjection) |
+| SupplierUnavailableQueues | 2 | derivation (OrderPlacementResult variant) |
+| DepletionUsesFasterVelocity | 3 | derivation (DepletionProjection) |
+| DeliveryRequiresPhysicalReceipt | 4 | Level 4 (handler gated by event type) |
+| PhysicalCountOverridesCalculated | 5 | derivation (projection baseline) |
+| NoDuplicateReorder | 6 | derivation (ReorderResult variant) |
+| ThresholdsReviewedOnCadence | 7 | Level 4 + derivation |
+
+Every condition is covered. Every invariant traces to its condition. Every invariant names its proof mechanism. The foundation is closed.
+
+If every row of every matrix has a value and every checkbox is green, downstream implementation work (the type catalog, the domain models, the `.claude/` rule files) has a stable foundation to build on. If any cell is empty or any box fails, the foundation has a crack that will propagate into every decision built on top of it.
 

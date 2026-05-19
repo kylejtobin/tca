@@ -622,17 +622,17 @@ AnnotationShape = Annotated[
 # Here, TypeAnnotation wraps a raw Python annotation and exposes:
 #   .peel(t)        → static normalizer: strips Annotated wrappers
 #   .base           → surface annotation with Annotated peeled
-#   ._effective     → fully resolved: aliases chased, Annotated peeled at each hop
+#   .effective     → fully resolved: aliases chased, Annotated peeled at each hop
 #   .kind           → AnnotationKind tag (drives AnnotationShape DU routing)
 #   .resolved_type  → the inner type after unwrapping structural wrappers
 #   .nullable       → True if the effective type includes NoneType
 #   .collection     → True if the effective type is a variadic tuple
 #
 # TypeAnnotation is the SINGLE SOURCE OF STRUCTURAL TRUTH. The normalizers
-# (.peel, .base, ._effective) handle Annotated wrappers and alias chains.
+# (.peel, .base, .effective) handle Annotated wrappers and alias chains.
 # The classification properties (.kind, .resolved_type) work against the
 # normalized result. The structural predicates (.nullable, .collection)
-# are computed from ._effective and feed into AnnotationShape variants as
+# are computed from .effective and feed into AnnotationShape variants as
 # proof obligations — the variant's Literal type validates the supplied value.
 #
 # The key insight: from_attributes reads PROPERTIES, not just stored fields.
@@ -663,12 +663,12 @@ class TypeAnnotation(RootModel[object], frozen=True):
     NORMALIZATION CHAIN:
       .peel(t)    → strips Annotated[X, metadata] → X
       .base       → self.root with surface Annotated peeled
-      ._effective → aliases chased, Annotated peeled at each hop
+      .effective → aliases chased, Annotated peeled at each hop
 
     CLASSIFICATION:
       .kind → DIRECT, OPTIONAL, TUPLE, FIXED_TUPLE, ALIAS, or UNION
         ALIAS is detected from .base (surface form).
-        All others from ._effective (resolved target).
+        All others from .effective (resolved target).
 
     UNWRAPPING:
       .resolved_type → the inner type, structural wrapper removed:
@@ -676,8 +676,8 @@ class TypeAnnotation(RootModel[object], frozen=True):
         Fixed tuples and multi-member unions are preserved as-is.
 
     STRUCTURAL TRUTH:
-      .nullable   → True if ._effective includes NoneType in a union
-      .collection → True if ._effective is tuple[X, ...] (variadic only)
+      .nullable   → True if .effective includes NoneType in a union
+      .collection → True if .effective is tuple[X, ...] (variadic only)
       These feed AnnotationShape variants as proof obligations.
     """
 
@@ -703,7 +703,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
         return self.peel(self.root)
 
     @property
-    def _effective(self) -> object:
+    def effective(self) -> object:
         """The fully resolved typing object: aliases chased, Annotated peeled at each hop.
 
         Starts from .base and follows TypeAliasType.__value__ until a
@@ -722,7 +722,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
 
         ALIAS is detected from .base (surface form — the annotation IS
         an alias regardless of what it resolves to). All other kinds are
-        determined from ._effective (the resolved target):
+        determined from .effective (the resolved target):
           tuple[X, ...] → TUPLE (variadic)
           tuple[A, B, ...] → FIXED_TUPLE (positional product)
           T | None (exactly one non-None member) → OPTIONAL
@@ -733,7 +733,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
         if isinstance(b, TypeAliasType):
             return AnnotationKind.ALIAS
 
-        e = self._effective
+        e = self.effective
         o = get_origin(e)
 
         if o is tuple:
@@ -768,7 +768,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
           type X = Y → Y (the alias target)
           plain type → itself
         """
-        e = self._effective
+        e = self.effective
         o = get_origin(e)
 
         if o is types.UnionType:
@@ -798,7 +798,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
         Covers both T | None (OPTIONAL) and A | B | None (nullable UNION).
         Fed to AnnotationShape variants as a proof obligation.
         """
-        e = self._effective
+        e = self.effective
         return get_origin(e) is types.UnionType and type(None) in get_args(e)
 
     @property
@@ -809,7 +809,7 @@ class TypeAnnotation(RootModel[object], frozen=True):
         products, not collections. Fed to AnnotationShape variants as
         a proof obligation.
         """
-        e = self._effective
+        e = self.effective
         o = get_origin(e)
         if o is tuple:
             args = get_args(e)
@@ -1401,18 +1401,60 @@ class TreeReport(BaseModel, frozen=True, from_attributes=True):
 
 
 # =============================================================================
+# OUTPUT FORMAT — discriminated union with smart variant methods (B.3)
+# =============================================================================
+# Two output channels — human-readable indented text and machine-readable JSON
+# — each carrying its own render method. The variant IS the dispatch: the
+# consumer never asks "which format is this?", it calls .render(report) and
+# Pydantic's discriminator narrows to the correct variant.
+#
+# This is hierarchy B.3 (smart variant methods). Each variant's signature is
+# satisfied by `self` (the variant value) plus a proven `TreeReport` — the
+# F-test passes. No composed-model self in the signature; no enum dispatch
+# from a composed model. The variant carries the answer.
+#
+# The alternative shape — a `bool` field on ClassifierRun gating an `if`/`else`
+# in `__str__` — would be bool-as-gate. The DU replaces it entirely.
+
+
+class TextOutput(BaseModel, frozen=True):
+    """Indented human-readable rendering of a classified tree."""
+
+    kind: Literal["text"] = "text"
+
+    def render(self, report: TreeReport) -> str:
+        return report.text
+
+
+class JsonOutput(BaseModel, frozen=True):
+    """Full JSON serialization of the classified tree, two-space indented."""
+
+    kind: Literal["json"] = "json"
+
+    def render(self, report: TreeReport) -> str:
+        return report.model_dump_json(indent=2)
+
+
+OutputFormat = Annotated[
+    TextOutput | JsonOutput,
+    Field(discriminator="kind"),
+]
+
+
+# =============================================================================
 # CLASSIFIER RUN — the CLI as a construction machine (Environment)
 # =============================================================================
 # The CLI invocation is an Environment in the Program Triad. The stored fields
 # are what the program KNOWS before acting: the target string and the output
-# format. Everything else is a derived projection chain:
+# format variant. Everything else is a derived projection chain:
 #
 #   target (stored) → model_class (resolve) → tree (classify) → report (render)
 #
 # Each @cached_property is a Phase 5 derivation from frozen fields. The chain
 # fires lazily on first access. __str__ is the terminal projection — it reads
-# .report (which reads .tree, which reads .model_class, which reads .target).
-# One stored field. Four derivations. Zero procedure.
+# .report (which reads .tree, which reads .model_class, which reads .target),
+# then dispatches through the OutputFormat variant. Two stored fields. Three
+# derivations. Zero procedural switching.
 #
 # The boundary crossing (importlib + getattr) lives INSIDE the model as a
 # projection. The untyped dynamic lookup is contained at the boundary where
@@ -1422,20 +1464,21 @@ class TreeReport(BaseModel, frozen=True, from_attributes=True):
 class ClassifierRun(BaseModel, frozen=True):
     """The entire CLI as a frozen product type.
 
-    Stored fields: target (module:ClassName string) and json (output format).
-    Everything else is derived. Construction IS the program.
+    Stored fields: target (module:ClassName string) and output_format (a
+    TextOutput or JsonOutput variant). Everything else is derived.
+    Construction IS the program.
 
     Usage:
         print(ClassifierRun(target="arm_ont.team:Team"))
-        print(ClassifierRun(target="arm_ont.team:Team", json_output=True))
+        print(ClassifierRun(target="arm_ont.team:Team", output_format=JsonOutput()))
     """
 
     target: str = Field(
         description="Module and class to classify in module:ClassName format, e.g. myapp.models:Order"
     )
-    json_output: bool = Field(
-        default=False,
-        description="True for full JSON tree output, False for indented human-readable text",
+    output_format: OutputFormat = Field(
+        default_factory=TextOutput,
+        description="Rendering variant — TextOutput for indented human text, JsonOutput for full JSON serialization",
     )
 
     @cached_property
@@ -1462,17 +1505,13 @@ class ClassifierRun(BaseModel, frozen=True):
 
     @override
     def __str__(self) -> str:
-        """Terminal projection — human text or bot JSON from the same model."""
-        if self.json_output:
-            return self.report.model_dump_json(indent=2)
-        return self.report.text
+        """Terminal projection — variant dispatch through OutputFormat.render."""
+        return self.output_format.render(self.report)
 
 
 if __name__ == "__main__":
     import sys
 
-    run = ClassifierRun(
-        target=sys.argv[1],
-        json_output="--json" in sys.argv,
-    )
+    output_format: OutputFormat = JsonOutput() if "--json" in sys.argv else TextOutput()
+    run = ClassifierRun(target=sys.argv[1], output_format=output_format)
     print(run)

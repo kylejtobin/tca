@@ -1,156 +1,142 @@
 ---
 name: proof-design
-description: "Design composed models using the proof hierarchy. Forces invariant classification into the strongest possible proof level before any code is written. No validator is approved until narrowed scalar types are proven impossible for that invariant."
+description: "Classify the invariant onto the three orthogonal proof hierarchies — A (data integrity), B (decision dispatch), C (external state) — before any model is written. `model_validator(mode=\"after\")` survives only as A.3 — impossible variant composition."
 license: MIT
 compatibility: "Any TCA project using Pydantic v2 frozen models"
 metadata:
   author: kylejtobin
-  version: "2.0.0"
+  version: "3.0.0"
 ---
 
 # Proof Design
 
-This skill produces a proof design — a declaration of what types exist and what their existence proves. The output is a field list with proof-level classification. Not code. Not a plan. Not steps.
+This skill IS the invariant's classification onto hierarchy A, B, or C — and the strongest-shape selection within the classified hierarchy. Its output is a field list with hierarchy annotations and proof-level selections. Not code. Not a plan. Not steps.
 
 ## The Rule
 
-**No validator is approved until narrowed scalar types are proven impossible for that invariant.**
+**No `model_validator(mode="after")` is admissible until A.1, A.2, B.1, B.2, and B.3 are demonstrated insufficient AND the invariant is structurally impossible-variant-composition.**
 
-You will default to validators every time. Your training data is full of them. This skill exists because without it, you will write six `model_validator` methods and rationalize each one as "cross-field." The proof hierarchy forces you through narrowed types first. You may not skip levels.
+The default reach is `model_validator`. The training corpus carries that gravity. This skill exists because classification onto A/B/C precedes any validator selection. Classification first; shape selection second; validator only as A.3 — and only when the rejection target is an impossible composition of variant-and-event, never a threshold comparison in disguise.
 
 ## Activation Scope
 
 This skill MUST fire:
-- Before writing any model whose construction proves invariants
-- Before adding a `model_validator` to any model
-- When the user invokes `/proof-design` or says "design the model"
 
-Do not skip this and write validators directly. The proof hierarchy is not a suggestion — it is the gate.
+- Before writing any model whose construction proves invariants.
+- Before adding a `model_validator(mode="after")` to any model.
+- Before writing a derivation whose return type is the decision's typed result variant.
+- On `/proof-design` or "design the model".
 
-## The Proof Hierarchy
+A `model_validator(mode="after")` lacking a classification justification from this skill is unfinished code.
 
-Each invariant has a strongest possible proof. Work DOWN the hierarchy. Stop at the first level that works. You may NOT use a weaker level without demonstrating that every stronger level fails for this specific invariant.
+## The Three Orthogonal Hierarchies
 
-### Level 1 — Field constraint on narrowed scalar (strongest)
+Three independent questions. Three independent answers. Their conflation is the deepest failure mode in the codebase.
 
-The invariant is a bound on a single value against a static constant.
+### A. Data integrity — "is this value well-formed?"
 
-```python
-class LineNumber(RootModel[int], frozen=True):
-    root: int = Field(ge=1)
-```
+Construction's rejection surface for malformed values. The strongest shape an invariant admits is its home.
 
-The type's existence IS the proof. No checking code exists anywhere. `Field(ge=1)` is unforgeable — if the instance exists, the bound holds. This is construction-as-proof at its most literal.
+| Level | Shape |
+|-------|-------|
+| A.1 | `Field()` constraint on a narrowed `RootModel` scalar. Type existence IS proof. |
+| A.2 | Narrowed type as field on a composed model. A.1's proof is carried into the parent through Pydantic's Rust validator at construction. |
+| A.3 | `model_validator(mode="after")` rejecting an *impossible variant composition*. Rare. The documented case is `StateTransition(current_state, event)` rejecting the cell `(Terminal, ChildAdded)`. Never for thresholds, never for business decisions. |
 
-**Use when:** threshold is static, constraint applies to one value.
-**New scalar goes in:** `type.py` of the appropriate context.
+A `model_validator` measuring one field against a constant is A.1 left unforged.
+A `model_validator` comparing a proven field against a configured threshold is a *decision*, not an integrity check — its home is hierarchy B.
 
-### Level 2 — Narrowed type as field on composed model
+### B. Decision dispatch — "given proven measurements, what is the typed answer?"
 
-The composed model declares a narrowed type as a field. Pydantic constructs the field during parent construction. The field type's own constraints gate it.
+Construction always succeeds. The answer is a typed result variant.
 
-```python
-class SourceLocation(BaseModel, frozen=True):
-    line: LineNumber  # Level 1 type, proven at construction
-    class_name: str | None = None
-    method_name: str | None = None
-```
+| Level | Shape |
+|-------|-------|
+| B.1 | `@cached_property` on an Evaluation Model returning a typed result variant (DU, typed tuple, proven model). Never `bool`, never `int`, never `str`-with-contextual-meaning. |
+| B.2 | Smart enum method on a `StrEnum` class. The F-test passes — the signature is satisfied by the enum value plus proven scalars or proven value objects, never a composed model's `self`. |
+| B.3 | Smart variant method on a frozen `BaseModel` DU member. Polymorphic dispatch through Pydantic's discriminator. The method body is total over the variant's valid input subset. |
+| B.4 | Consumer dispatch via Pydantic DU narrowing. The variant itself IS the consumer's branch point — `match`/`case` over the DU, never `if`/`elif` re-branching on `.kind`. |
 
-If `SourceLocation` exists, `line >= 1` — because `LineNumber` only exists when it does.
+### C. External state — "is the prerequisite for attempting construction present?"
 
-**Use when:** the composed model carries proof from its field types.
+The handler's construction precondition. The model's *absence* is the proof.
 
-### Level 3 — Cross-field validator (weakest structural proof)
+- Connection alive.
+- Scheduled cadence fired.
+- Halt not active.
+- Prerequisite event observed.
 
-The invariant is an *impossible variant composition* — composed fields whose individually-valid values cannot coexist as a meaningful state. Data integrity only.
-
-**This level requires ALL of the following before approval:**
-1. Name exactly which two (or more) fields participate
-2. Explain why no narrowed scalar on either field alone can express their relationship
-3. Demonstrate the relationship is genuinely irreducible — both fields are independently valid in isolation
-4. Confirm the rejection is structural impossibility, not a business decision
-
-Irreducible example (illustrative — not a type in this repo):
-- `StateTransition(current_state: NodeState, event: NodeEvent)` rejects `(Terminal, ChildAdded)` because a terminal node cannot accept children. Each field is a valid enum on its own; the *cell* is the invariant.
-
-**NOT irreducible — these are Level 1 in disguise:**
-- `if self.line.root < 1: raise` — that is `LineNumber(Field(ge=1))`
-- `if self.name == "": raise` — that is `InvariantName(Field(min_length=1))`
-- `if depth + width > 0` — both are `PositiveCount(Field(gt=0))`; the sum is positive because each is positive
-- Any validator checking one field against a constant
-
-**NOT a validator at all — these are derivations returning a result DU:**
-- `if self.score < threshold or self.elapsed > limit: raise` — that is a business decision encoded as construction failure. Construction must succeed; the decision belongs on an Evaluation Model as `@computed_field` + `@cached_property` returning a discriminated union: `EvaluationResult = Accepted(reason: AcceptanceCause) | Rejected(reason: RejectionCause)`. The consumer dispatches on the variant.
-- Any threshold comparison framed as "given these proven values, should the system act?" — that's not data integrity, it's an evaluation. The model carries the evaluation as a typed result; it does not refuse to exist when the answer is no.
-
-**Parallel data is not Level 3 — it is a composition smell:**
-- `len(names) == len(types) == len(defaults)` is three tuple fields that should be one tuple of `FieldDecl(name, type, default)` value objects. The "invariant" disappears when the composition is correct.
-
-### Level 4 — Handler gating (external state)
-
-The invariant is external state no field on this model represents. The handler's decision to attempt construction IS the proof.
-
-Examples: connection alive, halt not active, no pending cancel. These are NOT fields on the model. The model's existence proves the handler confirmed external state before attempting construction.
+C is not a field. C is not a validator. The handler refuses to construct the model when the prerequisite is missing.
 
 ## Protocol
 
-### 1. Enumerate invariants
+Three classification questions, in order. The first "yes" names the hierarchy.
 
-List every invariant the model's construction must prove. For each:
-- What it asserts (the condition)
-- Which fields or values participate
-- Whether thresholds are static or dynamic
+**Question 1 — Hierarchy A.** "Does this rejection target a malformed value during construction?"
 
-### 2. Classify — strongest level first, no skipping
+- Single value, static bound → A.1 (narrowed `RootModel` scalar with `Field()`).
+- Composed model carrying A.1 types as fields → A.2.
+- Composition of two proven variant-and-event fields where the cell is meaningless → A.3.
 
-For each invariant, test levels in order. Stop at the first that works.
+**Question 2 — Hierarchy B.** "Is this a decision the consumer dispatches on, given proven measurements?"
 
-**Level 1 test:** Is this a bound on one value against a static constant? → Narrowed scalar with `Field()`. Done. Do not continue.
+- Construction succeeds for every well-formed input set.
+- Composed proven inputs → typed result variant on an Evaluation Model → B.1.
+- F-test passes against an enum value → B.2.
+- F-test passes against a variant value → B.3.
+- Consumer's branch point is the discriminator itself → B.4.
 
-**Level 2 test:** Is this carried by a narrowed field type on the composed model? → Field type declaration. Done.
+**Question 3 — Hierarchy C.** "Is this the prerequisite for construction, not part of fields?"
 
-**Level 3 test:** Name two specific fields. Explain why neither field's type alone carries the proof. Confirm both are independently valid. Confirm the failure case is *structural impossibility* (a state cell that cannot mean anything), not a business judgment about whether to act. → Approved cross-field validator. Document the irreducibility.
+- Handler gate. The evaluation model's absence carries the proof.
 
-**Dynamic threshold is not Level 3.** If the threshold comes from another field or configuration and the comparison answers "should the system act on this?", that is a business decision, not data integrity. Construction must succeed; the decision is a `@computed_field` + `@cached_property` returning a discriminated union (`GateResult = GatePassed | GateRejected`) on an Evaluation Model. The consumer dispatches on the variant. Validators do not encode decisions.
+## The F-test (decision-dispatch boundary)
 
-**Level 4 test:** Is this external state? → Handler gates. Not a field.
+> Is the method's signature satisfied by the variant value plus proven scalars or proven value objects, with no reference to the composed model's `self`?
 
-### 3. Declare the field list
+- **Yes** → B.2 (smart enum method) or B.3 (smart variant method). The variant carries the dispatch.
+- **No** → B.1 (derivation on the composed Evaluation Model). The composed-model derivation may compose B.2 or B.3 for the variant-owned part.
+
+The variant's signature contains no composed-model `self`. That is the boundary.
+
+## Validator gate (A.3 only)
+
+For a candidate `model_validator(mode="after")`, all four answers are required.
+
+1. **Which two or more proven fields participate?** Name them. A single-field reference is A.1 left unforged.
+2. **Why is each field's value individually valid in isolation?** Each field's type carries its own A.1/A.2 proof; the validator does not duplicate that work.
+3. **Why does their composition represent a structurally impossible state, not a business threshold?** Impossible composition is a cell in a finite variant × variant grid — `(Terminal, ChildAdded)` cannot exist. A threshold comparison is a decision.
+4. **Which of A.1 / A.2 / B.1 / B.2 / B.3 is demonstrated insufficient?** Name the shape and its insufficiency.
+
+A missing or unconvincing answer means the validator's home is elsewhere — reclassify to B (most common case) or A.1 / A.2.
+
+## Declare the field list
 
 ```
 ModelName(BaseModel, frozen=True):
-    field_a: NarrowedTypeA          # Level 1 — proves [invariant]
-    field_b: NarrowedTypeB          # Level 2 — proves [invariant]
-    # Level 3 (irreducible): field_x × field_y — [why irreducible]
-    # Level 4: [external state] — handler gates, not a field
+    field_a: NarrowedTypeA          # A.1 carries [invariant]
+    field_b: NarrowedTypeB          # A.2 carries [invariant]
+
+    @cached_property
+    def result(self) -> ResultDU:   # B.1 carries [decision]
+        ...
+
+    # A.3 (rare): field_x × field_y — [why composition is structurally impossible]
+    # C (external state): [prerequisite] — handler gate, not a field
 ```
 
-No code body. No validators yet — only after Level 3 invariants are identified and approved.
+No body. No validators except an A.3 admitted through the validator gate.
 
-### 4. Catalog new narrowed scalars
+## Catalog obligations
 
-Each Level 1 proof requires a narrowed scalar:
-
-```python
-class ScalarName(RootModel[base_type], frozen=True):
-    root: base_type = Field(constraint)
-```
-
-These are observations parsed into types carrying structural proof — the "parse, don't validate" principle in Pydantic.
-
-### 5. Validator gate
-
-For each Level 3 invariant, answer ALL three:
-1. Which two+ fields does it reference?
-2. Why can't a narrowed scalar on either field replace it?
-3. Is the relationship genuinely irreducible?
-
-**If any answer is missing or unconvincing, the validator is not approved.** Reclassify to Level 1 or 2. Do not proceed to code with an unapproved validator.
+- Each A.1 proof is a narrowed scalar entry in the project's type catalog — base type, constraint, invariant.
+- Each B.1 derivation is a typed result variant catalog entry — DU members, discriminator field, per-variant fields.
 
 ## What This Prevents
 
-- Writing `model_validator` before considering narrowed types (the default failure)
-- Rationalizing single-field checks as "cross-field" (the escape hatch)
-- Carrying `bool` fields as gates — the TYPE is the gate, not a boolean
-- Using raw observation types as fields instead of proven narrowed types
-- Putting handler-level state (halt, connection) as fields on domain models
+- A `model_validator` written before the invariant's classification onto A, B, or C.
+- A decision classified as a validator — validation-thinking-drift. Construction fails on valid measurements; the consumer never sees a typed result.
+- `bool` fields as gates. The typed variant IS the gate; `bool` erases the discriminator and forces `if`-branching back into the consumer.
+- Raw observation types as fields. A narrowed scalar carries the A.1 proof; a `float` field does not.
+- External-state prerequisites declared as fields. C's proof is the model's absence at the handler's construction site.
+- A.3 validators whose body is a threshold comparison in disguise. The rejection target is a meaningless variant × variant cell, not a "should the system act?" decision — that decision's home is B.1.

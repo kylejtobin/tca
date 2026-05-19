@@ -28,6 +28,24 @@ class LineNumber(RootModel[int], frozen=True):
     root: int = Field(ge=1)
 
 
+# ─── Constants ──────────────────────────────────────────────────────────────
+
+
+PRIMITIVE_TYPE_NAMES: frozenset[str] = frozenset(
+    {"str", "int", "float", "Decimal", "bool", "bytes"}
+)
+
+COLLECTION_TYPE_NAMES: frozenset[str] = frozenset({
+    "list", "tuple", "set", "frozenset", "dict",
+    "Sequence", "Mapping", "Iterable", "Collection",
+    "List", "Tuple", "Set", "FrozenSet", "Dict",
+})
+
+DECISION_MODEL_SUFFIXES: tuple[str, ...] = ("Evaluation", "Transition", "Decision")
+
+ENUM_BASE_NAMES: frozenset[str] = frozenset({"Enum", "StrEnum", "IntEnum", "Flag", "IntFlag"})
+
+
 # ─── AST predicates (pure functions over a foreign sum type) ─────────────────
 
 
@@ -44,10 +62,29 @@ def decorator_name(dec: ast.expr) -> str | None:
     return None
 
 
+def is_model_validator_after_decorator(dec: ast.expr) -> bool:
+    """True if decorator is `@model_validator(mode='after')`."""
+    match dec:
+        case ast.Call(func=ast.Name(id="model_validator"), keywords=keywords):
+            for kw in keywords:
+                match kw:
+                    case ast.keyword(arg="mode", value=ast.Constant(value="after")):
+                        return True
+    return False
+
+
 def returns_explicit_none(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """True only for `-> None` annotations. Un-annotated methods return False."""
     match fn.returns:
         case ast.Constant(value=None):
+            return True
+    return False
+
+
+def returns_bool_annotation(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True if return annotation is exactly `bool`."""
+    match fn.returns:
+        case ast.Name(id="bool"):
             return True
     return False
 
@@ -79,9 +116,72 @@ def tuple_element_types(annotation: ast.expr) -> tuple[str, ...]:
     return ()
 
 
+def bare_primitive_collection_element(annotation: ast.expr) -> str | None:
+    """Return the primitive element type name if annotation is a collection of bare primitives.
+
+    Catches `list[str]`, `tuple[int, ...]`, `set[float]`, `frozenset[int]`,
+    `Sequence[str]`, `Mapping[str, int]`, `dict[str, str]`, etc.
+    """
+    match annotation:
+        case ast.Subscript(value=ast.Name(id=container), slice=ast.Name(id=element)) if (
+            container in COLLECTION_TYPE_NAMES and element in PRIMITIVE_TYPE_NAMES
+        ):
+            return element
+        case ast.Subscript(
+            value=ast.Name(id="tuple" | "Tuple"),
+            slice=ast.Tuple(elts=[ast.Name(id=elem), ast.Constant(value=v)]),
+        ) if v is Ellipsis and elem in PRIMITIVE_TYPE_NAMES:
+            return elem
+        case ast.Subscript(value=ast.Name(id="tuple" | "Tuple"), slice=ast.Tuple(elts=elts)):
+            return _homogeneous_primitive_name(elts)
+        case ast.Subscript(
+            value=ast.Name(id="dict" | "Mapping" | "Dict"),
+            slice=ast.Tuple(elts=[ast.Name(id=k), ast.Name(id=v)]),
+        ) if k in PRIMITIVE_TYPE_NAMES and v in PRIMITIVE_TYPE_NAMES:
+            return f"{k}->{v}"
+    return None
+
+
+def _homogeneous_primitive_name(elts: Sequence[ast.expr]) -> str | None:
+    names = [e.id for e in elts if isinstance(e, ast.Name)]
+    if not names or len(names) != len(elts):
+        return None
+    if not all(n in PRIMITIVE_TYPE_NAMES for n in names):
+        return None
+    if len(set(names)) != 1:
+        return None
+    return names[0]
+
+
+def is_decision_model_annotation(annotation: ast.expr | None) -> str | None:
+    """Return the decision-model type name if annotation ends in a decision suffix."""
+    match annotation:
+        case ast.Name(id=name) if name.endswith(DECISION_MODEL_SUFFIXES):
+            return name
+    return None
+
+
 def is_basemodel_base(node: ast.expr) -> bool:
     match node:
+        case ast.Name(id="BaseModel"):
+            return True
+    return False
+
+
+def is_basemodel_or_rootmodel_base(node: ast.expr) -> bool:
+    match node:
         case ast.Name(id="BaseModel" | "RootModel"):
+            return True
+        case ast.Subscript(value=ast.Name(id="RootModel")):
+            return True
+    return False
+
+
+def is_enum_subclass_base(node: ast.expr) -> bool:
+    match node:
+        case ast.Name(id=name) if name in ENUM_BASE_NAMES:
+            return True
+        case ast.Attribute(attr=name) if name in ENUM_BASE_NAMES:
             return True
     return False
 
@@ -124,6 +224,10 @@ class MethodDecl(BaseModel):
         return "computed_field" in decs and "property" in decs and "cached_property" not in decs
 
     @cached_property
+    def has_model_validator_after(self) -> bool:
+        return any(is_model_validator_after_decorator(d) for d in self.node.decorator_list)
+
+    @cached_property
     def is_static_or_class_method(self) -> bool:
         return bool(self.decorator_names & {"staticmethod", "classmethod"})
 
@@ -136,8 +240,36 @@ class MethodDecl(BaseModel):
         return returns_explicit_none(self.node)
 
     @cached_property
+    def returns_bool(self) -> bool:
+        return returns_bool_annotation(self.node)
+
+    @cached_property
     def mutable_accumulations(self) -> tuple[LineNumber, ...]:
         return tuple(LineNumber(ln) for ln in _find_mutable_accumulations(self.node.body))
+
+    @cached_property
+    def decision_model_parameters(self) -> tuple[tuple[str, str], ...]:
+        """Tuples of (param_name, type_name) for args annotated as decision models."""
+        results: list[tuple[str, str]] = []
+        for arg in (*self.node.args.posonlyargs, *self.node.args.args, *self.node.args.kwonlyargs):
+            if arg.arg in {"self", "cls"}:
+                continue
+            type_name = is_decision_model_annotation(arg.annotation)
+            if type_name is not None:
+                results.append((arg.arg, type_name))
+        return tuple(results)
+
+    @cached_property
+    def bare_collection_primitive_params(self) -> tuple[tuple[str, str], ...]:
+        """Tuples of (param_name, primitive_name) for args typed as collection-of-primitives."""
+        results: list[tuple[str, str]] = []
+        for arg in (*self.node.args.posonlyargs, *self.node.args.args, *self.node.args.kwonlyargs):
+            if arg.annotation is None:
+                continue
+            elem = bare_primitive_collection_element(arg.annotation)
+            if elem is not None:
+                results.append((arg.arg, elem))
+        return tuple(results)
 
 
 def _find_mutable_accumulations(body: Sequence[ast.stmt]) -> Iterator[int]:
@@ -176,10 +308,26 @@ class ClassDecl(BaseModel):
         return self.node.name
 
     @cached_property
+    def is_basemodel_subclass(self) -> bool:
+        """True if class inherits from BaseModel (frozen or not). Excludes RootModel."""
+        return any(is_basemodel_base(b) for b in self.node.bases)
+
+    @cached_property
     def is_frozen_basemodel(self) -> bool:
-        if not any(is_basemodel_base(b) for b in self.node.bases):
+        if not any(is_basemodel_or_rootmodel_base(b) for b in self.node.bases):
             return False
         return any(is_frozen_true_kwarg(kw) for kw in self.node.keywords)
+
+    @cached_property
+    def is_unfrozen_basemodel(self) -> bool:
+        """True if class is a BaseModel subclass (not RootModel) without frozen=True kwarg."""
+        if not self.is_basemodel_subclass:
+            return False
+        return not any(is_frozen_true_kwarg(kw) for kw in self.node.keywords)
+
+    @cached_property
+    def is_enum_subclass(self) -> bool:
+        return any(is_enum_subclass_base(b) for b in self.node.bases)
 
     @cached_property
     def methods(self) -> tuple[MethodDecl, ...]:
@@ -204,6 +352,21 @@ class ClassDecl(BaseModel):
             if len(elements) >= 1 and len(set(elements)) == 1:
                 counts[elements[0]] = counts.get(elements[0], 0) + 1
         return counts
+
+    @cached_property
+    def bare_primitive_collection_fields(self) -> tuple[tuple[str, str, int], ...]:
+        """Tuples of (field_name, primitive_name, line) for fields typed as collection-of-primitives."""
+        results: list[tuple[str, str, int]] = []
+        for field in self.annotated_fields:
+            if field.annotation is None:
+                continue
+            elem = bare_primitive_collection_element(field.annotation)
+            if elem is None:
+                continue
+            target = field.target
+            if isinstance(target, ast.Name):
+                results.append((target.id, elem, field.lineno))
+        return tuple(results)
 
 
 def _iter_methods(class_node: ast.ClassDef) -> Iterator[MethodDecl]:
@@ -245,6 +408,14 @@ class FileContext(BaseModel):
         return "/domain/" in self.path.as_posix()
 
     @cached_property
+    def in_service(self) -> bool:
+        return "/service/" in self.path.as_posix()
+
+    @cached_property
+    def is_main_py(self) -> bool:
+        return self.basename == "main.py"
+
+    @cached_property
     def in_tests(self) -> bool:
         posix = self.path.as_posix()
         return (
@@ -262,6 +433,15 @@ class FileContext(BaseModel):
     @cached_property
     def classes(self) -> tuple[ClassDecl, ...]:
         return tuple(_iter_class_defs(self.tree))
+
+    @cached_property
+    def has_active_model(self) -> bool:
+        """True if the file contains an unfrozen BaseModel — the active-model marker."""
+        return any(c.is_unfrozen_basemodel for c in self.classes)
+
+    @cached_property
+    def free_functions(self) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, ...]:
+        return tuple(_iter_free_functions(self.tree))
 
     @cached_property
     def imports(self) -> tuple[ast.ImportFrom, ...]:
@@ -286,8 +466,20 @@ class FileContext(BaseModel):
         return ".".join(relative.parts)
 
     @cached_property
-    def json_loads_then_validate_lines(self) -> tuple[LineNumber, ...]:
-        return tuple(LineNumber(ln) for ln in _find_json_loads_then_validate(self.tree))
+    def json_loads_lines(self) -> tuple[LineNumber, ...]:
+        return tuple(LineNumber(ln) for ln in _find_json_loads_calls(self.tree))
+
+    @cached_property
+    def type_adapter_lines(self) -> tuple[LineNumber, ...]:
+        return tuple(LineNumber(ln) for ln in _find_type_adapter_calls(self.tree))
+
+    @cached_property
+    def os_environ_lines(self) -> tuple[LineNumber, ...]:
+        return tuple(LineNumber(ln) for ln in _find_os_environ_reads(self.tree))
+
+    @cached_property
+    def kind_string_comparison_lines(self) -> tuple[LineNumber, ...]:
+        return tuple(LineNumber(ln) for ln in _find_kind_string_comparisons(self.tree))
 
     def resolve_import(self, node: ast.ImportFrom) -> str | None:
         """Resolve a relative ImportFrom to its absolute dotted module path."""
@@ -319,13 +511,60 @@ def _iter_import_froms(tree: ast.Module) -> Iterator[ast.ImportFrom]:
                 yield node
 
 
-def _find_json_loads_then_validate(tree: ast.Module) -> Iterator[int]:
-    """Match `Model.model_validate(json.loads(...))` in a single expression."""
+def _iter_free_functions(tree: ast.Module) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
+    for node in tree.body:
+        match node:
+            case ast.FunctionDef() | ast.AsyncFunctionDef():
+                yield node
+
+
+def _find_json_loads_calls(tree: ast.Module) -> Iterator[int]:
+    """Match any `json.loads(...)` call."""
     for node in ast.walk(tree):
         match node:
+            case ast.Call(func=ast.Attribute(value=ast.Name(id="json"), attr="loads")):
+                yield node.lineno
+
+
+def _find_type_adapter_calls(tree: ast.Module) -> Iterator[int]:
+    """Match any `TypeAdapter(...)` call."""
+    for node in ast.walk(tree):
+        match node:
+            case ast.Call(func=ast.Name(id="TypeAdapter")):
+                yield node.lineno
+
+
+def _find_os_environ_reads(tree: ast.Module) -> Iterator[int]:
+    """Match `os.environ[...]`, `os.environ.get(...)`, `os.getenv(...)`."""
+    for node in ast.walk(tree):
+        match node:
+            case ast.Subscript(value=ast.Attribute(value=ast.Name(id="os"), attr="environ")):
+                yield node.lineno
             case ast.Call(
-                func=ast.Attribute(attr="model_validate"),
-                args=[ast.Call(func=ast.Attribute(value=ast.Name(id="json"), attr="loads")), *_],
+                func=ast.Attribute(
+                    value=ast.Attribute(value=ast.Name(id="os"), attr="environ"),
+                    attr="get",
+                )
+            ):
+                yield node.lineno
+            case ast.Call(func=ast.Attribute(value=ast.Name(id="os"), attr="getenv")):
+                yield node.lineno
+
+
+def _find_kind_string_comparisons(tree: ast.Module) -> Iterator[int]:
+    """Match `<expr>.kind == "string"` or `"string" == <expr>.kind`."""
+    for node in ast.walk(tree):
+        match node:
+            case ast.Compare(
+                left=ast.Attribute(attr="kind"),
+                ops=[ast.Eq()],
+                comparators=[ast.Constant(value=str())],
+            ):
+                yield node.lineno
+            case ast.Compare(
+                left=ast.Constant(value=str()),
+                ops=[ast.Eq()],
+                comparators=[ast.Attribute(attr="kind")],
             ):
                 yield node.lineno
 
@@ -461,12 +700,50 @@ def _is_domain_owned_api(segments: list[str], index: int) -> bool:
     return index > 0 and segments[index - 1] == "domain" and segments[index] == "api"
 
 
-class JsonLoadsThenValidate(BaseModel, frozen=True):
-    applies_in_tests: bool = True
+class JsonLoadsInDomain(BaseModel, frozen=True):
+    applies_in_tests: bool = False
 
     def check(self, ctx: FileContext) -> Iterable[Smell]:
-        for line in ctx.json_loads_then_validate_lines:
-            yield _smell(self, "json.loads then model_validate. Use model_validate_json(raw_bytes).", line.root)
+        if not ctx.in_domain:
+            return
+        for line in ctx.json_loads_lines:
+            yield _smell(
+                self,
+                "json.loads in domain code produces an untyped intermediate dict. Use model_validate_json(raw_bytes) on a BaseModel or RootModel.",
+                line.root,
+            )
+
+
+class TypeAdapterInDomain(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not ctx.in_domain:
+            return
+        for line in ctx.type_adapter_lines:
+            yield _smell(
+                self,
+                "TypeAdapter in domain code: per-call validator/serializer construction. Forge a frozen RootModel[T] envelope; the class IS the validator.",
+                line.root,
+            )
+
+
+class ModelValidatorAfterInDomain(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not ctx.in_domain:
+            return
+        for cls in ctx.classes:
+            for method in cls.methods:
+                if method.has_model_validator_after:
+                    yield _smell(
+                        self,
+                        'model_validator(mode="after") in domain code. Decisions belong on Evaluation Models as @cached_property returning typed result variants. A.3 impossible-variant-composition is the only legit case and requires explicit human approval.',
+                        method.line.root,
+                        class_name=cls.name,
+                        method_name=method.name,
+                    )
 
 
 class ComputedFieldWithProperty(BaseModel, frozen=True):
@@ -507,6 +784,123 @@ class MutableInDerivation(BaseModel, frozen=True):
                     )
 
 
+class BoolReturnDerivation(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not ctx.in_domain:
+            return
+        for cls in ctx.classes:
+            if not (cls.is_frozen_basemodel or cls.is_unfrozen_basemodel):
+                continue
+            for method in cls.methods:
+                if not method.is_derivation:
+                    continue
+                if method.returns_bool:
+                    yield _smell(
+                        self,
+                        "derivation returning bool erases the variant discriminator. Forge a typed result variant; the variant's existence carries the answer.",
+                        method.line.root,
+                        class_name=cls.name,
+                        method_name=method.name,
+                    )
+
+
+class FTestViolation(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        for cls in ctx.classes:
+            if not cls.is_enum_subclass:
+                continue
+            for method in cls.methods:
+                for param_name, type_name in method.decision_model_parameters:
+                    yield _smell(
+                        self,
+                        f"F-test violation: enum method parameter '{param_name}: {type_name}' is a composed decision model. The derivation's home is the composed model (B.1), not the enum.",
+                        method.line.root,
+                        class_name=cls.name,
+                        method_name=method.name,
+                    )
+
+
+class KindReBranching(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        for line in ctx.kind_string_comparison_lines:
+            yield _smell(
+                self,
+                ".kind compared to a string literal. Pydantic's discriminator has already narrowed the type — use match/case over the union or per-variant dispatch.",
+                line.root,
+            )
+
+
+class BareCollectionOfPrimitiveField(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not ctx.in_domain:
+            return
+        if ctx.basename == "type.py":
+            return
+        for cls in ctx.classes:
+            if not (cls.is_frozen_basemodel or cls.is_unfrozen_basemodel):
+                continue
+            for field_name, elem, lineno in cls.bare_primitive_collection_fields:
+                yield _smell(
+                    self,
+                    f"field '{field_name}' is a collection of bare {elem}. Narrow the element type, or forge a registry construct if the collection has identity.",
+                    lineno,
+                    class_name=cls.name,
+                )
+
+
+class BareCollectionOfPrimitiveParameter(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not (ctx.in_domain or ctx.in_service):
+            return
+        for cls in ctx.classes:
+            for method in cls.methods:
+                for param_name, elem in method.bare_collection_primitive_params:
+                    yield _smell(
+                        self,
+                        f"parameter '{param_name}' is a collection of bare {elem}. Narrow the element type, or forge a registry construct.",
+                        method.line.root,
+                        class_name=cls.name,
+                        method_name=method.name,
+                    )
+        for fn in ctx.free_functions:
+            for arg in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs):
+                if arg.annotation is None:
+                    continue
+                elem = bare_primitive_collection_element(arg.annotation)
+                if elem is None:
+                    continue
+                yield _smell(
+                    self,
+                    f"parameter '{arg.arg}' is a collection of bare {elem}. Narrow the element type, or forge a registry construct.",
+                    fn.lineno,
+                    method_name=fn.name,
+                )
+
+
+class MainPyEnvironRead(BaseModel, frozen=True):
+    applies_in_tests: bool = False
+
+    def check(self, ctx: FileContext) -> Iterable[Smell]:
+        if not ctx.is_main_py:
+            return
+        for line in ctx.os_environ_lines:
+            yield _smell(
+                self,
+                "os.environ / os.getenv in main.py. Configuration enters through BaseSettings models which bind env vars at construction; main.py constructs each config root in one expression.",
+                line.root,
+            )
+
+
 class PrivateMethodOnDomainModel(BaseModel, frozen=True):
     applies_in_tests: bool = False
 
@@ -530,6 +924,20 @@ class VoidMethodOnDomainModel(BaseModel, frozen=True):
 
     def check(self, ctx: FileContext) -> Iterable[Smell]:
         if not ctx.in_domain:
+            return
+        if ctx.has_active_model:
+            for cls in ctx.classes:
+                if not cls.is_frozen_basemodel:
+                    continue
+                for method in cls.methods:
+                    if method.returns_explicit_none and not method.name.startswith("__"):
+                        yield _smell(
+                            self,
+                            "domain model method returns None: frozen models are pure. State-mutation methods live on the active model only.",
+                            method.line.root,
+                            class_name=cls.name,
+                            method_name=method.name,
+                        )
             return
         for cls in ctx.classes:
             for method in cls.methods:
@@ -620,9 +1028,17 @@ INVARIANTS: tuple[Invariant, ...] = (
     TypePyImportingProject(),
     ValuePyImportingNonType(),
     InvertedDomainImport(),
-    JsonLoadsThenValidate(),
+    JsonLoadsInDomain(),
+    TypeAdapterInDomain(),
+    ModelValidatorAfterInDomain(),
     ComputedFieldWithProperty(),
     MutableInDerivation(),
+    BoolReturnDerivation(),
+    FTestViolation(),
+    KindReBranching(),
+    BareCollectionOfPrimitiveField(),
+    BareCollectionOfPrimitiveParameter(),
+    MainPyEnvironRead(),
     PrivateMethodOnDomainModel(),
     VoidMethodOnDomainModel(),
     StaticOrClassMethodOnDomainModel(),

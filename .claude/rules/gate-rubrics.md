@@ -67,7 +67,7 @@ paths:
 - `model_validate_json(raw_bytes)` at the live input edge, yielding the result — the capture pattern
 - Composed model with proven models as fields — the richer semantic world as one proven object
 - `@cached_property` that calls `model_validate` to trigger next construction — the cascade pattern
-- `TypeAdapter(UnionType).validate_python(data)` for DU dispatch at a boundary
+- Frozen `RootModel[DU]` envelope for DU dispatch at a boundary — `class Envelope(RootModel[DU], frozen=True): root: DU`; `Envelope.model_validate_json(raw_bytes)` yields the proven, discriminator-narrowed variant in a single pass. The class IS the validator
 - `Field(alias="foreign_name")` translating foreign field names declaratively — the boundary model pattern
 - Active model orchestrating through construction, derivation, and projection — domain logic living on the model
 - `domain/context/api.py` contracts as domain-owned models that route files import
@@ -82,7 +82,16 @@ paths:
 - A route file defining its own request/response models instead of importing contracts from `domain/context/api.py` — meaning escaped from domain ownership
 - A service file containing computation, classification, derivation, or domain logic beyond binding transport to the active model — orchestration escaped
 - A standalone function that could be a `@cached_property` on a composed model — construction replaced by procedure because the composed model was never created
-- `json.loads()` followed by `model_validate()` when data arrives as raw bytes or str — `model_validate_json(raw_bytes)` absorbs JSON in a single Rust-level pass with no intermediate dict; the two-step parse creates untyped truth between steps
+- `json.loads()` anywhere in domain code — broader than the paired-with-`model_validate` form. Produces an untyped intermediate dict that has no home in the type system. `model_validate_json(raw_bytes)` on a `BaseModel` or `RootModel` parses and validates in a single Rust-level pass; the dict never exists
+- `TypeAdapter(...)` in domain code — per-call (inline) or per-module (top-level) validator/serializer construction for a type a `RootModel` already wraps. The TCA shape is a frozen `RootModel[T]` envelope. Construction IS proof; the class IS the validator
+- Mutable accumulation inside `@cached_property` or `@computed_field` — accumulation is procedural. List/dict comprehensions and generator expressions are the algebraic form
+- `@cached_property` or `@computed_field` whose return type annotation is `bool` — a decision encoded as a primitive. The home is a typed result variant (DU, typed tuple, proven model) whose existence carries the answer. `bool` erases the variant's discriminator and forces the consumer back into `if`-branching
+- `if`/`elif` re-branching in consumer code against a discriminated-union member's `.kind` field — re-branching against a discriminator Pydantic has already narrowed. The consumer's branch point IS the variant — `match`/`case` over the DU, or per-variant dispatch through a smart variant method
+- A collection of bare primitives as a field type on a `BaseModel` or as a function parameter in domain or service code — *contract-surface erasure* or *construction-erases-the-domain*. Narrow the element type; forge a registry construct if the collection has identity that the active model should be constructed from
+- `main.py` reading `os.environ` / `os.getenv`, or assembling a configuration object across multiple expressions — the configuration layer was never forged. `BaseSettings` binds env vars at the model; `main.py` constructs each config root in one expression
+- An enum method whose parameter is annotated as a composed decision model (`*Evaluation`, `*Transition`, `*Decision`) — F-test violation. The derivation's home is the composed model (B.1), not the enum
+- An active model whose construction takes a runtime list of opaque identifiers (subjects, channels, instruments, rule names) — *construction-erases-the-domain*. The active model receives a frozen registry construct whose existence enumerates the set
+- A stored `bool` field on a frozen `BaseModel` whose value gates downstream behavior — `if self.bool_field: do_A; else: do_B`. The typed result variant IS the gate; the bool erases the discriminator. A `bool` field is admissible only as a pure observation channel that no consumer branches on. When presence vs absence of behavior depends on the value, replace with a DU whose variants carry their own dispatch (smart variant methods or `match`/`case`)
 
 **Approved mechanisms**:
 - **Irreducible seam procedure:** A function performing external I/O (REST call, websocket send/receive, database query, file read) and passing the result to `model_validate` is approved. The seam must be contained (one function), terminal (bridges INTO the construction graph, procedure does not spread beyond), and irreducible (no way to express the I/O as construction). The seam touches a live transport edge, positional data structure, or untyped external surface.
