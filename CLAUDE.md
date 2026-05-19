@@ -1,132 +1,162 @@
 # CLAUDE.md
 
-**Do not simulate execution — declare what exists.**
+---
 
-## Construction Engine Mode
+# THE PROTOCOL
 
-You think in types, not steps. A type's existence is its proof. A field declaration is a proof obligation. One construction call resolves the entire proof graph.
+The protocol is a graph. Files map to rules; triggers map to skills; every emitted construct admits to one of three forms or names a missing type. Edge traversal IS the precondition for code emission. Independent reasoning has no home — rule loading IS the reasoning.
 
-**You do NOT orchestrate construction. You DECLARE fields. If you catch yourself writing "first... then... finally..." about construction, you are thinking in procedure and the code will follow.**
+## File → rule
 
-**You do NOT validate and discard. You PARSE into narrower types. If you catch yourself writing a model_validator that checks one field against a constant, a narrowed scalar with Field() carries that proof structurally. Forge the type.**
+- `tca/` (domain) → `.claude/rules/domain.md`
+- `type.py` → `domain-type.md`
+- `value.py` → `domain-value.md`
+- foreign mirrors → `foreign.md`
+- `*Evaluation` models → `evaluation-model.md`
+- services → `service.md`
+- `api.py` → `api.md`
+- `main.py` → `main.md`
+- semantic-surface types → `semantic-surface.md`
+- gate adjudication → `gate-rubrics.md`
 
-When confused: "What type, if it existed, would make this problem structurally impossible?" Forge that type.
+## Trigger → skill
 
-When ambiguous, these defaults resolve it:
-- the type system is the semantic layer — the model is the program
-- construction is proof — derivation extends proof
-- unknown outcomes are typed possibility spaces, not procedural control state
-- procedure belongs only at irreducible seams
-- every error is a design error — the fix is always more modeling, never less
+- new shape needed → `shape-match`
+- invariant classification needed → `proof-design`
+- procedure reached for to bridge typed shapes → `forge-the-link`
+- text drifting procedural → `construction-voice`
 
-When choosing between constructs:
-- `RootModel` and focused `BaseModel` over bare primitives
-- `Field(...)`, `Annotated`, aliases, `Literal`, `Field(discriminator=...)` before validators or free procedure
-- `model_validate`, `model_validate_json`, `from_attributes` for staged lifting and wiring
-- `@computed_field` + `@cached_property` for intrinsic derivation on frozen models
-- `model_validator(mode="before")` or `mode="wrap"` only at irreducible boundaries
-- `mode="after"` or `field_validator` only when proof cannot be carried declaratively
+Doctrinal anchor: `docs/manifesto.md`, `docs/pydantic-machinery.md`, `docs/program-topology.md`, `docs/building-block-classifier.md`.
 
-## Proof Hierarchy
+## The admissible set
 
-Every invariant has a strongest proof. Use it. Never reach for a weaker level.
+Construction is the verb. Its kin are derivation (`@cached_property` / `@computed_field` returning a constructed value from a model's own fields) and projection (`model_dump_json()` / `model_dump()` emitting the constructed state). Declaration (class definitions and field type annotations) is construction's structural precondition. Every code element resolves to one of these.
 
-| Level | Shape | When |
-|-------|-------|------|
-| 1. Field constraint | `Field(gt=2.0)` on `RootModel` | Static bound. Type existence IS proof. |
-| 2. Narrowed type construction | `LineNumber(raw_value)` | Lifting observation → proven type. Pydantic Rust validator does the work. |
-| 3. Cross-field validator | `model_validator(mode="after")` | Composed fields whose values are *structurally impossible together* — e.g., `StateTransition(Terminal, ChildAdded)`. NOT business thresholds (those are derivations returning a result DU like `GateResult = GatePassed \| GateRejected`). Must name which fields and why levels 1-2 fail. |
-| 4. Handler gating | Model's absence | External state (halt, connection). Not a field — existence is proof. |
+The three runtime statement-level forms:
 
-A validator referencing one field against a constant is a level-1 proof you failed to forge.
+1. Construction — `Type(...)` or `Type.model_validate(...)`
+2. Assignment of constructed result to field — `self.field = Type(...)`
+3. `match`/`case` on a Pydantic-narrowed discriminated union
 
-## Wrong → Right
+## Forbidden constructs name their missing types
 
-**Validator that should be a narrowed type:**
+| Construct | Missing type |
+|---|---|
+| For-loop with side effects | A model whose construction folds the iteration |
+| `if`/`elif` on string/`Literal` | A discriminated union whose variants own the dispatch |
+| Helper function | A `@cached_property` on the model whose fields it reads |
+| Dict-building before construction | A composed model whose field types are proven |
+| `*Mapper`/`*Translator`/`*Adapter` class | `model_validate(source)` with `from_attributes=True` |
+| `model_validator(mode="after")` on a constant | A narrowed scalar with `Field(constraint)` |
+| `model_validator(mode="after")` comparing to threshold | A `@cached_property` on an Evaluation Model returning a typed result variant |
+| `@cached_property` returning `bool` | A discriminated union whose variant existence IS the answer |
+| Bare `str`/`int`/`float`/`Decimal` as composed-model field | A forged scalar from `type.py` |
+| `Optional[X]` where absence drives behavior | A discriminated union variant whose fields encode the absence |
+| `json.loads` + `model_validate` | `model_validate_json(raw_bytes)` |
+| `TypeAdapter(DU)` | A `RootModel[DU]` envelope |
+| Consumer re-branching on `.kind` | `match`/`case` against the variants themselves |
+
+The doctrine names every admissible decision. Invented decisions have no home. Requested scope IS the scope. Added scope has no home. The training corpus is procedural; this graph is its counterweight.
+
+**Action IS construction. (Construction's kin: derivation and projection. Construction's precondition: declaration.) Procedure has no home.**
+
+---
+
+## StrEnum IS Literal
+
+A `StrEnum` member IS a `Literal` value — `Literal[MyEnum.FOO]` resolves to `Literal["foo"]` because `StrEnum` values are strings. One declaration serves as enum member, discriminator value, and domain knowledge simultaneously. Restated enum knowledge has no home.
+
+## Naming Conventions
+
+Suffix anchors the semantic role and makes the dispatch chain readable.
+
+| Suffix         | Role                                                                     | Examples (from the reference program) |
+| -------------- | ------------------------------------------------------------------------ | ------------------------------------- |
+| `*Result`      | decision outputs                                                         | —                                     |
+| `*Decision`    | wrappers around action choices                                           | —                                     |
+| `*Action`      | action variants downstream of a decision                                 | —                                     |
+| `*State` (DU)  | discriminated union of state variants                                    | —                                     |
+| `*Transition`  | composed `(state, event)` input model whose derivation yields next state | —                                     |
+| `*Intent`      | outbound events to an external system                                    | —                                     |
+| `*Event`       | inbound external events                                                  | —                                     |
+| `*Evaluation`  | composed-input decision models                                           | —                                     |
+| `*Annotation` (DU) | discriminated union of Python typing-form variants                   | `DirectAnnotation`, `UnionAnnotation`, `TupleAnnotation` |
+| `*Block`       | discriminated union of classified-node variants                          | `RecordBlock`, `AlgebraBlock`, `LeafBlock`, `EffectBlock` |
+| `*Report`      | projection shape over a classified tree                                  | `FieldReport`, `TreeReport`           |
+
+The first eight rows are the paradigm-level conventions; the reference program's domain is type-tree classification and exemplifies the last three. Both sets travel together — a downstream TCA project inherits the eight and grows its own examples for the rest.
+
+## Narrated steps have no home — declared structure IS the construction
+
 ```python
-# WRONG: validating what Field() can prove
-@model_validator(mode="after")
-def _check_line(self) -> Self:
-    if self.line < 1:
-        raise ValueError("line must be positive")
-    return self
+# WRONG: construction as orchestrated procedure
+annotation = DirectAnnotation(form=raw_type)
+slot = FieldSlot(name=field_name, annotation=annotation)
+entry = FieldEntry(slot=slot, owner=cls)
 
-# RIGHT: narrowed scalar carries the proof
-class LineNumber(RootModel[int], frozen=True):
-    root: int = Field(ge=1)
-# Smell takes LineNumber as field type — construction proves it
-```
-
-**Narrating steps vs declaring structure:**
-```python
-# WRONG: orchestrating construction as procedure
-line = LineNumber(node.lineno)
-location = SourceLocation(line=line, class_name=cls.name)
-smell = Smell(invariant_name="X", message="...", location=location)
-
-# RIGHT: one construction call, field types carry obligations
-smell = Smell(
-    invariant_name="X",
-    message="...",
-    location=SourceLocation(line=node.lineno, class_name=cls.name),
+# RIGHT: one construction site, field types as obligations
+entry = FieldEntry(
+    slot=FieldSlot(name=field_name, annotation=raw_type),
+    owner=cls,
 )
-# Pydantic constructs LineNumber inside SourceLocation during field validation
+# DirectAnnotation and TypeAnnotation are Pydantic field-validation artifacts
 ```
 
-**Escaped derivation vs model-owned:**
-```python
-# WRONG: function computing what belongs on the model
-def render_smell(name: str, message: str, location: SourceLocation) -> str:
-    return f"{name}: {message} ({location.qualified})"
+## Compatibility hedging has no home
 
-# RIGHT: derivation lives on the model
-class Smell(BaseModel, frozen=True):
-    invariant_name: str
-    message: str
-    location: SourceLocation
-
-    @cached_property
-    def rendered(self) -> str:
-        return f"{self.invariant_name}: {self.message} ({self.location.qualified})"
-```
-
-## Failure Modes and Their Cures
-
-**Validator-first.** Your instinct is `model_validator`. A `model_validator` without an irreducibility justification from `/proof-design` is unfinished code. `/proof-design` IS how invariants are classified into the proof hierarchy. Every validator names its two irreducible fields or it does not exist.
-
-**Procedural drift.** Your training corpus is 99% procedure. Code without `/shape-match` drifts toward training defaults. `/shape-match` IS the correct TCA shape loaded as generation target. Domain code matches the shape in `.claude/rules/`, not the shape in training data.
-
-**Language infection.** Procedural words produce procedural code. Text containing "extract," "check," "handle," "process" is infected. `/construction-voice` IS the structural rewrite — declarations of what types ARE, what files CONTAIN, what existence PROVES. Infected text does not ship.
+`_REMOVED_` markers, commented-out blocks, dead "kept for compatibility" scaffolding — none has a home in the domain layer. Backward-compatibility is not a constraint within domain. Replacement types are forged. Old shapes have no home alongside their replacements.
 
 ## What This Is
 
-This repository develops and documents Type Construction Architecture.
+This repository develops and documents Type Construction Architecture. It is both a theory surface and a working enforcement environment — the quality bar is architectural, not just valid Python. `tca/building_block.py` is the reference program: a recursive Pydantic type-tree walker that classifies any `BaseModel`'s entire construction graph through one `model_validate` at the root, two self-classifying `RootModel` wrappers, two discriminated unions, demand-driven recursion, zero if-chains. `spec/` is the TCA Spec System — the logic-architecture layer from which every rule, type, and hook derives.
 
-It is both a theory surface and a working enforcement environment. The quality bar is architectural — good output strengthens TCA as a programming paradigm, not just produces valid Python.
+## Commands
 
-Python 3.12+ / Pydantic v2 / basedpyright.
+```bash
+just up dev             # bring up dev env
+just down               # bring all envs down
+just build dev          # rebuild dev services
+just logs dev           # tail dev logs
+just shell dev <svc>    # interactive shell in a service
+just status             # health snapshot
+uv run basedpyright     # static type check
+uv run pytest           # run tests
+```
 
-`tca/building_block.py` is the reference program — a recursive Pydantic type tree walker that classifies any BaseModel's entire construction graph. One `model_validate` at the root fires the cascade. Two self-classifying wrappers, two discriminated unions, demand-driven recursion, zero if-chains. Study it before writing TCA code.
+Python 3.12+ / `uv` / Pydantic v2 / basedpyright / hatchling build system.
 
-## When Architecture Must Be Wrong
+## Architecture (the WHY — shapes live in `.claude/rules/`)
 
-If you find ANY imperfection in existing code — stop all work. Fix it NOW. Do not queue. Do not defer. Do not say "we could do this later." Fix rules first (verify they catch the pattern), then fix code.
+**Type Construction Architecture.** Domain logic's home is model construction and derivation. Services are transport shims. Handlers are deterministic event projections. The type system IS the protocol.
+
+**Spec-derived rules.** `spec/` is the logic architecture; `.claude/rules/`, `.claude/skills/`, and `.claude/scripts/smell.py` are its mechanical projections. A rule whose pattern is not covered by the spec has no home. Rule edits without spec coverage have no home.
+
+**Reference program as proof.** `tca/building_block.py` IS the worked example of the cognitive mode. Edits to it must preserve the construction-graph shape — recursive `RootModel` self-classification, discriminated-union dispatch, derivation on frozen models. A change that introduces procedural orchestration into the reference program is a paradigm defect, not a refactor.
+
+**Frozen models.** Every model is `frozen=True` except the single active model per bounded context. Construction is proof. Derivation's home is the model.
+
+## Key Constraints
+
+- Procedural language in instruction surfaces (`CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, `spec/`) primes procedural code at the token level — text containing "extract," "check," "handle," "process," "manager," "processor," "repository" is infected and must be rewritten via `construction-voice`
+- `model_validator(mode="after")` lacking an irreducibility justification from `proof-design` (A.3 — impossible-variant-composition only) has no home
+- `TypeAdapter` and `json.loads` have no home in TCA domain code — the class IS the validator (`RootModel` / `RootModel[DU]` / `BaseModel`)
+- Helper functions, mapper/translator/adapter classes, dict-building before construction — all name missing types; the fix is more modeling, never more procedure
+- Rule edits without corresponding spec coverage have no home — the spec drives the rules, not the other way around
+
+## When the shape is wrong
+
+Imperfection in existing code is not deferrable work. The codebase admits no state where a known wrong shape persists alongside other work. Rule coverage of the pattern IS the precondition for the code edit, not its sequel. "Later" has no home.
 
 ## What Goes Where
 
-- **This file** — cognitive mode, proof hierarchy, failure modes. Shapes how you think.
-- **`.claude/rules/`** — correct shapes per file type. What each file IS and CONTAINS.
-- **`.claude/scripts/smell.py`** — deterministic post-edit fast-fail. No LLM judgment. Catches: `type.py` importing from project, `value.py` importing from non-`type.py`, technology-named files in `domain/`, dumping-ground filenames in `domain/`, `@computed_field` + `@property` on frozen models, `json.loads` + `model_validate`, mutables inside `@cached_property`/`@computed_field`, `try`/`except` in domain models, void `-> None` methods on domain models, `@staticmethod`/`@classmethod` on domain models, multi-value `Literal[str]` (use StrEnum), domain imports from `service`/`api`, parallel tuple fields, private methods on domain models. Each smell is named for the invariant class that fired it.
-- **`.claude/settings.json` hooks** — pipeline: LLM pre-edit fast-fail on diff-visible patterns → `smell.py` post-edit on full file → LLM agent gate adjudication.
-- **`.claude/skills/`** — `/proof-design`, `/shape-match`, `/construction-voice`, `/bounded-adjudication`.
-- **`docs/`** — manifesto, pydantic machinery, build patterns, program topology, irreducible seams.
+- **This file** — the protocol, project identity, project-specific architecture and constraints.
+- **`.claude/rules/`** — correct shapes per file type. Proof hierarchies, Evaluation Model template, smart-method patterns, semantic-surface doctrine, gate rubrics.
+- **`.claude/skills/`** — invocable cognition: `shape-match`, `proof-design`, `construction-voice`, `forge-the-link`, `bounded-adjudication`.
+- **`.claude/settings.json` hooks** — mechanical enforcement. Pre-edit fast-fail + post-edit `smell.py` + LLM gate adjudication.
+- **`.claude/scripts/smell.py`** — deterministic post-edit fast-fail. No LLM judgment.
+- **`spec/`** — TCA Spec System: scope, strategy, conditions, proof-hierarchy classification, premises, configuration models, domain invariants, coverage. The logic architecture layer.
 - **`tca/building_block.py`** — the working reference program.
-
-## Reuse
-
-To adapt this scaffold to another TCA project:
-
-1. Copy `CLAUDE.md` and the `.claude/` directory
-2. Rewrite `What This Is` with project identity, commands, and domain constraints
-3. Replace reading pointers with the new repo's surfaces
-4. Run `/bounded-adjudication` to generate domain-specific evidence shapes
+- **`docs/manifesto.md`** — TCA doctrine narrative.
+- **`docs/pydantic-machinery.md`** — Pydantic internals load-bearing for TCA patterns.
+- **`docs/program-topology.md`, `docs/build-patterns.md`, `docs/irreducible-seams.md`, `docs/roots-and-proof-obligations.md`, `docs/semantic-index-types.md`, `docs/building-block-classifier.md`** — supporting doctrine surfaces.
+- **`.claude/CLAUDE.template.md`** — generic CLAUDE.md template for adapting this scaffold to another TCA project.
