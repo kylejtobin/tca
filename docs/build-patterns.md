@@ -1,524 +1,583 @@
 # TCA Build Patterns
 
-These patterns describe how construction computes, but more importantly they describe how to actually build in TCA. They are not a closed taxonomy. They are the moves an architect actually needs to reach for, in dependency order: name the domain vocabulary, let fields prove themselves at construction, own the foreign schema, absorb transport wrappers on that same boundary, hand live input to it, lift into domain truth, build richer semantic worlds, let other models read declared surfaces, derive intrinsic facts, route structurally, and finally render a terminal result from owned proof.
+This document is a companion to `docs/type-construction-architecture.md`. It does not
+extend that doctrine. It operationalizes it.
 
-To keep the build path legible, the examples below all use the same world: a structural smell detector that walks Python source. The running types — `LineNumber`, `ClassName`, `MethodName`, `SourceLocation`, `Smell`, `FileContext`, plus the AST-classification types from `tca/building_block.py` (`TypeAnnotation`, `AnnotationShape`, `BlockShape`, `ClassifiedNode`, `ModelTree`, `TreeReport`) — all live in this repo. The patterns are domain-agnostic; the running example just keeps the build path coherent.
+The construct set is closed. The approved constructs and edges are:
 
-### Name The Domain Scalars First
+- semantic scalar
+- collection
+- frozen model
+- union
+- derivation
+- boundary model
+- domain event
+- active model
+- service
+- route
+- config
+- composition root
+- projection
 
-First, own the domain values themselves before any larger model starts using them.
+Anything else is meaning escaped, duplicated, vacuous, or fused.
 
-**Bad Procedural Pattern**
+## Construction Graph Mindset
 
-```python
-class Smell(BaseModel, frozen=True):
-    invariant_name: str
-    message: str
-    line: int
-    class_name: str | None
-    method_name: str | None
-```
+Build as a graph, never as a pipeline of helpers.
 
-**Why it is bad:** The model has field names, but the values are still flat unowned primitives, so the domain is only half modeled.
+- Nodes are declared types and constructed values.
+- Edges are legal implications between those values.
+- A value existing is proof that its constraints held.
+- If you need a check after construction, the type is incomplete.
 
-**TCA Pattern**
+## Pattern 1: Declare Semantic Scalars
 
-```python
-class LineNumber(RootModel[int], frozen=True):
-    root: int
-
-class InvariantName(RootModel[str], frozen=True):
-    root: str
-
-class Message(RootModel[str], frozen=True):
-    root: str
-
-class Smell(BaseModel, frozen=True):
-    invariant_name: InvariantName
-    message: Message
-    location: SourceLocation
-```
-
-This is correct because the domain vocabulary exists as owned scalar types before larger models start composing with it, and the first composed model closes the contrast pair completely. The same scalar move is what later legitimizes `ClassName`, `MethodName`, and the closed vocabulary `Block`.
-
-### Let Fields Declare Their Own Constraints
-
-Once the domain fields exist, let their declarations carry as much proof as possible before you reach for procedure.
-
-**Bad Procedural Pattern**
+Own domain leaves first. A primitive in a frozen domain model is an undeclared domain.
 
 ```python
-class SmellPayloadNormalizer:
-    def normalize(self, raw: dict[str, object]) -> dict[str, object]:
-        normalized: dict[str, object] = {}
+from pydantic import Field, RootModel
 
-        name = str(raw["invariant_name"]).strip()
-        if not name:
-            raise ValueError("invariant_name is required")
-        normalized["invariant_name"] = name
-
-        message = str(raw["message"]).strip()
-        if not message:
-            raise ValueError("message is required")
-        normalized["message"] = message
-
-        line = int(raw["line"])
-        if line < 1:
-            raise ValueError("line must be positive")
-        normalized["line"] = line
-
-        return normalized
-```
-
-**Why it is bad:** Field-level proof has escaped into a procedural normalizer layer, so every new field becomes more parser code, more staging dicts, and more hand-written cleanup before the model gets to own its own boundary.
-
-**TCA Pattern**
-
-```python
-class LineNumber(RootModel[int], frozen=True):
-    root: int = Field(ge=1)
 
 class InvariantName(RootModel[str], frozen=True):
     root: str = Field(min_length=1, pattern=r"^[A-Z][A-Za-z0-9_]*$")
 
-class Message(RootModel[str], frozen=True):
+
+class MessageText(RootModel[str], frozen=True):
     root: str = Field(min_length=1)
+
+
+class PositiveLineNumber(RootModel[int], frozen=True):
+    root: int = Field(ge=1)
 ```
 
-This is correct because the constraints now live directly on the fields that own them, and Pydantic enforces them at construction without forcing the program to grow a separate normalizer service. Reach for validators later only when the proof cannot be expressed declaratively on the field itself.
-
-### Mirror The Foreign Schema
-
-Next, own the foreign payload shape declaratively at the boundary instead of translating it procedurally.
-
-**Bad Procedural Pattern**
+A scalar's value space may be a closed named set, not only an open range. A uniform
+vocabulary, one axis with every member the same kind of thing, is a scalar whose value
+space is a `StrEnum`: named in one place, proven at construction, never scattered as bare
+literals and never branched on. The `StrEnum` is the value space, the role `Decimal` plays
+in `RootModel[Decimal]`; the scalar is the domain type that travels and proves membership.
 
 ```python
-class HookPayloadAdapter:
-    def translate_hook_message(self, payload: dict[str, object]) -> dict[str, object]:
-        tool_name = str(payload["tool_name"])
-        tool_input = payload["tool_input"]
-        file_path = str(tool_input["file_path"])
+from enum import StrEnum
 
-        translated: dict[str, object] = {}
-        translated["tool_name"] = tool_name
-        translated["file_path"] = file_path
-        return translated
+from pydantic import RootModel
+
+
+class Suit(StrEnum):
+    HEARTS = "hearts"
+    DIAMONDS = "diamonds"
+    CLUBS = "clubs"
+    SPADES = "spades"
+
+
+class CardSuit(RootModel[Suit], frozen=True):
+    root: Suit
 ```
 
-**Why it is bad:** The foreign field translation is now trapped in a procedural adapter layer that rebuilds an unowned payload shape by hand.
+## Pattern 2: Declare Collections As Domain Values
 
-**TCA Pattern**
+A sequence is either a field on a frozen model (`tuple[T, ...]`) or a named collection
+type when the sequence itself has identity.
 
 ```python
-class HookToolInput(BaseModel, frozen=True):
-    file_path: FilePath
+from pydantic import RootModel
 
-class HookEvent(BaseModel, frozen=True):
-    tool_name: ToolName
-    tool_input: HookToolInput
+
+class SmellList(RootModel[tuple["Smell", ...]], frozen=True):
+    root: tuple["Smell", ...]
 ```
 
-This is correct because the seam models foreign truth faithfully while the rest of the program keeps speaking owned domain language. This is still foreign ownership, not domain truth yet.
+Element `T` is always a declared type, never a primitive.
 
-### Normalize The Payload
+## Pattern 3: Construct Frozen Products From Declared Fields
 
-After mirroring the foreign schema, absorb any outer transport wrapper on that same boundary model.
-
-**Bad Procedural Pattern**
+Frozen models compose declared types and close shape with `extra="forbid"`.
 
 ```python
-class FieldSlotRouter:
-    def route_field(self, item: dict[str, object]) -> None:
-        name = item["name"]
-        info = item["info"]
-        self._field_handler.handle_field(name, info)
+from pydantic import BaseModel, ConfigDict
+
+
+class SourceLocation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    file_path: "PythonFilePath"
+    line_number: PositiveLineNumber
+
+
+class Smell(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    invariant_name: InvariantName
+    message_text: MessageText
+    source_location: SourceLocation
 ```
 
-**Why it is bad:** The wrapper-removal logic now leaks into procedural handlers, so the seam stops being terminal and the positional tuple shape keeps spreading.
+No primitive fields. No stored field derivable from other fields.
 
-**TCA Pattern**
+## Pattern 4: Model A Closed Vocabulary By Its Dimensionality
+
+A closed vocabulary sorts by dimensionality, not by size. A uniform vocabulary, one axis
+with every member the same kind of thing, is a semantic scalar over a `StrEnum` value space
+(Pattern 1). A vocabulary whose members are distinct structures, each carrying fields or
+behavior the others lack, is a union of disjoint variant models: variant type is identity,
+and there is no tag field and no discriminator field.
 
 ```python
-class FieldSlot(BaseModel, frozen=True, from_attributes=True, populate_by_name=True):
-    field_name: str = Field(alias="name")
-    annotation: TypeAnnotation
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+class Card(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    last_four: "CardLastFour"
+    expiry: "CardExpiry"
+
+
+class BankAccount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    account_number: "AccountNumber"
+    routing_number: "RoutingNumber"
+
+
+class Wallet(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    wallet_id: "WalletId"
+
+
+class PaymentMethod(RootModel[Card | BankAccount | Wallet], frozen=True):
+    root: Card | BankAccount | Wallet
+```
+
+A value carrying a routing number can only be a `BankAccount`; construction lands exactly one
+variant because the shapes are disjoint.
+
+When a flat vocabulary feels like a bag, it has fused several axes into one label list, and
+the cure is to name the axes. `OrderStatus = {PENDING, FILLED, REJECTED, EXPIRED, ...}` fuses
+lifecycle, outcome payload, and terminality at once: `FILLED` carries a fill price, `REJECTED`
+carries a reason, `PENDING` carries nothing, and terminal-versus-transient cuts across all of
+them. Factor it. The outcomes that carry their own payload are the variants of a union.
+
+```python
+class Filled(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    fill_price: "Price"
+    filled_quantity: "Quantity"
+
+
+class Rejected(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    reason: "RejectionReason"
+
+
+class Pending(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    placed_at: "Timestamp"
+
+
+class OrderOutcome(RootModel[Filled | Rejected | Pending], frozen=True):
+    root: Filled | Rejected | Pending
+```
+
+The terminality that cut across the labels is a single axis with no payload, so it is a
+variant-carried derivation, each variant returning its own `Terminality` read off the
+selected outcome (Pattern 10). Two structures fall out of one bag, and neither is a label.
+
+## Pattern 5: Use Boundary Models To Own Foreign Shape
+
+Boundary models lift foreign data into typed truth declaratively.
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class HookToolInputBoundary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    file_path: "PythonFilePath" = Field(alias="filePath")
+    source_text: "FileSourceText" = Field(alias="sourceText")
+
+
+class HookEventBoundary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    tool_name: "ToolName"
+    tool_input: HookToolInputBoundary
+```
+
+No adapter/mapper layer between foreign payload and boundary model.
+
+## Pattern 6: Absorb Transport Wrappers At The Same Boundary
+
+Use `mode="before"` only in the extreme foreign-boundary case where `Field(alias=...)`,
+nested boundary models, `from_attributes=True`, and direct `model_validate_json` cannot
+declaratively reach the payload.
+
+```python
+from pydantic import BaseModel, ConfigDict, model_validator
+
+
+class HookEnvelopeBoundary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    event: HookEventBoundary
 
     @model_validator(mode="before")
     @classmethod
-    def _from_tuple(cls, data: tuple[str, FieldInfo]) -> dict[str, object]:
-        return {"field_name": data[0], "annotation": data[1].annotation}
+    def _unwrap_envelope(cls, data: object) -> object:
+        if isinstance(data, dict) and "payload" in data:
+            return {"event": data["payload"]}
+        return data
 ```
 
-This is correct because the same boundary model now absorbs the positional `(name, FieldInfo)` tuple once instead of forcing procedural code to unpack it over and over. (Real example: `FieldSlot` in `tca/building_block.py`.)
-
-### Capture Live Input
-
-Once that boundary model is ready, keep the live seam thin: catch raw transport input and hand it off immediately.
-
-**Bad Procedural Pattern**
+### Anti-pattern: Branch Parser In The Boundary Validator
 
 ```python
-raw = sys.stdin.read()
-envelope = json.loads(raw)
-tool_input = envelope["tool_input"]
-if not tool_input["file_path"].endswith(".py"):
-    sys.exit(0)
-path = tool_input["file_path"]
-process(path)
+@model_validator(mode="before")
+@classmethod
+def _parse_payload(cls, data: object) -> object:
+    if not isinstance(data, dict):
+        return data
+    if data.get("kind") == "direct":
+        return {"event": {"tool_name": data["name"], "tool_input": data["input"]}}
+    if data.get("kind") == "optional":
+        return {"event": {"tool_name": data["name"], "tool_input": data["payload"]}}
+    return {"event": {"tool_name": data["legacy_name"], "tool_input": data["legacy"]}}
 ```
 
-**Why it is bad:** The hook entry point now owns parsing, wrapper access, field extraction, and business meaning instead of handing raw transport reality off immediately.
+This is wrong because it parses the payload and routes to different shapes by a tag value,
+decision logic inside the validator. The legitimate `mode="before"` reaches the payload past a
+single transport wrapper and nothing more; it does not classify or route.
 
-**TCA Pattern**
+## Pattern 7: Keep The Transport Edge Thin
+
+At ingress, read unstable bytes and immediately construct boundary truth.
 
 ```python
-event = HookEvent.model_validate_json(sys.stdin.read())
-yield event
+import sys
+
+
+raw_message = sys.stdin.read()
+hook_envelope = HookEnvelopeBoundary.model_validate_json(raw_message)
 ```
 
-This is correct because the live edge does one job only: catch unstable input and hand it straight to the boundary model that already knows how to absorb the envelope and own the payload. The hook intake is now just an edge.
+No `json.loads` dict-carrying phase through the program.
 
-### Lift Into Domain Truth
+## Pattern 8: Construct Domain Truth Directly From Proven Boundary Truth
 
-Once the foreign object is proven, cross directly into owned domain truth by construction.
-
-**Bad Procedural Pattern**
+Cross into domain by construction, not translator classes.
 
 ```python
-class HookEventTranslator:
-    def to_file_context(self, event: HookEvent) -> FileContext:
-        translated: dict[str, object] = {}
-        translated["path"] = event.tool_input.file_path.root
-        translated["source"] = Path(event.tool_input.file_path.root).read_text()
-        return FileContext(**translated)
+class FileSourceText(RootModel[str], frozen=True):
+    root: str
+
+
+class FileContext(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    file_path: "PythonFilePath"
+    file_source_text: FileSourceText
+
+
+file_context = FileContext(
+    file_path=hook_envelope.event.tool_input.file_path,
+    file_source_text=hook_envelope.event.tool_input.source_text,
+)
 ```
 
-**Why it is bad:** The foreign-to-domain crossing is now trapped in a procedural translation step that manually rebuilds domain values one field at a time.
+## Pattern 9: Derive Only Intrinsic Facts
 
-**TCA Pattern**
+Derivation is the only behavior on a frozen value. It returns a constructed declared object
+implied by the model's own fields. It never flattens those fields into a hand-formatted string
+or unwraps them to primitives for presentation; a format convention is meaning escaped into a
+string, and typed truth becomes data only by projection.
 
 ```python
-event = HookEvent.model_validate_json(raw_message)
-ctx = FileContext(path=event.tool_input.file_path, source=event.tool_input.file_path.read_text())
+from functools import cached_property
+
+from pydantic import Field, RootModel
+
+
+class SmellCount(RootModel[int], frozen=True):
+    root: int = Field(ge=0)
+
+
+class SmellList(RootModel[tuple[Smell, ...]], frozen=True):
+    root: tuple[Smell, ...]
+
+    @cached_property
+    def smell_count(self) -> SmellCount:
+        return SmellCount(len(self.root))
 ```
 
-This is correct because the foreign object is already proven, and the domain construction reads from it directly without a translator layer. This is the first point where owned domain truth begins.
+The derivation returns a constructed `SmellCount`, never a bare number or string. No helper
+functions nested inside derivations. No bool-returning gates.
 
-### Compose Proven Models
+## Pattern 10: Behavior Is Carried By Variants, Not Switched
 
-Now construct a richer semantic world by owning already-proven models as fields.
-
-**Bad Procedural Pattern**
+Per-variant behavior is a same-named derivation on each variant, each returning a constructed
+declared object; a consumer reads it off the selected variant. Construction already chose the
+variant, so there is no `match`, and the type checker requires every variant to define the
+derivation, which makes the set exhaustive by construction.
 
 ```python
-class ClassificationService:
-    def build_context(
-        self,
-        field_name: str,
-        annotation_shape: AnnotationShape,
-        block_shape: BlockShape,
-    ) -> dict[str, object]:
-        context_payload: dict[str, object] = {}
-        context_payload["field_name"] = field_name
-        context_payload["shape"] = annotation_shape
-        context_payload["block_shape"] = block_shape
-        return context_payload
+from functools import cached_property
+
+
+class Card(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    last_four: "CardLastFour"
+    expiry: "CardExpiry"
+
+    @cached_property
+    def settlement_days(self) -> "SettlementDays":
+        return SettlementDays(0)
+
+
+class BankAccount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    account_number: "AccountNumber"
+    routing_number: "RoutingNumber"
+
+    @cached_property
+    def settlement_days(self) -> "SettlementDays":
+        return SettlementDays(3)
+
+
+class Wallet(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    wallet_id: "WalletId"
+
+    @cached_property
+    def settlement_days(self) -> "SettlementDays":
+        return SettlementDays(0)
+
+
+class PaymentMethod(RootModel[Card | BankAccount | Wallet], frozen=True):
+    root: Card | BankAccount | Wallet
+
+    @cached_property
+    def settlement_days(self) -> "SettlementDays":
+        return self.root.settlement_days
 ```
 
-**Why it is bad:** The semantic world gets rebuilt procedurally on demand instead of existing as one owned proven object.
+Each variant returns a constructed `SettlementDays`; the envelope forwards to the selected
+variant. A card and a wallet clear the same day, a bank transfer takes three, and the value lives
+on the variant, chosen by construction, never by a `match`.
 
-**TCA Pattern**
+## Pattern 11: Active Model Is The Single Live Node
 
-```python
-class ClassifiedNode(FieldEntry, frozen=True, from_attributes=True):
-    block_shape: BlockShape = Field(alias="resolved_type")
-
-    @property
-    def block(self) -> Block:
-        return self.block_shape.block_kind
-
-    @property
-    def children(self) -> tuple[ClassifiedNode, ...]:
-        return self.block_shape.children
-```
-
-This is correct because the richer semantic world now exists as one proven object instead of a temporary coordination payload. `ClassifiedNode` is introduced here in its final shape: inherits `FieldEntry`, adds `BlockShape`, exposes flat delegation properties for downstream readers. (Real example: `ClassifiedNode` in `tca/building_block.py`.)
-
-### Read Another Model's Surface
-
-Once a model exposes a declared surface, let downstream construction read it directly instead of rebuilding it.
-
-**Bad Procedural Pattern**
+Exactly one unfrozen model per context. It holds the clients, receives live input, constructs
+the domain fact from it, and emits the derived result after proof. It never branches on a
+value: the analysis is a derivation, and its projection serializes whichever variant it is.
 
 ```python
-class FieldEntryDTO(BaseModel, frozen=True):
-    field_name: str
-    nullable: bool
-    collection: bool
+from pydantic import BaseModel
 
-class FieldEntryMapper:
-    def from_slot(self, slot: FieldSlot) -> FieldEntryDTO:
-        return FieldEntryDTO(
-            field_name=slot.field_name,
-            nullable=slot.annotation.nullable,
-            collection=slot.annotation.collection,
+
+class AnalysisActiveModel(BaseModel):
+    bus: "EventBusClient"
+
+    def analyze(self, hook_envelope: HookEnvelopeBoundary) -> None:
+        file_context = FileContext(
+            file_path=hook_envelope.event.tool_input.file_path,
+            file_source_text=hook_envelope.event.tool_input.source_text,
         )
+        self.bus.publish(file_context.analysis.model_dump_json())
 ```
 
-**Why it is bad:** The mapping layer duplicates a surface that already exists, so the program pays procedural cost to restate what one model was already declaring.
+The active model is exempt from immutability, not from typing rules. The source text is already
+proven boundary truth from the payload, so there is no fetch; the analysis is a derivation on
+`FileContext`, and the active model only constructs the fact and emits its projection.
 
-**TCA Pattern**
+## Pattern 12: Service Is Transport Binding Only
+
+Service binds clients to active model. It owns no domain logic.
 
 ```python
-class FieldEntry(BaseModel, frozen=True, from_attributes=True):
-    field_name: str
-    shape: AnnotationShape = Field(alias="annotation")
-
-    @property
-    def resolved_type(self) -> object:
-        return self.shape.resolved_type
-
-    @property
-    def nullable(self) -> bool:
-        return self.shape.nullable
-
-    @property
-    def collection(self) -> bool:
-        return self.shape.collection
-
-entry = FieldEntry.model_validate(slot)
+class AnalysisService:
+    def connect(self, bus: "EventBusClient") -> AnalysisActiveModel:
+        return AnalysisActiveModel(bus=bus)
 ```
 
-This is correct because the next model reads the declared surface that already exists — `TypeAnnotation`'s `@property` outputs flow through `getattr` during `model_validate`. This is borrowed truth, not newly derived truth. (Real example: `FieldEntry` in `tca/building_block.py`.)
+## Pattern 13: Route Is Ingress Membrane Only
 
-### Derive On The Model
-
-Once a model owns enough proven structure, extend that same model with a named intrinsic fact that belongs to it.
-
-**Bad Procedural Pattern**
+Route constructs boundary truth, dispatches to active model, and projects response.
 
 ```python
-class SmellRendererService:
-    def render(self, smell: Smell) -> str:
-        return f"{smell.invariant_name}: {smell.message} ({smell.location.qualified})"
+def hook_route(raw_message: str, active_model: AnalysisActiveModel) -> str:
+    envelope = HookEnvelopeBoundary.model_validate_json(raw_message)
+    active_model.analyze(envelope)
+    return AckBoundary(message=AckMessage("accepted")).model_dump_json()
 ```
 
-**Why it is bad:** The derivation is not owned at all. It is just inline string construction at the call site, so the program keeps rediscovering intrinsic truth instead of naming and owning it.
+Route defines no domain types and computes no domain meaning.
 
-**TCA Pattern**
+## Pattern 14: Config Is Typed, Frozen Startup Proof
+
+Configuration is a frozen settings model built once at startup.
 
 ```python
-class Smell(BaseModel, frozen=True):
-    invariant_name: InvariantName
-    message: Message
-    location: SourceLocation
+from pydantic_settings import BaseSettings
+
+
+class BusUrl(RootModel[str], frozen=True):
+    root: str = Field(min_length=1)
+
+
+class AnalysisConfig(BaseSettings):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    bus_url: BusUrl
+```
+
+No scattered `os.environ` reads.
+
+## Pattern 15: Composition Root Is Wiring Only
+
+`main.py` instantiates concrete clients, services, active model, and routes.
+
+```python
+def main() -> None:
+    config = AnalysisConfig()  # Construct typed config proof once.
+    bus = EventBusClient(config.bus_url.root)
+    active_model = AnalysisService().connect(bus=bus)
+    run_transport_loop(lambda raw: hook_route(raw, active_model))
+```
+
+No domain modeling and no domain decisions live here.
+
+## Pattern 16: Domain Events Cross Process Boundaries
+
+Established facts are projected as events and reconstructed on the far side.
+
+```python
+class AnalysisSucceededEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    file_path: "PythonFilePath"
+    smell_count: "SmellCount"
+
+
+serialized_event = AnalysisSucceededEvent(
+    file_path=file_context.file_path,
+    smell_count=SmellCount(3),
+).model_dump_json()
+```
+
+The event type is the contract.
+
+## Pattern 17: Projection Is A First-Class Edge
+
+Projection is how typed truth leaves the graph: a structured value dumped, never a string
+assembled by hand. The wire shape is the model's structure, so each part stays labeled by its
+field instead of encoded in a format convention.
+
+```python
+class AnalysisResponseBoundary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    smells: "SmellList"
+
+
+response_json = AnalysisResponseBoundary(smells=SmellList(())).model_dump_json()
+```
+
+Projection is not an ad hoc presenter rebuild.
+
+## Pattern 18: Variant-Dependent Effects Are Reified, Not Switched
+
+When which effect to emit depends on which variant a union holds, the effect is a value, not
+a branch. Each variant carries a same-named derivation returning a typed effect description, a
+frozen model; the active model reads it off the selected variant and emits it through one
+uniform step. Construction already chose the variant, so there is no `match` to choose the
+effect, exactly as there is none to choose a derived value (Pattern 10).
+
+```python
+from functools import cached_property
+
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+class OrderNotification(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    recipient: "AccountId"
+    headline: "NotificationHeadline"
+
+
+class Filled(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    account_id: "AccountId"
+    fill_price: "Price"
 
     @cached_property
-    def rendered(self) -> str:
-        return f"{self.invariant_name.root}: {self.message.root} ({self.location.qualified})"
-```
+    def notification(self) -> OrderNotification:
+        return OrderNotification(
+            recipient=self.account_id,
+            headline=NotificationHeadline("order filled"),
+        )
 
-This is correct because the same `Smell` now owns the intrinsic fact that can be derived from the fields it already proved. (Real example: `Smell.rendered` in `.claude/scripts/smell.py`.)
 
-### Declare Cases Instead Of Branching
-
-Once the domain world exists, let type selection replace branch-based control flow.
-
-**Bad Procedural Pattern**
-
-```python
-class AnnotationRouter:
-    def route(self, raw: dict[str, object]) -> None:
-        if raw["kind"] == "direct":
-            event = {
-                "kind": "direct",
-                "resolved_type": raw["resolved_type"],
-                "nullable": False,
-                "collection": False,
-            }
-            self._direct_handler.handle(event)
-        elif raw["kind"] == "optional":
-            event = {
-                "kind": "optional",
-                "resolved_type": raw["resolved_type"],
-                "nullable": True,
-                "collection": False,
-            }
-            self._optional_handler.handle(event)
-        elif raw["kind"] == "tuple":
-            event = {
-                "kind": "tuple",
-                "resolved_type": raw["resolved_type"],
-                "nullable": False,
-                "collection": True,
-            }
-            self._tuple_handler.handle(event)
-```
-
-**Why it is bad:** The procedure is doing dispatch that structure already knows how to do, so the case logic lives in branch code instead of in the types that own the cases.
-
-**TCA Pattern**
-
-```python
-class DirectAnnotation(BaseModel, frozen=True, from_attributes=True):
-    kind: Literal[AnnotationKind.DIRECT] = AnnotationKind.DIRECT
-    resolved_type: object
-    nullable: Literal[False]
-    collection: Literal[False]
-
-class OptionalAnnotation(BaseModel, frozen=True, from_attributes=True):
-    kind: Literal[AnnotationKind.OPTIONAL] = AnnotationKind.OPTIONAL
-    resolved_type: object
-    nullable: Literal[True]
-    collection: Literal[False]
-
-class TupleAnnotation(BaseModel, frozen=True, from_attributes=True):
-    kind: Literal[AnnotationKind.TUPLE] = AnnotationKind.TUPLE
-    resolved_type: object
-    nullable: Literal[False]
-    collection: Literal[True]
-
-AnnotationShape = Annotated[
-    DirectAnnotation | OptionalAnnotation | TupleAnnotation,
-    Field(discriminator="kind"),
-]
-
-shape = TypeAdapter(AnnotationShape).validate_python(raw)
-```
-
-This is correct because the cases are declared once as types, and construction selects the right one structurally. Construction is now the switch statement. (Real example: `AnnotationShape` in `tca/building_block.py` has six variants total.)
-
-### Unfold Composite Inputs
-
-Some declared cases are complete immediately, while others continue construction because their own shape still contains more of the same world.
-
-**Bad Procedural Pattern**
-
-```python
-class TypeTreeBuilder:
-    def build(self, raw: dict[str, object]) -> object:
-        if raw["block_kind"] == "record":
-            built_children = []
-            for child in raw["children"]:
-                built_children.append(self.build(child))
-            return {
-                "block_kind": "record",
-                "children": built_children,
-            }
-
-        return {
-            "block_kind": raw["block_kind"],
-        }
-```
-
-**Why it is bad:** Traversal code is now deciding the program's shape procedurally instead of letting the selected variant declare whether construction stops or continues.
-
-**TCA Pattern**
-
-```python
-class RecordBlock(BaseModel, frozen=True, from_attributes=True):
-    block_kind: Literal[Block.RECORD] = Block.RECORD
-    children: tuple[ClassifiedNode, ...]
-
-class LeafBlock(BaseModel, frozen=True, from_attributes=True):
-    block_kind: Literal[
-        Block.ENUM, Block.NEWTYPE, Block.COLLECTION, Block.SCALAR, Block.UNION
-    ]
-    # No children field — the variant's shape IS the decision not to recurse
-
-BlockShape = Annotated[
-    RecordBlock | LeafBlock,
-    Field(discriminator="block_kind"),
-]
-```
-
-This is correct because the selected variant's shape determines whether construction is complete now or must continue into children. `RecordBlock.children` reads `ResolvedType.children`, which fires `ModelTree.model_validate` recursively. `LeafBlock` has no children field, so the property never fires. The variant's shape IS the recursion decision. (Real example: `BlockShape` in `tca/building_block.py`.)
-
-### Let One Construction Trigger The Next
-
-Once the seam and domain path are stable, introduce a dedicated root object whose job is to let one proven result trigger the next.
-
-**Bad Procedural Pattern**
-
-```python
-class ClassifierWorkflowService:
-    def __init__(self, importer, classifier, reporter, renderer) -> None:
-        self._importer = importer
-        self._classifier = classifier
-        self._reporter = reporter
-        self._renderer = renderer
-
-    def run(self, target: str) -> str:
-        model_class = self._importer.resolve(target)
-        tree = self._classifier.classify(model_class)
-        report = self._reporter.build(tree)
-        return self._renderer.render(report)
-```
-
-**Why it is bad:** The coordinator now owns the semantic path of the program, so construction becomes a script instead of a graph that extends itself through proven objects.
-
-**TCA Pattern**
-
-```python
-class ClassifierRun(BaseModel, frozen=True):
-    target: str
-    json_output: bool = False
+class Rejected(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    account_id: "AccountId"
+    reason: "RejectionReason"
 
     @cached_property
-    def model_class(self) -> type[BaseModel]:
-        module_path, class_name = self.target.rsplit(":", 1)
-        module = importlib.import_module(module_path)
-        return getattr(module, class_name)
+    def notification(self) -> OrderNotification:
+        return OrderNotification(
+            recipient=self.account_id,
+            headline=NotificationHeadline("order rejected"),
+        )
+
+
+class OrderOutcome(RootModel[Filled | Rejected], frozen=True):
+    root: Filled | Rejected
 
     @cached_property
-    def tree(self) -> ModelTree:
-        return ModelTree.model_validate(self.model_class)
-
-    @cached_property
-    def report(self) -> TreeReport:
-        return TreeReport.model_validate(self.tree)
+    def notification(self) -> OrderNotification:
+        return self.root.notification
 ```
 
-This is correct because each proven result becomes the natural source for the next construction, and the path lives on the model instead of in a coordinator script. The new root type is justified here because the lesson is orchestration-by-construction. (Real example: `ClassifierRun` in `tca/building_block.py`.)
-
-### Render The Final Shape
-
-Finally, let the terminal human-facing or machine-facing surface emerge from owned truth.
-
-**Bad Procedural Pattern**
+The active model reads the derivation and emits it through one uniform step:
 
 ```python
-class TreePresenter:
-    def render(self, tree: ModelTree) -> str:
-        parts: list[str] = []
-        for node in tree.fields:
-            parts.append(f"{node.field_name}: {node.block}")
-            for child in node.children:
-                parts.append(f"  {child.field_name}: {child.block}")
-        return "\n".join(parts)
+class OrderActiveModel(BaseModel):
+    bus: "EventBusClient"
+
+    def settle(self, outcome: OrderOutcome) -> None:
+        self.bus.publish(outcome.notification.model_dump_json())
 ```
 
-**Why it is bad:** The output layer is rebuilding truth it does not own, so the final artifact is no longer emerging directly from the proof source.
+The emitter is uniform because it runs the one typed effect it is handed and never inspects it
+to choose a call. A fill and a rejection notify with different payloads through the same
+`publish`; the difference lives in the constructed `OrderNotification`, chosen by construction,
+never by a `match`.
 
-**TCA Pattern**
+When the effect's channel itself varies, one literal `publish` cannot select the transport
+without a branch, and the branch is the forbidden `match` relocated into the emitter. Reify the
+variation as a domain event published uniformly here, and let each consuming context re-select
+the variant by construction at its boundary and emit its own one uniform effect (Pattern 16).
+The selection stays in construction; the emitter stays uniform. The effect description is no new
+construct: it is a frozen model, variant-carried by derivation and run at the emit step, the
+effect-analog of a projection.
 
-```python
-class TreeReport(BaseModel, frozen=True, from_attributes=True):
-    reports: tuple[FieldReport, ...] = Field(alias="fields")
+## Forbidden Mirrors (Do Not Build These)
 
-    @computed_field
-    @cached_property
-    def text(self) -> str:
-        def _indent(report: FieldReport, depth: int) -> tuple[str, ...]:
-            prefix = "  " * depth
-            return (
-                f"{prefix}{report.line}",
-                *(line for child in report.children for line in _indent(child, depth + 1)),
-            )
-        return "\n".join(line for r in self.reports for line in _indent(r, 0))
+- Validator/normalizer/mapping pipeline that restates meaning across layers.
+- A standalone enum or scattered string labels as a domain type, or branching on a vocabulary member (a uniform vocabulary is a `StrEnum`-backed scalar; distinct structures are a union).
+- Stored discriminator/tag fields for union selection.
+- `if`/`elif` or `match`/`case` dispatch over union identity, re-selecting what construction already chose.
+- Booleans as decision outputs.
+- Bare primitives in frozen domain models.
+- Collections whose elements are bare primitives.
+- Nested helper functions inside derivations.
+- Hand-formatted strings or `.root` unwrapping inside a derivation, presentation that escapes the type; project a structured value instead.
+- Domain model inheritance for field reuse.
+- Foreign handles stored on boundary models.
+- Second unfrozen model in one context.
+- Route/service classes that compute domain meaning.
+- Orchestrator/pipeline/step-runner sequencing work outside active model.
+- Scattered `os.environ` reads or settings dicts outside config model.
+- Versioned request-response contracts with generated clients between services.
+- Emitting effects before constructing proof.
+- Switching on a variant inside the active model to choose which effect to emit, instead of reifying the effect as a variant-carried value run by one uniform emit.
 
-report = TreeReport.model_validate(tree)
-```
+## Purity Check
 
-This is correct because the terminal artifact now emerges directly from the semantic world already established above instead of being reconstructed in a presenter layer. The program is now emitting its final surface. (Real example: `TreeReport.text` in `tca/building_block.py`.)
+A section in this document is valid only if all are true:
+
+- It names one legal construct or edge from the closed set.
+- Its example places meaning in declared shape, not procedural sequence.
+- Constructed values are sufficient proof; no post-proof guard is needed.
+- There is no value-branching: per-variant behavior, including which effect to emit, is a derivation on each variant, read off the selected one, never `match`, `if`/`elif`, a tag, or a boolean.
+- Output leaves only as a projection of a structured value; no derivation flattens fields into a string.
+- Any crossing is boundary or projection, never mapper code.

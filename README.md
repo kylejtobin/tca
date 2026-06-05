@@ -5,224 +5,227 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Type Checked: basedpyright](https://img.shields.io/badge/type%20checked-basedpyright-cyan.svg)](https://github.com/DetachHead/basedpyright)
 
-**Pydantic is a programming language. Python is its runtime.**
+**Meaning lives in the structure of the type, and construction is its proof.**
 
-A Pydantic model is not a schema. It is a machine with a four-layer construction pipeline that fires every time data enters it. If the object exists, every constraint declared in its type was satisfied. If construction fails, no object exists. There is no third outcome.
+For about sixty years, no consumer at an application's primary execution surface read the
+program's *meaning* as instruction. Type checkers, ORMs, and schema generators read the
+program's mechanism; the meaning carried by names, descriptions, and type structure was read
+only by humans. That is no longer true. A neural model now reads field names, variant names,
+type names, and descriptions, in the application's own language, and acts on them. Rename
+`churn_risk_tier` to `x7` and the mechanism is unchanged while the model's output degrades,
+because the name was load-bearing to a reader that was never there before.
 
-Pydantic-as-compute gives you the structural power of algebraic type systems — discriminated unions, product types, newtypes, total construction, compositional reasoning — expressed in Python's vocabulary instead of FP notation. The rigor is the same. The notation is natural language and type annotations, not a symbolic calculus. Any developer can read it. Any neural consumer that works in language can participate in it.
+This is the event Type Construction Architecture responds to. A gap that was tolerable when
+humans paid the bill slowly, the domain ontology kept in one artifact and the running program
+in another, reconciled by hand, now carries a per-inference price, because the reader of
+meaning sits at the surface where the work happens and prices every disagreement between what
+the program *says* and what it *runs*. TCA's answer is to stop keeping two copies: write the
+ontology directly in the executable types, so the program that runs and the meaning it encodes
+are one object.
 
-Type Construction Architecture is the discipline of writing programs in these construction semantics. Define the types. Compose proven models as fields. Let projections derive further truth. Let declared dispatch, staged lifting, and `model_validate` execute the graph. Construction is proof. Derivation extends proof. The program is the construction graph — not the procedural glue around it.
+This repository is two things, and the pairing is the point. It is **the doctrine**, the
+canonical articulation of TCA, and it is **the build system** that extracts conforming TCA from
+a language model whose training pulls it toward procedure on every token. The build system is
+not a second copy of the rules. It is derived from them: the agents and the gate enforce exactly
+what the docs state, one source and not two. The repo is itself an instance of TCA's deepest
+claim, that the ontology *is* the program.
 
 ---
 
-## Why TCA Exists
+## What TCA is
 
-Most software hides the program in a service layer. Raw data arrives, service code interprets it, helper functions map it, branching code classifies it, and passive domain objects carry the results. TCA inverts that arrangement. The program moves into the domain types, and the surrounding layers thin out.
+TCA is a software design paradigm built on one principle: a value's existence is the evidence
+that its constraints held, so an illegal value cannot be built. A "validation" you would write
+later is a type you have not written yet. This is not a style guide. It is a continuous test
+applied to every inherited pattern, *does it put meaning into the type, or accommodate meaning
+escaping the type?*, that keeps the rules forcing meaning into the type and breaks the ones that
+let it escape.
 
-What disappears when the program moves into the types:
+A TCA program is built from a **closed set of constructs**. Each is a node or an edge in a
+single construction graph; whatever is not one of them is escaped meaning.
 
-| Conventional artifact | Why it disappears |
-|:---|:---|
-| Mapper classes, DTO converters, and adapter layers | Foreign schema mirroring and foreign-to-domain lifting turn translation into staged construction |
-| `if/elif` chains that classify inputs | Declared dispatch routes structurally during construction |
-| Service methods that compute from model fields | Composition and projection let models own and derive semantics directly |
-| Intermediate dictionaries and uncertain states | Frozen construction replaces partial translation artifacts with proven objects |
+- **Semantic scalar.** A frozen `RootModel` over one primitive, carrying a constraint or a name
+  that does real work. The graph's leaf; construction proves the constraint.
+- **Frozen model.** A frozen `BaseModel` composing declared types into one proven product. Its
+  existence is the certificate that every field's constraint held together.
+- **Union.** A closed set of frozen-model variants told apart by their **disjoint structure**,
+  never by a stored tag. The variant a value *is* is the type it was constructed as.
+- **Collection.** A frozen `RootModel[tuple[T, ...]]` whose element is a declared type.
+- **Derivation.** A fact a frozen model implies from its own proven fields. The only behavior a
+  frozen value has: it cannot change, only imply. It returns a constructed declared object, never
+  a bare primitive and never a hand-formatted string.
+- **Boundary model.** Where foreign-shaped data is lifted into domain truth in a single
+  declarative construction (`Field(alias=...)`, nested models, `model_validate_json`).
+- **Domain event.** A proven fact projected to the wire and re-proven on the far side. The type
+  is the contract: services publish facts, they do not call each other.
+- **Active model.** The single unfrozen model of a context, the one node where live mutable state
+  converges and the graph meets time.
+- **Service**, **route**, **config**, **composition root.** The thin wiring around the typed core:
+  transport binding, the ingress membrane, typed startup, and the imperative shell that builds the
+  core and steps back.
 
-The domain types are not passive. They carry the construction logic. They own classification, derivation, and boundary translation. Services shrink to almost nothing because the models already did the work. The app interior is railroaded by constructed certainty.
+**Projection** (`model_dump`) is how typed truth leaves the graph as plain data. It is the exit
+relation, a use of a frozen model, not a construct in its own right.
+
+Three consequences set TCA apart from ordinary type-driven Python:
+
+- **Unions are structural.** No stored tag field and no routing function: the variants' disjoint
+  shapes carry identity, and construction selects the one a value satisfies. The test: delete
+  every field that names the kind. If construction still lands exactly one variant, the tag was
+  always redundant.
+- **A closed vocabulary sorts by dimensionality, not size.** Members that carry distinct structure
+  or behavior are a union of variant types; a uniform one-axis vocabulary is a semantic scalar
+  whose closed value space a `StrEnum` can name, never branched on.
+- **Behavior is read off the variant, never switched.** Each variant carries its own same-named
+  derivation, and a consumer reads it off the selected variant. Construction already chose the
+  variant, so there is no `match` over the union and no `if`/`elif` on a value, which would only
+  re-perform the selection construction already made.
+
+The complete construct set, with each one's forbidden mirror, is in
+[`docs/type-construction-architecture.md`](docs/type-construction-architecture.md), the
+authority. Nothing else in the repo may contradict it.
 
 ---
 
-## The Mental Model
+## Why now
 
-**Construction is proof.** A `model_validate` call fires the full pipeline: translation, interception, coercion, integrity. If the object comes back, it satisfies every constraint its type declares. No separate validation step.
+Two traditions spent decades insisting the domain should be modeled as primary structure, and
+both were right. The **ontology tradition** (RDF, OWL, knowledge graphs) said the domain should
+be a formal structure of concepts and relations. The **type-theory tradition** (parse-don't-
+validate, algebraic data types, dependent types) said types should carry meaning and construction
+should prove correctness. Both were also marginal, for the same reason: their executors were
+never the dominant production runtime. The ontology sat beside the running program; the type
+system the industry shipped was not the one the PL community asked for.
 
-**Frozen snapshots.** Every TCA model is frozen. It captures one instant — the state of the world at construction time, proven and sealed. A frozen model never goes stale because it never claims to be current.
+A reader of meaning has now arrived at the application's primary execution surface, and it prices
+every gap between the program's semantic structure and what the program actually runs, on every
+inference. That converts "the ontology is the program" from a tradition's insistence into a
+runtime requirement, and brings the ontology home to the surface where the work happens.
+"Reflects," "is synced with," "is generated from" each contain the whole old world of two
+substances reconciled by hand; "is" contains the new one. The claim is identity, not
+correspondence.
 
-**Derivation belongs on the machine.** If a computation depends only on a model's own proven fields, it belongs on that model as a projection — `@computed_field`, `@cached_property`, or `@property`.
+The full argument, narrow on purpose and defensible against every well-actually about what
+already existed, is in [`docs/executable-ontology.md`](docs/executable-ontology.md).
 
-**Construction drives further construction.** A projection that calls `model_validate` extends the proof graph. This construction-derivation loop is the evaluation model of a TCA program:
+---
 
-```mermaid
-flowchart LR
-    C["Construct"] --> D["Derive"]
-    D --> C2["Construct"] --> D2["Derive"]
-    D2 --> T(("Terminal"))
+## The doctrine
 
-    classDef step fill:#dbeafe,color:#1e3a8a,stroke:#3b82f6
-    classDef done fill:#172554,color:#bfdbfe,stroke:#1e3a8a
+The doctrine is layered, a three-part spine and three companions. Each link points to a real
+file.
 
-    class C,D,C2,D2 step
-    class T done
+**The spine, what then how then why:**
+
+- [`docs/type-construction-architecture.md`](docs/type-construction-architecture.md): **the
+  what.** The definition, the four breaks, and the closed construct set. The authority.
+- [`docs/build-patterns.md`](docs/build-patterns.md): **the how.** The constructs operationalized
+  as before-and-after build patterns in dependency order.
+- [`docs/executable-ontology.md`](docs/executable-ontology.md): **the why.** Why a reader of
+  meaning at the execution surface forces the ontology back into the runtime.
+
+**The companions:**
+
+- [`docs/proofs-and-graph.md`](docs/proofs-and-graph.md): design and audit lenses. Design from the
+  obligation, read a codebase by its terminals, share a leaf by its edge.
+- [`docs/program-topology.md`](docs/program-topology.md): where code lives. The dependency graph,
+  file roles, and the naming principle.
+- [`docs/semantic-index-types.md`](docs/semantic-index-types.md): naming as instruction. When the
+  consumer reads names as meaning, a rename is a behavioral change.
+
+**Forward, a proposition under construction, not yet doctrine:**
+
+- [`docs/agentic-constructs.md`](docs/agentic-constructs.md): the bet that the same typed structure
+  proving validity to the machine compiler is what programs and bounds the language model, so the
+  prompt, the orchestration, and the governance become projections of the types rather than
+  artifacts maintained beside them. It marks its own claims as floor, bet, and frontier.
+
+---
+
+## Building TCA with a language model that resists it
+
+A language model fails at TCA by default. Its training corpus is overwhelmingly procedural Python,
+services that hold logic, functions that compute over fields, mappers, branch-on-a-string routers,
+so its generation defaults to procedural shapes even when it can state the architecture correctly
+in prose. It will articulate the principle, then write a `model_validator` where a narrowed scalar
+belonged, a service where a derivation belonged, a `match` where a variant-carried derivation
+belonged. Describing is cheap; generating fights that gravity on every token.
+
+Instruction alone does not fix this, because the instruction occupies one paragraph of context
+while the training data occupies billions of tokens. The fix is structural, and the `.claude/`
+directory is that structure: a crew of agents that produce the shape rather than request it, gated
+so the breaks are unconstructable rather than discouraged. One meaning, one home, across the
+pieces:
+
+- The **authority** (`docs/`) holds the meaning, stated once.
+- The **rules** (`.claude/rules/`) hold the shape, one path-scoped file per module (`type.py`, the
+  active model, a service, the composition root), each loaded into context when an agent edits a
+  matching file. The worked shape lives in one place, never copied into a prompt.
+- The **agents** (`.claude/agents/`) carry disposition, not duplicated doctrine. `tca-architect`
+  models a request into a dependency-ordered construction graph and writes nothing; the **forge**
+  agents render that graph, one file-owner each, so no two ever write the same file; `tca-review`
+  reads the result against the authority and reports every deviation by which break it is.
+- The **deterministic gate** (`.claude/scripts/tca_gate.py`), wired as a write-time hook, denies a
+  non-conforming write before it lands, so the mechanically-decidable breaks are structurally
+  impossible. A **zealous review** then covers the semantic residue a parser cannot decide.
+
+These run as a **loop**: the team builds, the review hammers the result, the findings are fixed,
+and the loop repeats until the review is clean. Correctness is the loop's property, not any single
+agent's.
+
+This crew is the active frontier of the project, the working test of the agentic-constructs bet,
+and it is developed against real adversarial input. [`tests/non_conforming/`](tests/non_conforming/)
+holds a substantial, deliberately non-conforming program, used to measure whether the crew can
+re-derive pure TCA from code that teaches the opposite and presumes a reader who is pulled the
+wrong way. The complete operating manual, the architecture, the model bindings, and how to port
+the crew to another project, is in
+[`docs/tca-construction-crew.md`](docs/tca-construction-crew.md).
+
+---
+
+## Repo layout
+
+```text
+docs/        the doctrine: the spine and companions above
+spec/        the planning layer upstream of code, the proof graph of a project
+.claude/
+  agents/    tca-architect, the six forge-by-file-owner agents, tca-review, prompt-engineer
+  rules/     the path-scoped shape, one file per module, plus the gate rubric
+  skills/    cross-cutting procedures, such as the disjointness decision
+  scripts/   tca_gate.py (the deterministic gate) and the review hook
+  workflows/ the build run that drives architect, forge, and review
+  settings.json   wires the gate (PreToolUse) and the review (PostToolUse)
+CLAUDE.md    the cognitive frame every agent builds under, plus one repo-specific block
+app/         a minimal FastAPI skeleton, the transport shell a built core wires into
+tca/         the TCA source tree, where built domains land
+tests/       the substrate tests, and non_conforming/, the crew's adversarial fixture
 ```
 
-The loop is lazy, deterministic, and compositional.
+[`spec/`](spec/) is the **front door of the build pipeline**, the planning artifacts that precede
+code: a foundation-spec template, a refactor procedure, and a type-catalog extraction worksheet.
+It is the proof graph of a project, what must be true, what makes it true, and which construct from
+the closed set makes each illegal state unconstructable. A completed spec yields the type catalog
+the agent team builds from.
 
-**Procedure has a proper place.** Some boundaries resist pure construction — live transport edges, positional data structures, and untyped external surfaces. At those boundaries, a small piece of procedure catches the junk and normalizes it into owned truth. These seams must be irreducible, contained, and terminal. See **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)**.
-
----
-
-## Construction Across Processes
-
-Inside a process, the construct→derive loop is the program. A composed model's `@cached_property` constructs the next proven object. But the loop doesn't stop at the process boundary.
-
-A domain event is a frozen model. It is a proven fact about something that happened, sealed at construction time. When a service publishes that event onto an event bus, it is transmitting a proven object. When another service receives those bytes and calls `model_validate_json`, the same guarantee fires — construction succeeds and the consumer holds a proven fact, or construction fails and they know. The proof transfers.
-
-This means TCA and event-driven architecture are the same idea at different scales. Inside a process, construction produces facts and derivation produces further facts. Across processes, services produce facts and other services consume and construct from them. The construct→derive loop becomes the event graph. The transport — whatever it is — makes the boundary between those scales disappear.
-
-What follows from this:
-
-- **Services don't call each other.** They publish proven events and subscribe to proven events. There is no HTTP contract to version, no REST schema to maintain, no client library to generate. The subject namespace on the bus is the contract.
-- **Service mesh becomes pointless.** Istio and Linkerd exist to manage services calling services — retries, circuit breaking, mTLS, traffic shaping. If services don't call each other, there is nothing to mesh.
-- **The only REST is at the edge.** External consumers (browsers, mobile) still need an HTTP surface. Internally, the API between services is event subjects carrying typed events.
-
-Without event-driven transport, TCA's construction graph terminates at the process boundary — and you are back to the request/response architecture that TCA's internal design already rejected. The example application in this repo (under `app/`, with `compose.yml`, `justfile`, and a sidecar in `nats/`) realizes this pattern with NATS JetStream; the paradigm does not prescribe a specific transport.
+[`CLAUDE.md`](CLAUDE.md) is the cognitive frame for any agent building here, plus a single
+repo-specific block. Adapting it to another project means replacing that block and nothing else.
 
 ---
 
-## Program Topology
+## Read next
 
-A TCA program has gravitational structure. The densest layer — the scalars — sits at the bottom. Everything above composes from below. Nothing below depends on what is above.
-
-```bash
-├── main.py                  # composition root
-├── config.py                # typed settings
-├── api/
-│   └── catalog.py           # route: imports contracts from domain
-├── service/
-│   └── catalog.py           # transport shim: binds transport to active model
-└── domain/
-    └── catalog/
-        ├── type.py          # scalars: dependency root, imports nothing
-        ├── value.py         # value objects: composes scalars
-        ├── product.py       # frozen model: a proven domain concept
-        ├── catalog.py       # active model: single convergence point
-        └── api.py           # contracts: domain-owned boundary types
-```
-
-Each layer sees only downward. Every file in `domain/` is named for a domain concept — never for a technology pattern, never for a dumping ground. Open the domain directory and read the domain. The file listing is the vocabulary.
-
-See **[`docs/program-topology.md`](docs/program-topology.md)** for file roles, cross-context composition rules, and the full dependency graph.
-
----
-
-## Making LLMs Write TCA
-
-LLMs fail at TCA by default. Their training data is overwhelmingly procedural Python — services, mappers, dict-builders, if/elif routers. Ask an LLM to write TCA code and it will articulate the principles perfectly in conversation, then generate the opposite in code. It writes validators instead of narrowed types. Services instead of model derivations. Mapper classes instead of `model_validate`. It reaches for the most common pattern from training, not the correct architectural shape.
-
-This repository includes a [Claude Code](https://claude.ai/code) scaffold that solves this problem. Instead of instructing the model to "think in TCA" (which doesn't survive contact with code generation), the scaffold enforces TCA structurally — blocking wrong shapes before they're written and loading correct shapes before generation starts.
-
-### The Problem: Training Gravity
-
-An LLM asked to build a composed model will default to six `model_validator` methods, then rationalize each one as "cross-field." It does this because validators are the obvious Pydantic tool in training data. It won't consider narrowed scalar types with `Field(gt=2.0)` that carry the proof structurally — because that pattern barely exists in its training corpus.
-
-The same applies everywhere TCA diverges from typical Python:
-
-| What you ask for | What the LLM generates | What TCA requires |
-|:---|:---|:---|
-| Domain logic | Service class with methods | Frozen model with `@cached_property` derivations |
-| Gate checking | `model_validator` on one field | Narrowed scalar with `Field()` — type IS proof |
-| Data transformation | Mapper class between models | `model_validate(source, from_attributes=True)` |
-| Input classification | if/elif chain on a string | Discriminated union with `Field(discriminator=...)` |
-| Shared computation | `utils.py` helper functions | `@computed_field` on the owning model |
-
-Instructions alone don't fix this. The LLM reads the instruction, agrees, and then writes procedural code anyway — because the instruction occupies one paragraph of context while training data occupies billions of tokens. The fix has to be structural.
-
-### The Solution: Three Layers of Constraint
-
-**Layer 1 — Deterministic enforcement.** An [AST-based Python script](.claude/scripts/smell.py) runs as a *post-edit* hook on every file write — after the file is on disk, where the full source can be parsed (decorator stacks, method bodies, derivation internals aren't visible in a partial Edit diff). It walks the AST via `match`/`case` dispatch — Python's `ast` module is a sum type, and pattern matching is the right dispatch primitive for it. It mechanically detects known-wrong patterns: `json.loads()` + `model_validate`, `@computed_field` + `@property`, private methods in domain models, technology-named files in `domain/`, import direction violations, `try/except` on frozen models, void `-> None` methods, `@staticmethod`/`@classmethod` on models, multi-value `Literal[string]` (use StrEnum), 3+ parallel tuple fields, mutables inside `@cached_property`/`@computed_field`. No LLM judgment. AST match. Exit 2 blocks. The agent gets stderr feedback naming the exact invariant, class, method, and line that failed.
-
-**Layer 2 — LLM enforcement.** A prompt hook fires before each edit; an agent hook fires after. They adjudicate against three [gate rubrics](.claude/rules/gate-rubrics.md) — Type Integrity, Construction Carries Meaning, and Program Shape. The pre-edit prompt fast-fails on structural patterns visible in the diff (filenames, bare-primitive field types, dict params, mapper/adapter class names). The post-edit agent (Sonnet) reads the rubrics and classifies the full file against allowed/disallowed evidence shapes. The two LLM hooks bracket the deterministic check: structural patterns up front, body-level structure deferred to grep, semantic gating last.
-
-**Layer 3 — Intervention skills.** Three skills fire *before* code is written, preventing the wrong design from forming:
-
-| Skill | What it prevents | When it fires |
-|:---|:---|:---|
-| [`/proof-design`](.claude/skills/proof-design/SKILL.md) | Reaching for validators before considering narrowed types | Before writing any model that proves invariants |
-| [`/shape-match`](.claude/skills/shape-match/SKILL.md) | Generating procedural Python instead of the correct TCA shape | Before writing any domain file |
-| [`/construction-voice`](.claude/skills/construction-voice/SKILL.md) | Procedural language infecting docs and plans, producing procedural code | Before writing any instruction or plan |
-
-The layers work in concert. The skills prevent wrong designs. The deterministic hook catches mechanical violations instantly. The LLM hooks catch everything else. Nothing ships without passing all three.
-
-### What the Pipeline Looks Like
-
-```
-User prompt
-  → Agent works, attempts an edit
-    → PreToolUse prompt: LLM fast-fails on structural patterns visible in the diff
-    → [edit executes if pre-edit passes]
-    → PostToolUse smell.py: deterministic AST match on the full file (instant, no LLM)
-    → PostToolUse agent: Sonnet adjudicates against three gate rubrics
-```
-
-The pre-edit LLM catches what's visible in the diff. The post-edit script catches body-level structure the LLM can't reliably infer from a partial edit. The post-edit agent does final gate adjudication on the full file. Three layers, each catching what the others can't.
-
-### Gate Rubrics
-
-Three gates evaluate every edit against independent questions. Each gate has allowed evidence, disallowed evidence, approved mechanisms (legitimate exceptions), and escalation triggers. The full rubric is in [`.claude/rules/gate-rubrics.md`](.claude/rules/gate-rubrics.md).
-
-| Gate | Question |
-|:---|:---|
-| **Type Integrity** | Is every type well-formed — scalars own values, models are frozen, unions are discriminated, constraints are declarative? |
-| **Construction Carries Meaning** | Does model construction, composition, and derivation do the work — not services, adapters, or coordinator scripts? |
-| **Program Shape** | Does code live where it belongs — domain types in domain, services are thin transport shims, types flow domain toward edge? |
-
-### Path-Scoped Rules
-
-Six [rule files](.claude/rules/) inject layer-specific constraints when editing files at that layer — what each file IS, what it CONTAINS, what it MUST NOT contain. Rules exist for `type.py`, `value.py`, `domain/`, `api/`, `service/`, and `main.py`.
-
-### Building Your Own Scaffold
-
-The entire scaffold — gates, rubrics, invariants, hooks, and skills — was generated by the [`/bounded-adjudication`](.claude/skills/bounded-adjudication/SKILL.md) skill. It walks through a structured worksheet: structural invariants, axes of judgment, evidence shapes, approved mechanisms, genuine ambiguities, and authority topology. The worksheet is the proof artifact for the scaffold's design decisions.
-
-To adapt this scaffold to another project: copy `CLAUDE.md` and the `.claude/` directory, rewrite the project identity, and run `/bounded-adjudication` to generate domain-specific evidence shapes. See [`CLAUDE.md`](CLAUDE.md) for the full protocol.
-
----
-
-## What's In This Repo
-
-### Theory
-
-- **[`docs/manifesto.md`](docs/manifesto.md)**: Why TCA exists, what we believe, what we reject, and the intellectual lineage
-- **[`docs/pydantic-machinery.md`](docs/pydantic-machinery.md)**: How each Pydantic mechanism is load-bearing — the engine under the paradigm
-- **[`docs/roots-and-proof-obligations.md`](docs/roots-and-proof-obligations.md)**: What constitutes a root, how to find proof obligations
-- **[`docs/irreducible-seams.md`](docs/irreducible-seams.md)**: Where procedure belongs — the governing test for seams
-- **[`docs/semantic-index-types.md`](docs/semantic-index-types.md)**: When the compilation target reads natural language
-
-### Patterns, Topology, and Example
-
-- **[`docs/build-patterns.md`](docs/build-patterns.md)**: 13 before/after build patterns in dependency order — the moves an architect reaches for
-- **[`docs/program-topology.md`](docs/program-topology.md)**: Where each file belongs in a TCA program — the dependency graph and file roles
-- **[`docs/building-block-classifier.md`](docs/building-block-classifier.md)**: Advanced worked example showing construction, dispatch, and seams in a dense recursive program
-- **[`tca/building_block.py`](tca/building_block.py)**: The classifier implementation — a recursive Pydantic type tree walker
-
-### Development Scaffold
-
-- **[`CLAUDE.md`](CLAUDE.md)**: Cognitive mode instructions — proof hierarchy, failure modes, wrong/right examples
-- **[`.claude/scripts/smell.py`](.claude/scripts/smell.py)**: Deterministic post-edit enforcement — AST-based, no LLM, instant, unforgeable, runs on the full file after write
-- **[`.claude/settings.json`](.claude/settings.json)**: Hook pipeline — pre-edit LLM fast-fail, post-edit deterministic script, post-edit LLM gate adjudication
-- **[`.claude/rules/`](.claude/rules/)**: Path-scoped rules and gate rubrics
-- **[`.claude/skills/proof-design/`](.claude/skills/proof-design/)**: Forces invariant classification through proof hierarchy before writing models
-- **[`.claude/skills/shape-match/`](.claude/skills/shape-match/)**: Loads correct TCA shape before generation to counteract training gravity
-- **[`.claude/skills/construction-voice/`](.claude/skills/construction-voice/)**: Rewrites procedural language into structural declarations
-- **[`.claude/skills/bounded-adjudication/`](.claude/skills/bounded-adjudication/)**: The skill that generates the scaffold from a structured worksheet
-
----
-
-## Read Next
-
-**I want the why.** Start with **[`docs/manifesto.md`](docs/manifesto.md)**.
-
-**I want to understand the Pydantic engine.** Read **[`docs/pydantic-machinery.md`](docs/pydantic-machinery.md)** — how each mechanism is load-bearing, not a convenience wrapper.
-
-**I want the build patterns.** Read **[`docs/build-patterns.md`](docs/build-patterns.md)** — 13 before/after pairs showing how construction replaces procedure.
-
-**I want the program topology.** Read **[`docs/program-topology.md`](docs/program-topology.md)** — where each file belongs and why.
-
-**I want the code.** Read **[`tca/building_block.py`](tca/building_block.py)** — one file showing many patterns working together in a recursive type classifier.
-
-**I want to constrain an LLM to write TCA.** Read the [Making LLMs Write TCA](#making-llms-write-tca) section above, then **[`CLAUDE.md`](CLAUDE.md)** for the cognitive mode instructions, then **[`.claude/rules/gate-rubrics.md`](.claude/rules/gate-rubrics.md)** for the evidence vocabulary.
-
-**I care about LLM semantics.** Read **[`docs/semantic-index-types.md`](docs/semantic-index-types.md)**, then the companion project **[Semantic Index Types](https://github.com/kylejtobin/sit)**.
+- **Why this matters now**: [`docs/executable-ontology.md`](docs/executable-ontology.md)
+- **What TCA is, precisely**:
+  [`docs/type-construction-architecture.md`](docs/type-construction-architecture.md)
+- **How to build it**: [`docs/build-patterns.md`](docs/build-patterns.md)
+- **How to design and audit a graph**: [`docs/proofs-and-graph.md`](docs/proofs-and-graph.md)
+- **Where code lives**: [`docs/program-topology.md`](docs/program-topology.md)
+- **Why names are instructions**: [`docs/semantic-index-types.md`](docs/semantic-index-types.md),
+  then the companion project [Semantic Index Types](https://github.com/kylejtobin/sit)
+- **The agentic proposition**: [`docs/agentic-constructs.md`](docs/agentic-constructs.md)
+- **The build crew, in full**: [`docs/tca-construction-crew.md`](docs/tca-construction-crew.md)
+- **Constrain a model to write TCA**: [`CLAUDE.md`](CLAUDE.md) and the agents in
+  [`.claude/agents/`](.claude/agents/)
 
 ---
 
@@ -234,3 +237,4 @@ To adapt this scaffold to another project: copy `CLAUDE.md` and the `.claude/` d
 ## License
 
 [MIT](LICENSE)
+</content>

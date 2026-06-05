@@ -4,7 +4,7 @@ A planning artifact for establishing shared understanding before implementation.
 
 ## How to use this document
 
-The spec has eight layers. Each derives from the one above. If a domain invariant doesn't trace to a condition, it shouldn't exist. If a condition doesn't have at least one invariant governing it, you have a gap. If an invariant doesn't name its proof level, it floats without a mechanism. Work top-down to build it. Validate bottom-up to verify it. The order is Scope → Strategy → Conditions → Proof Hierarchy Classification → Premises → Configuration Models → Domain Invariants → Coverage.
+The spec has eight layers. Each derives from the one above. If a domain invariant doesn't trace to a condition, it shouldn't exist. If a condition doesn't have at least one invariant governing it, you have a gap. If an invariant doesn't name its carrying construct, it floats without a mechanism. Work top-down to build it. Validate bottom-up to verify it. The order is Scope → Strategy → Conditions → Construct Classification → Premises → Configuration Models → Domain Invariants → Coverage.
 
 ---
 
@@ -134,35 +134,37 @@ Everything that can go wrong, needs to be managed, or represents a scenario the 
 
 ---
 
-## 4\. Proof Hierarchy Classification
+## 4\. Construct Classification
 
-The mechanisms by which invariants are proven, ordered from strongest to weakest. Every invariant in section 7 names the level it sits at. A weaker mechanism is admissible only when every stronger mechanism is demonstrably insufficient for that invariant. This section is a fixed taxonomy, not a free design space — the classification names which slot each invariant occupies.
+There is one proof, and it is construction. A value's existence as a well-typed frozen object is the evidence its constraints held, so an illegal value cannot be built. There is no separate validation step, no strength ladder, no mechanism that admits an illegal value and then rejects it. Every invariant in section 7 names **which construct from the closed set carries it** — and the question is shape-fit, "which construct *is* this invariant?", under one discipline: push the meaning to the most structural construct available, so the illegal state is *unconstructable* rather than caught after the fact.
 
-**Level 1 — Field constraint on a narrowed scalar.** The strongest. A constraint expressed declaratively on a single-value root model. The type's existence IS the proof: if the instance exists, the bound holds. Use when the invariant is a static bound on one value against a constant.
+The closed construct set is the authority's. The constructs that carry domain invariants are these:
 
-**Level 2 — Narrowed type as a field on a composed model.** The composed model declares a Level-1 type as a field. Construction of the parent triggers construction of the field, which triggers the Level-1 proof. Use when the invariant is carried into a larger model by the field type alone.
+**Semantic scalar.** A bound on one open value — a frozen `RootModel[P]` over a single primitive carrying a `Field(...)` constraint or a domain-meaningful name. It names a bounded region of an open value space (a non-empty SKU, a non-negative quantity), and its existence is the proof of that bound. Use when the invariant is a static bound on one value.
 
-**Level 3 — Cross-field validator over composed fields.** A validator that rejects a state composed of individually-valid values whose composition is structurally impossible. Reserved for invariants that cannot be carried by any Level-1 or Level-2 shape. A validator referencing one field against a constant is a Level-1 unforged. A validator comparing fields against a configured threshold is a decision, not an integrity check — its home is a derivation returning a typed result variant, not a Level-3 validator.
+**Frozen-model field.** That scalar — or another frozen model — composed as a field of a larger frozen model. Construction of the parent triggers construction of the field, which carries the scalar's proof one level deeper. The parent's existence is the proof that every field's constraint held together. Use when the invariant is carried into a larger structure by the field type alone, and when `extra="forbid"` closing the structure is itself part of the proof.
 
-**Level 4 — Handler-gated absence.** External state that no field on any model represents. The handler refuses to attempt construction when the prerequisite is missing. The composed model's absence is the proof. Use for connection liveness, scheduled cadence, prerequisite events, halt conditions.
+**Union (structural).** A closed set of two or more disjoint frozen-model variants, told apart by their structure and nothing else. The union **absorbs every state machine and every "impossible composition."** The legal states are the variants; an impossible composition is unconstructable because no variant has its shape. A delivered order receiving an acknowledgment is not a cell a validator rejects — it is a (state, event) combination that no variant of the order-transition union admits, so it cannot be built. **There is no cross-field after-validator** carrying this: a forbidden composition of individually-legal values is a *missing variant*, not a rule run over a constructed value. **There is no stored discriminator and no `kind` tag**: the variants' disjoint structure is the selection, and a tag would only copy what the fields already prove. The test is the authority's — delete every field that names the kind; if construction still lands exactly one variant, the structure already holds the union.
 
-**Decisions are not validators.** When a rule answers "should the system act on this?" rather than "is this value well-formed?", the answer is not a validator at any level. Its home is a derivation on a composed evaluation model that returns a typed result variant. Construction always succeeds; the consumer dispatches on the variant. A spec line that reads like a decision must say so — it carries Level-2 inputs into a derivation, not a validator.
+**Derivation.** A fact a frozen model implies from its own already-proven fields — `@cached_property`, `@computed_field` over it when the fact must cross the wire, or a bare `@property` for a trivial read. It composes proven inputs and returns a declared type or a closed set of typed result variants, never a bare `bool`/`str`/`int`. Two cases carry invariants: a **computed value** (a derived quantity — a buffered stock level, a depletion rate — proven by the construction of the declared type it returns), and a **decision** — "should the system act on this?" — which returns a result union (`ReorderTriggered(intent) | ReorderSuppressed(reason)`) where **both outcomes construct**; construction failure is reserved for malformed input, never for a well-formed value the system decided against. Either way the consumer reads the result off the model — there is no `match`, no dispatch, no boolean — and the model that carries the derivation is just a frozen model holding it, not a construct of its own. A spec line that reads "is this value well-formed?" is a scalar, a field, or a union; a spec line that reads "should the system act?" is a derivation returning a union.
 
-**Strongest available wins.** Each invariant is tested at Level 1 first, then 2, then 3, then 4. The first level that holds is the home. Reaching for a weaker level when a stronger one would carry the proof is the deepest specification defect this section prevents.
+**Active-model world-edge guard.** Genuinely external prerequisites that no field on any frozen model represents — connection liveness, scheduled cadence, the live readiness of the world. The single active model of a context constructs the domain fact only when the live world is ready, and emits effects only after proof. The fact's absence is the proof: when the world is not ready, nothing is constructed. This is for *world-state* prerequisites only. An **event-type** prerequisite — "this outcome holds only for this kind of incoming event" — is not a guard but a **union of event variants** lifted at the boundary; the variant the world delivered is the prerequisite, carried structurally.
+
+Prefer the most structural construct that will carry the invariant: a bound on one value is a scalar before it is anything else; a forbidden composition is a union before it is ever a validator; a decision is a derivation before it is ever a branch. Reaching for a looser construct when a tighter one would make the illegal state unconstructable is the deepest specification defect this section prevents.
 
 **Example (inventory management):**
 
-Mechanisms this system uses:
+Constructs this system uses:
 
-Level 1 — `Sku`, `StockLevel`, `Quantity`, `Duration`, `SupplierId` as narrowed scalars with declarative constraints (non-negativity, format, range bounds).
+Semantic scalars — `Sku`, `StockLevel`, `Quantity`, `Duration`, `SupplierId` as narrowed `RootModel` scalars with declarative constraints (non-negativity, format, range bounds). The bound on each open value is proven by the scalar's existence.
 
-Level 2 — `ReorderIntent`, `PhysicalCount`, `SalesEvent` as composed models carrying Level-1 types as fields. The composed model's existence proves the field-level constraints hold.
+Frozen-model fields — `ReorderIntent`, `PhysicalCount`, `SalesEvent` as frozen models composing those scalars as fields. The model's existence proves the field-level constraints hold together, with `extra="forbid"` closing each to foreign noise.
 
-Level 3 — `OrderTransition` rejecting impossible (state, event) cells. A delivered order receiving an acknowledgment is a meaningless composition; the validator refuses it. Not used for thresholds.
+Unions — `OrderTransition` as a structural union over the legal (state, event) shapes. A delivered order receiving an acknowledgment is a meaningless composition: no variant has that shape, so it is unconstructable. There is no validator rejecting it and no `kind` field selecting the variant — the disjoint structure of the variants is the selection. Distinct *event* kinds (a supplier acknowledgment versus a physical receipt) are likewise variants of an event union, not a tagged record.
 
-Level 4 — Supplier business hours, scheduled threshold review cadence, pending-order absence. The order placement handler does not exist as a construction site outside business hours. The threshold review handler does not exist outside its scheduled cadence.
+Derivations returning unions — every decision. `ReorderEvaluation` composes proven inputs and its `@cached_property` returns `ReorderResult = ReorderTriggered(intent) | ReorderSuppressed(reason)`. Both outcomes construct; the consumer reads the selected variant's own derivation. Construction of `ReorderEvaluation` always succeeds for well-formed inputs.
 
-Decisions appear as derivations, not levels. `ReorderEvaluation` composes proven inputs and returns `ReorderResult = ReorderTriggered(intent) | ReorderSuppressed(reason)`. The reorder handler dispatches on the variant; construction of `ReorderEvaluation` always succeeds for well-formed inputs.
+Active-model world-edge guards — supplier business hours, the scheduled threshold-review cadence, the liveness of the supplier connection. The active model constructs an order-placement fact only when the supplier window is open and the connection is live; outside the window it constructs nothing. The scheduled threshold review fires only on its cadence; between fires there is no construction to make.
 
 ---
 
@@ -194,39 +196,43 @@ PRE-1: The inventory ledger is the single source of truth for
 
 PRE-2: State is a projection of ledger entries. Current stock
 
-  is not stored as a separate number. It is computed by replaying
+  is not stored as a separate number. It is a derivation off
 
   the ledger: receipts in, sales out, adjustments applied.
 
   Implies: Invariants about "current stock" are really invariants
 
-  about the projection function, not about a cached value.
+  about the derivation, not about a cached value.
 
-PRE-3: Each business rule lives in a specific handler that
+PRE-3: Each domain rule lives in a named construct — the active
 
-  processes a specific event type. Rules do not float as
+  model, or a derivation on a frozen model — never floating as a
 
-  system-wide decrees.
+  system-wide decree.
 
-  Implies: Every invariant must name where it is enforced:
+  Implies: Every invariant must name the construct that carries it:
 
-  which handler, on what input, refuses to produce what output.
+  which construct, on what proven input, refuses to construct or
 
-PRE-4: Validation happens at construction. If a data object
+  emit what fact.
 
-  can be constructed, it is valid. The schema is the contract
+PRE-4: Construction is the proof. A constructed value is proven,
 
-  between components.
+  not validated; if a value can be constructed, its constraints
 
-  Implies: Invariants about data quality are enforced by the
+  held. The type is the contract between components.
 
-  schema, not by runtime checks in consuming handlers.
+  Implies: Invariants about data quality are carried by the type,
+
+  not by runtime checks in consuming constructs. A value that
+
+  could not be proven was never constructed and never moves forward.
 
 ---
 
 ## 6\. Configuration Models
 
-Every system has parameters that are not constants and not domain truths — they sit between. Configuration is typed and validated at construction; this section names what is parameterized, who owns each parameter, and how often it changes. A parameter discovered during invariant writing belongs here, not in the invariant's body.
+Every system has parameters that are not constants and not domain truths — they sit between. Configuration is typed and proven at construction; this section names what is parameterized, who owns each parameter, and how often it changes. A parameter discovered during invariant writing belongs here, not in the invariant's body.
 
 Decomposition by owner and change cadence prevents two failure modes: parameters scattered across the codebase with no canonical home, and configuration treated as a uniform bag when it actually contains distinct lifecycles.
 
@@ -240,7 +246,9 @@ CFG-{N}: {ConfigModelName}
 
   Parameters: {field name with type and constraint, one per line}
 
-  Consumed by: {which handler or evaluation model takes this as input}
+  Consumed by: {the construct that holds it — the active model, a route,
+
+    or a derivation on a frozen model}
 
 **Example (inventory management):**
 
@@ -261,7 +269,7 @@ CFG-1: SkuPolicy
 
     preferred_supplier: SupplierId
 
-  Consumed by: ReorderEvaluation
+  Consumed by: ReorderEvaluation (the derivation that decides reorders)
 
 CFG-2: VenueProfile
 
@@ -278,7 +286,8 @@ CFG-2: VenueProfile
 
     delivery_lead_time_bounds: DurationRange (lower ge=0, upper ge=lower)
 
-  Consumed by: Stock projection handler, order placement handler
+  Consumed by: the active model (order placement at the supplier edge)
+    and BufferedStockProjection (the stock derivation)
 
 CFG-3: ReviewCadence
 
@@ -294,9 +303,10 @@ CFG-3: ReviewCadence
 
     velocity_window_long: Duration (gt=velocity_window_short)
 
-  Consumed by: Threshold review handler, depletion projection handler
+  Consumed by: the active model (the scheduled review cadence) and
+    DepletionProjection (the depletion derivation)
 
-Configuration models are frozen composed models whose fields are Level-1 narrowed scalars or Level-2 value objects from section 4. They enter the construction graph at startup; the act of constructing them is the validation. A handler receives configuration as a proven model, never as a dict.
+Configuration models are frozen models whose fields are semantic scalars or value objects from section 4. They enter the construction graph at startup; the act of constructing them is the proof. A construct receives configuration as a proven model, never as a dict.
 
 ---
 
@@ -304,7 +314,7 @@ Configuration models are frozen composed models whose fields are Level-1 narrowe
 
 The rules that govern the system's behavior. Each invariant is a proposition that must always be true. Each one must trace to at least one condition it governs. If an invariant doesn't connect to a condition, it's either protecting against something that can't happen in your venue (dead weight) or you're missing a condition (gap in your analysis).
 
-Invariants are not implementation instructions. They don't say HOW to enforce the rule. They state WHAT must be true. But each invariant must be grounded in the premises. It must have a home: a specific handler, a specific input, a specific output it governs. If an invariant can't name where it lives, it's a wish, not a rule.
+Invariants are not implementation instructions. They don't say HOW to enforce the rule. They state WHAT must be true. But each invariant must be grounded in the premises. It must have a home: a named construct, a specific proven input, and the fact it constructs or refuses to construct. If an invariant can't name the construct that carries it, it's a wish, not a rule.
 
 **Template:**
 
@@ -312,12 +322,13 @@ Invariants are not implementation instructions. They don't say HOW to enforce th
 
   Governs: {Condition number(s)}
 
-  Proof level: {Level 1-4 from section 4, or "derivation" for decisions
-    returning a typed result variant rather than a validator}
+  Construct: {which construct carries it — semantic scalar / frozen-model
+    field / union (structural) / derivation returning a union /
+    active-model world-edge guard}
 
-  Home: {Which handler enforces this, on what input, 
-
-    by refusing to produce what output}
+  Home: {The named construct — active model, route, boundary model, or a
+    derivation on a frozen model — on what proven input, by what fact it
+    constructs or refuses to construct}
 
   Rationale: {Why this rule exists, what goes wrong if violated}
 
@@ -329,18 +340,22 @@ PosStockBuffered: Never use POS-reported stock as ground truth without
 
   Governs: Condition 1 (POS delay)
 
-  Proof level: derivation — `BufferedStockProjection` composes proven
-    `PosStockReading` and `Duration` (max reporting delay) and yields
-    a buffered stock value via `@cached_property`. Construction always
-    succeeds for well-formed inputs.
+  Construct: derivation returning a value — `BufferedStockProjection`
+    composes proven `PosStockReading` and `Duration` (max reporting
+    delay) and yields a buffered stock value via `@cached_property`.
+    Construction always succeeds for well-formed inputs.
 
-  Home: The stock projection handler. When computing current
+  Home: `BufferedStockProjection`, a derivation on a frozen model.
 
-    stock from ledger entries, it subtracts a buffer equal to
+    Given proven ledger entries and the max-reporting-delay `Duration`,
 
-    the maximum POS reporting delay times recent sales velocity
+    its `@cached_property` subtracts a buffer (delay times recent
 
-    before publishing the projected stock event.
+    velocity) and yields the buffered stock value the rest of the
+
+    graph reads. The active model emits the projected-stock fact only
+
+    after this derivation has been read.
 
   Rationale: Acting on overstated stock leads to missed reorders
 
@@ -352,18 +367,22 @@ NoDuplicateReorder: Never place a reorder for a SKU while a confirmed but
 
   Governs: Condition 6 (Duplicate orders)
 
-  Proof level: derivation — `ReorderEvaluation` returns
+  Construct: derivation returning a union — `ReorderEvaluation` returns
     `ReorderResult = ReorderTriggered(intent) | ReorderSuppressed(reason)`.
-    When a pending order exists for the SKU, the result is
-    `ReorderSuppressed(reason=PendingOrderExists)`.
+    When a pending order exists for the SKU, the result is the
+    `ReorderSuppressed(reason=PendingOrderExists)` variant.
 
-  Home: The reorder handler. When it receives a reorder signal
+  Home: `ReorderEvaluation`, a derivation on a frozen model that
 
-    event, it projects pending orders from the ledger. If a
+    composes the proven pending-order projection with the SKU's
 
-    pending order exists for that SKU, it does not publish
+    policy. When a pending order exists for the SKU, its derivation
 
-    a reorder event.
+    constructs the `ReorderSuppressed` variant. The active model
+
+    reads the selected variant and emits a reorder fact only for
+
+    `ReorderTriggered`; for `ReorderSuppressed` it emits nothing.
 
   Rationale: Duplicate orders create overstock and wasted capital.
 
@@ -373,15 +392,25 @@ SupplierUnavailableQueues: A reorder that cannot be placed due to supplier
 
   Governs: Condition 2 (Supplier unavailability)
 
-  Proof level: derivation — `OrderPlacementResult = OrderPlaced(ack) |
-    OrderQueued(intent)`. The result is `OrderQueued` outside business
-    hours; the queued intent is held until the next admissible window.
+  Construct: active-model world-edge guard plus a union — supplier
 
-  Home: The order placement handler. When it attempts to place
+    availability is live world state, not a field. The active model
 
-    an order and the supplier API is unavailable, it publishes
+    constructs an order-placement fact only when the supplier window
 
-    a queued-reorder event instead of discarding the intent.
+    is open; otherwise it constructs `OrderQueued(intent)`, holding
+
+    the proven intent until the next admissible window.
+
+  Home: The active model, at the supplier edge. On a `ReorderTriggered`
+
+    intent, when the supplier window is closed or the connection is
+
+    not live, it does not construct an order-placed fact; it constructs
+
+    and holds an `OrderQueued(intent)` fact instead, releasing it when
+
+    the window reopens.
 
   Rationale: Dropping a valid reorder because the API is down
 
@@ -393,15 +422,17 @@ DepletionUsesFasterVelocity: Projected depletion rate must use the faster of
 
   Governs: Condition 3 (Demand spikes)
 
-  Proof level: derivation — `DepletionProjection` composes the two
-    proven velocity windows and yields the projected depletion rate
-    via `@cached_property`, taking the maximum.
+  Construct: derivation returning a value — `DepletionProjection`
+    composes the two proven velocity windows and yields the projected
+    depletion rate via `@cached_property`, taking the maximum.
 
-  Home: The depletion projection handler. When computing
+  Home: `DepletionProjection`, a derivation on a frozen model. Given
 
-    projected depletion from sales events, it calculates both
+    the two proven velocity-window values, its `@cached_property`
 
-    windows and uses the higher rate in the published projection.
+    yields the higher rate as the projected depletion. The active
+
+    model reads it before emitting the depletion-projection fact.
 
   Rationale: Using only 7-day average masks sudden acceleration
 
@@ -413,17 +444,25 @@ DeliveryRequiresPhysicalReceipt: A delivery is not confirmed until physical rece
 
   Governs: Condition 4 (Delivery failure)
 
-  Proof level: Level 4 — the delivery confirmation handler does not
-    exist as a construction site for `SupplierAcknowledgedEvent`. The
-    handler is constructed only when a `PhysicalReceiptEvent` arrives.
-    Distinct event types are Level-2 narrowings; the handler's gating
-    by event type is the Level-4 prerequisite.
+  Construct: union (structural) — incoming events are a union whose
 
-  Home: The delivery confirmation handler. It only publishes a
+    variants are `SupplierAcknowledged` and `PhysicalReceipt`, disjoint
 
-    delivery-confirmed event when it receives a physical receipt
+    by structure. A delivery-confirmed fact has the `PhysicalReceipt`
 
-    event, not when it receives a supplier acknowledgment event.
+    variant as the only shape from which it can be constructed; the
+
+    `SupplierAcknowledged` variant cannot produce one.
+
+  Home: The boundary model lifts each incoming event into its variant,
+
+    and the active model constructs a delivery-confirmed fact only from
+
+    the `PhysicalReceipt` variant. A `SupplierAcknowledged` event has
+
+    no shape from which the delivery-confirmed fact can be built, so
+
+    none is constructed.
 
   Rationale: Treating supplier acknowledgment as delivery
 
@@ -437,16 +476,23 @@ PhysicalCountOverridesCalculated: Actual shelf count, when available, overrides
 
   Governs: Condition 5 (Data mismatch)
 
-  Proof level: derivation — the stock projection composes the most
-    recent `PhysicalCount` (when present) with subsequent ledger
-    entries; the projection's `@cached_property` for current stock
-    uses the physical count as the baseline.
+  Construct: derivation returning a value — the stock projection
 
-  Home: The stock projection handler. When it receives a
+    composes the most recent `PhysicalCount` (when present) with
 
-    physical-count event, it publishes an adjustment event
+    subsequent ledger entries; its `@cached_property` for current
 
-    that resets the projection baseline to the counted value.
+    stock uses the physical count as the baseline.
+
+  Home: The stock-projection derivation on a frozen model. When a
+
+    `PhysicalCount` is present, its `@cached_property` takes the
+
+    counted value as the baseline and applies subsequent ledger
+
+    entries to it. The active model emits the resulting adjustment
+
+    fact.
 
   Rationale: The physical world is the source of truth.
 
@@ -458,19 +504,27 @@ ThresholdsReviewedOnCadence: Safety stock thresholds must be reviewed against ac
 
   Governs: Condition 7 (Stale thresholds)
 
-  Proof level: Level 4 + derivation — the threshold review handler
-    is gated by the scheduled cadence (Level 4: handler absent
-    between scheduled fires). When it fires, `ThresholdReview`
-    composes proven demand projections and returns
-    `ReviewResult = ThresholdHeld | ThresholdAdjusted(new_value)`.
+  Construct: active-model world-edge guard plus a derivation returning
 
-  Home: The threshold review handler. On a scheduled cadence,
+    a union — the scheduled cadence is live world state: the active
 
-    it projects recent demand from sales events and publishes
+    model constructs a review only when the cadence fires. When it
 
-    a threshold-adjustment event if the current threshold
+    fires, `ThresholdReview` composes proven demand projections and
 
-    diverges from what the data supports.
+    returns `ReviewResult = ThresholdHeld | ThresholdAdjusted(new_value)`.
+
+  Home: The active model, gated by the scheduled cadence — between
+
+    fires there is no review to construct. On a fire, it constructs
+
+    `ThresholdReview` over the proven demand projection; the review's
+
+    derivation yields `ThresholdHeld` or `ThresholdAdjusted(new_value)`,
+
+    and the active model emits a threshold-adjustment fact only for
+
+    the `ThresholdAdjusted` variant.
 
   Rationale: Static thresholds become wrong as demand patterns
 
@@ -480,7 +534,7 @@ ThresholdsReviewedOnCadence: Safety stock thresholds must be reviewed against ac
 
 ## 8\. Coverage
 
-The verification step that closes the loop. Every condition must have at least one invariant. Every invariant must trace to at least one condition. Every invariant must name its proof level from section 4. Every configuration parameter from section 6 must be consumed somewhere. Coverage is the artifact that makes the trace explicit — without it, gaps and orphans hide.
+The verification step that closes the loop. Every condition must have at least one invariant. Every invariant must trace to at least one condition. Every invariant must name the construct that carries it from section 4. Every configuration parameter from section 6 must be consumed somewhere. Coverage is the artifact that makes the trace explicit — without it, gaps and orphans hide.
 
 **Coverage matrix — conditions to invariants:**
 
@@ -490,11 +544,11 @@ The verification step that closes the loop. Every condition must have at least o
 
 A row with no invariants is a gap. Either the condition does not actually happen in the venue (delete it from section 3) or an invariant is missing.
 
-**Coverage matrix — invariants to conditions and proof level:**
+**Coverage matrix — invariants to conditions and carrying construct:**
 
-| Invariant | Condition(s) | Proof Level |
+| Invariant | Condition(s) | Carrying Construct |
 |---|---|---|
-| {InvariantName} | {N} | {Level 1-4 or derivation} |
+| {InvariantName} | {N} | {semantic scalar / frozen-model field / union / derivation / active-model guard} |
 
 An invariant row not traceable to any condition is dead weight — either the condition is missing or the invariant exists for a reason outside the venue.
 
@@ -502,12 +556,14 @@ An invariant row not traceable to any condition is dead weight — either the co
 
 - [ ] Every condition has at least one invariant governing it
 - [ ] Every invariant traces to at least one condition
-- [ ] Every invariant names its proof level from section 4
-- [ ] Every Level-3 invariant has been tested for whether it is a Level-1 or Level-2 in disguise, or a decision returning a typed result variant rather than a validator
-- [ ] Every Level-4 invariant has been tested for whether the prerequisite is genuinely external state, not a field that was never forged
-- [ ] Every invariant names its home: which handler, what input, what output it governs
+- [ ] Every invariant names its carrying construct from section 4
+- [ ] Every impossible-composition invariant is a structural union (no field rejected after construction, no discriminator selecting the variant), not a cross-field check in disguise
+- [ ] Every decision is a derivation returning a union of typed result variants — both outcomes construct, and the consumer reads the selected variant, never a branch
+- [ ] Every active-model world-edge guard is genuinely external world state (liveness, cadence), not a field that was never forged; every event-type prerequisite is a union of event variants, not a guard
+- [ ] Every invariant names its home: which named construct, on what proven input, constructing or refusing to construct what fact
+- [ ] No invariant names a generic "handler" or a "validator"; the live edge is the active model
 - [ ] Every invariant is grounded in the premises
-- [ ] Every configuration parameter from section 6 is consumed by at least one handler or evaluation model
+- [ ] Every configuration parameter from section 6 is consumed by at least one named construct (the active model, a route, or a derivation)
 - [ ] No invariant references a constraint that doesn't exist in your venue
 - [ ] No invariant prescribes implementation (HOW) rather than stating a rule (WHAT)
 - [ ] Premises are structural axioms, not domain rules disguised as premises
@@ -529,19 +585,18 @@ Conditions → Invariants:
 | 6 Duplicate orders | NoDuplicateReorder |
 | 7 Stale thresholds | ThresholdsReviewedOnCadence |
 
-Invariants → Conditions and Proof Level:
+Invariants → Conditions and Carrying Construct:
 
-| Invariant | Condition | Proof Level |
+| Invariant | Condition | Carrying Construct |
 |---|---|---|
 | PosStockBuffered | 1 | derivation (BufferedStockProjection) |
-| SupplierUnavailableQueues | 2 | derivation (OrderPlacementResult variant) |
+| SupplierUnavailableQueues | 2 | active-model guard + union (OrderQueued) |
 | DepletionUsesFasterVelocity | 3 | derivation (DepletionProjection) |
-| DeliveryRequiresPhysicalReceipt | 4 | Level 4 (handler gated by event type) |
+| DeliveryRequiresPhysicalReceipt | 4 | union (event variants; PhysicalReceipt only) |
 | PhysicalCountOverridesCalculated | 5 | derivation (projection baseline) |
-| NoDuplicateReorder | 6 | derivation (ReorderResult variant) |
-| ThresholdsReviewedOnCadence | 7 | Level 4 + derivation |
+| NoDuplicateReorder | 6 | derivation returning a union (ReorderResult) |
+| ThresholdsReviewedOnCadence | 7 | active-model guard + derivation returning a union |
 
-Every condition is covered. Every invariant traces to its condition. Every invariant names its proof mechanism. The foundation is closed.
+Every condition is covered. Every invariant traces to its condition. Every invariant names the construct that carries it. The foundation is closed.
 
-If every row of every matrix has a value and every checkbox is green, downstream implementation work (the type catalog, the domain models, the `.claude/` rule files) has a stable foundation to build on. If any cell is empty or any box fails, the foundation has a crack that will propagate into every decision built on top of it.
-
+If every row of every matrix has a value and every checkbox is green, downstream work has a stable foundation to build on: the type catalog of constructs, and the `tca-architect` construction-graph plan the forge agents render from it. If any cell is empty or any box fails, the foundation has a crack that will propagate into every construct built on top of it.

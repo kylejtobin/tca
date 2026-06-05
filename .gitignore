@@ -40,3 +40,7 @@ env/.env.*
 
 # Compose local override
 compose.local.override.yml
+
+# tca/ is build-output space: the crew builds domains here, they are not tracked source
+/tca/*
+!/tca/__init__.py

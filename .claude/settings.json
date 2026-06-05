@@ -13,30 +13,24 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Pre-edit invariant check. DENY on any fast-fail pattern match. PASS if none match.\n\nFast-fail patterns (all visible from a partial diff):\n\n- **BarePrimitiveField** — Bare `str`, `int`, `float`, or `Decimal` as a field type on a `BaseModel`. Excludes `RootModel[scalar]` definitions in `type.py`, which ARE the scalar declarations.\n- **DictReturn** — Function returning `dict`.\n- **DictParameter** — Function parameter typed `dict`.\n- **ProceduralClassName** — Class named `*Mapper`, `*Translator`, `*Converter`, `*Adapter`, `*Builder`, `*Factory`, `*Normalizer`, `*Presenter`.\n- **LiteralIfElifChain** — `if`/`elif` chain dispatching on string or `Literal` values. Single `if` guards (zero-division, empty-input) are fine.\n- **IsinstanceInLoop** — `isinstance()` check inside a loop body.\n- **TypePyImportingProject** — `type.py` importing from another project `.py` file (stdlib and third-party are fine).\n- **ValuePyImportingNonType** — `value.py` importing from anything other than `type.py` in the same directory.\n- **DomainImportsActiveModel** — A frozen domain model importing from the active model of its context (inverts dependency direction).\n- **DomainTechFilename** — File in `domain/` named for a technology pattern: `store.py`, `repository.py`, `handler.py`, `controller.py`, `crud.py`, `manager.py`, `processor.py`, `router.py`.\n- **DomainDumpFilename** — File in `domain/` named `utils.py`, `helpers.py`, `common.py`, or `misc.py`.\n- **BareCollectionOfPrimitive** — A collection (`list`, `tuple`, `set`, `frozenset`, mapping) whose element type is a bare primitive (`str`, `int`, `float`, `Decimal`, `bool`) used as a field type on a `BaseModel` OR as a function parameter type in domain or service code. Excludes return types and excludes test files. Narrow the element type; forge a registry construct if the collection has identity.\n- **JsonLoadsInDomain** — `json.loads(` appearing in any file under `**/domain/**`. Domain JSON enters the type system through `model_validate_json(raw_bytes)` on a `BaseModel` or `RootModel` in a single Rust-level pass. `json.loads` produces an untyped intermediate dict that has no home in domain code.\n- **TypeAdapterInDomain** — `TypeAdapter(` appearing in any file under `**/domain/**`. Per-call (inline) or per-module (top-level) validator/serializer construction for a type a `RootModel` already wraps. The TCA shape for validating a discriminated union from bytes is a frozen `RootModel[DU]` envelope. Construction IS proof; the class IS the validator.\n- **ModelValidatorAfterInDomain** — `model_validator(mode=\"after\")` appearing in any file under `**/domain/**`. Banned. Pydantic already validates every field by its declared type. An after-validator re-checks what construction proved. If the invariant is data integrity, the field type carries the proof. If the invariant is a decision, the home is a `@cached_property` on an Evaluation Model returning a typed result variant. The one conceivable legit case is A.3 impossible-variant-composition; that requires explicit human approval, not the default path.\n- **MainPyEnvironRead** — `os.environ` or `os.getenv(` appearing in `**/main.py`. Configuration enters through `BaseSettings` models which bind environment variables at construction. `main.py` constructs each config root in one expression and never reads environment directly.\n\nReturn PASS or DENY. On DENY, cite the pattern name and the exact triggering shape. Body-level structural patterns (decorator stacks, method internals, mutables in derivations, try/except, void methods, parallel tuples, bool returns from derivations, `.kind` re-branching, F-test violations) are covered by the post-edit `smell.py` script — do not infer those from partial diffs."
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run python .claude/scripts/tca_gate.py",
+            "timeout": 30
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/scripts/smell.py",
-            "timeout": 5
-          },
-          {
-            "type": "agent",
-            "model": "sonnet",
-            "timeout": 90,
-            "statusMessage": "Adjudicating edit against gate rubrics",
-            "prompt": "Post-edit gate adjudication. Rubric: `.claude/rules/gate-rubrics.md`.\n\nEach gate has a Question, Allowed shapes, Disallowed shapes, and Approved Mechanisms.\n\n- PASS: the edit matches only Allowed shapes or Approved Mechanisms\n- FAIL: the edit matches a specific Disallowed shape — cite it\n- ESCALATE: classification is genuinely ambiguous — name the authority from the rubric\n\nAn Approved Mechanism overrides a concern unless a Disallowed shape also applies.\n\nGates: Type Integrity, Construction Carries Meaning, Program Shape\n\nReturn PASS, FAIL, or ESCALATE per gate. On FAIL cite the gate, the disallowed shape, and the approved mechanism alternative if one exists. Overall FAIL if any gate is FAIL."
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run python .claude/scripts/tca_review_hook.py",
+            "timeout": 130
           }
         ]
       }

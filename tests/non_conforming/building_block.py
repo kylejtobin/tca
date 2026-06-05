@@ -289,14 +289,14 @@ encodes the priority ordering (ALGEBRA and EFFECT checked before RECORD).
 USAGE
 ================================================================================
 
-    uv run python .claude/scripts/building_block.py module:ClassName
-    uv run python .claude/scripts/building_block.py module:ClassName --json
+    uv run python tests/non_conforming/building_block.py module:ClassName
+    uv run python tests/non_conforming/building_block.py module:ClassName --json
 
 Examples:
-    uv run python .claude/scripts/building_block.py arm_ont.team:Team
-    uv run python .claude/scripts/building_block.py arm_ont.team:Team --json
-    uv run python .claude/scripts/building_block.py arm_ont.role:Role
-    uv run python .claude/scripts/building_block.py pydantic:BaseModel
+    uv run python tests/non_conforming/building_block.py myapp.models:Order
+    uv run python tests/non_conforming/building_block.py myapp.models:Order --json
+    uv run python tests/non_conforming/building_block.py myapp.billing:Invoice
+    uv run python tests/non_conforming/building_block.py pydantic:BaseModel
 
     --json outputs the full recursive tree as JSON (for bots and tooling).
     Without --json, outputs indented human-readable text.
@@ -1401,17 +1401,16 @@ class TreeReport(BaseModel, frozen=True, from_attributes=True):
 
 
 # =============================================================================
-# OUTPUT FORMAT — discriminated union with smart variant methods (B.3)
+# OUTPUT FORMAT — discriminated union with per-variant methods
 # =============================================================================
 # Two output channels — human-readable indented text and machine-readable JSON
 # — each carrying its own render method. The variant IS the dispatch: the
 # consumer never asks "which format is this?", it calls .render(report) and
 # Pydantic's discriminator narrows to the correct variant.
 #
-# This is hierarchy B.3 (smart variant methods). Each variant's signature is
-# satisfied by `self` (the variant value) plus a proven `TreeReport` — the
-# F-test passes. No composed-model self in the signature; no enum dispatch
-# from a composed model. The variant carries the answer.
+# Each variant's render method takes `self` (the variant value) plus a proven
+# `TreeReport`; the variant carries the answer, with no enum dispatch from a
+# composed model.
 #
 # The alternative shape — a `bool` field on ClassifierRun gating an `if`/`else`
 # in `__str__` — would be bool-as-gate. The DU replaces it entirely.
@@ -1469,8 +1468,8 @@ class ClassifierRun(BaseModel, frozen=True):
     Construction IS the program.
 
     Usage:
-        print(ClassifierRun(target="arm_ont.team:Team"))
-        print(ClassifierRun(target="arm_ont.team:Team", output_format=JsonOutput()))
+        print(ClassifierRun(target="myapp.models:Order"))
+        print(ClassifierRun(target="myapp.models:Order", output_format=JsonOutput()))
     """
 
     target: str = Field(

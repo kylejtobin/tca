@@ -1,6 +1,6 @@
 # TCA Program Topology
 
-The structural companion to TCA's pattern language — the [manifesto](manifesto.md), [build patterns](build-patterns.md), and [pydantic machinery](pydantic-machinery.md) taken together. The pattern language defines how to write construction-driven code. This document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
+The structural companion to TCA's doctrine — [the authority](type-construction-architecture.md) and [build patterns](build-patterns.md) taken together. The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
 
 ---
 
@@ -96,7 +96,7 @@ Inside each context, files have a strict layered dependency. Each layer composes
 **Imports from:** Standard library and third-party only. Nothing from the program.
 **Imported by:** Everything. Every file in this context and every peer context may import from `type.py`.
 
-Each scalar owns a single value with identity, constraints, and semantic distinction. `LineNumber` is not `int` — it carries `ge=1` and is a different type than `ColumnOffset`, which is also `int` with `ge=0`. The type system distinguishes them. Bare primitives do not.
+Each scalar owns a single value with identity, constraints, and semantic distinction. `LineNumber` is not `int`, it carries `ge=1` and is a different type than `ColumnOffset`, which is also `int` with `ge=0`. The type system distinguishes them. Bare primitives do not.
 
 ### `value.py`
 
@@ -105,7 +105,7 @@ Each scalar owns a single value with identity, constraints, and semantic distinc
 **Imports from:** `type.py` in its own context. Nothing else from the program.
 **Imported by:** Frozen domain models, the active model, `api.py` in this context.
 
-A `SourceLocation` composes `LineNumber` with optional `ClassName` and `MethodName`. A `Smell` composes `InvariantName`, `Message`, and `SourceLocation`. These are small proven compositions — richer than a single scalar, simpler than a full domain model.
+A `SourceLocation` composes `LineNumber` with optional `ClassName` and `MethodName`. A `Smell` composes `InvariantName`, `Message`, and `SourceLocation`. These are small proven compositions, richer than a single scalar and simpler than a full domain model.
 
 ### `[concept].py` — Frozen Domain Models
 
