@@ -1,0 +1,25 @@
+{
+  // Python formatting and linting
+  "[python]": {
+    "editor.defaultFormatter": "anysphere.cursorpyright",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "always",
+      "source.organizeImports": "explicit"
+    }
+  },
+
+  // Python interpreter and language server
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+
+  // Testing configuration
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests", "--tb=short", "-v"],
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.autoTestDiscoverOnSaveEnabled": false,
+
+  // File handling
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true
+}

@@ -1,0 +1,78 @@
+# TCA app stack — parameterized environment definition.
+#
+# Instantiate by passing the env-specific values:
+#
+#   docker compose --env-file env/.env.prod up -d
+#   docker compose -f compose.yml -f compose.dev.override.yml \
+#       --env-file env/.env.dev up -d
+#
+# `ENV_NAME` in the .env file drives container names and the network name.
+
+name: tca-${ENV_NAME}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  tca-env:
+    name: tca-${ENV_NAME}
+    driver: bridge
+
+volumes:
+  nats-data:
+
+services:
+  nats:
+    image: nats:2.14.0-alpine
+    container_name: tca-${ENV_NAME}-nats
+    restart: unless-stopped
+    networks: [tca-env]
+    volumes:
+      - nats-data:/data
+      - ./nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    environment:
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      target: ${APP_BUILD_TARGET}
+      args:
+        USER_UID: "1000"
+        USER_GID: "1000"
+    container_name: tca-${ENV_NAME}-app
+    restart: unless-stopped
+    networks: [tca-env]
+    environment:
+      NATS_URL: nats://${NATS_USER}:${NATS_PASSWORD}@nats:4222
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      nats:
+        condition: service_healthy
+    logging: *default-logging

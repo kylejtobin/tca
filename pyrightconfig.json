@@ -1,0 +1,5 @@
+{
+  "reportImportCycles": "none",
+  "reportImplicitStringConcatenation": "none",
+  "exclude": ["app", ".venv"]
+}

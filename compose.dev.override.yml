@@ -1,0 +1,14 @@
+# TCA app stack — dev-only overrides.
+#
+# Use alongside compose.yml when running the dev env:
+#
+#   docker compose -f compose.yml -f compose.dev.override.yml \
+#       --env-file env/.env.dev up -d
+#
+# Production does NOT include this file — source is COPYed into the image
+# at build time (APP_BUILD_TARGET=prod) with no bind mounts.
+
+services:
+  app:
+    volumes:
+      - ./app/app:/app/app
