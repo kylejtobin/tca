@@ -1,31 +1,36 @@
-## Proof Obligations and the Construction Graph
+# Proof Obligations and the Construction Graph
 
-Three practical lenses for designing and auditing construction graphs. They add no doctrine beyond `type-construction-architecture.md`; they are ways of using it. The catalog says construction is the proof and the program is the graph of constructions. These lenses are how you start that graph from what must be true, recover it from code that already runs, and read a shared node without overloading it.
+This is a practice guide. It adds no doctrine beyond [`construct.md`](construct.md); it teaches ways to use that doctrine when a model is still forming, when an existing codebase needs to be audited, or when a shared type feels suspicious.
 
-### 1. Design from the obligation, not the shape
+The core rule is simple: construction is the proof, and the program is the graph of constructions. A good graph starts from what must be true, names the value whose existence proves it, and lets the required dependencies become visible.
 
-Begin with what must be certain for the program to be correct, named in domain language. Then name the construct whose existence is that certainty: the value that cannot be built unless the obligation holds, so its construction is the proof. Compose downward from it through declared fields and derivations until you reach the leaves, the scalars that bound the primitive value spaces.
+## 1. Design From The Obligation
 
-The discipline is the order. Naming the obligation first, then the construct that discharges it, keeps you from starting at a class shape, a service template, or a transport concern before the proof target is explicit. The shape falls out of the obligation; it is not chosen ahead of it.
+Begin with what must be certain for the program to be correct, named in domain language. Then name the construct whose existence is that certainty: the value that cannot be built unless the obligation holds.
 
-The same principle extends to verb chains on the consistency model. A verb body is a path in the construction graph: each statement constructs a value that some later construction depends on, and the statement order is derived from those dependencies exactly as the build order is derived from the type graph. A body has no free ordering to author. If two orderings of a body are semantically equivalent, at least one statement is not performing a real construction, which is a signal to examine what it is doing there.
+That order matters. If you start with a class shape, service template, handler, or transport concern, the proof target is already displaced. Starting with the obligation keeps the question sharp: what object must exist for this fact to be proven?
 
-### 2. Read an existing codebase by its terminals
+Once the proof target is named, compose downward through declared fields and derivations until you reach semantic scalars. The leaves bound primitive value spaces; the composites name the facts those leaves make possible; the terminal values are the facts the application acts on.
 
-A procedural system already has a construction graph, smeared across handlers, validators, and schemas, unnamed. You recover it for an audit or a migration by reading from the top down, even though you will rebuild it from the bottom up.
+State transitions obey the same discipline, but they do not become free-form chains. Current verb doctrine allows at most one construction statement in a consistency-model verb; constituents construct inside that one call. If a transition seems to need staged constructions, the model is saying a composite, derivation, ordered union, route, or boundary model is missing from the graph. Do not turn that need into steps. Name the missing structure.
+
+## 2. Read Existing Code By Its Terminals
+
+A procedural system already has a construction graph, smeared across handlers, validators, schemas, mappers, and services. The graph is real, but unnamed. You recover it for an audit or migration by reading from the top down, even though a clean TCA build starts from the leaves.
 
 As a heuristic, not a law:
 
-1. Enumerate the construct-bearing domain types.
-2. Find which of them are composed as fields by other types.
-3. The ones nothing composes are the graph's terminals: the top-level proven facts and the consistency models.
-4. Trace each terminal down through its fields and derivations to the leaves.
+1. Enumerate the domain values, facts, choices, collections, and live state holders that already exist.
+2. Find which types are composed as fields by other types.
+3. Treat the types nothing else composes as likely terminals: top-level proven facts, route replies, persisted state facts, and consistency models.
+4. Trace each terminal down through fields, variants, and derivations until you reach leaf values.
+5. Mark every place meaning escaped into a validator, mapper, service method, comment, or convention.
 
-This turns a large codebase into a finite set of terminals and makes refactor scope explicit graph by graph instead of file by file. Reading top-down recovers the structure; rebuilding it, you still start at the leaves and let proof obligations accumulate upward.
+This turns a large codebase into a finite set of graph slices. Refactor scope becomes explicit graph by graph instead of file by file. Reading top-down recovers the obligations; rebuilding still starts at the leaves and lets proof obligations accumulate upward.
 
-### 3. A shared leaf carries one meaning; the edge carries the role
+## 3. Let Edges Carry Roles
 
-The same leaf type can sit under two terminals by two different paths. Its intrinsic meaning does not change with position. What changes is the role, and the role is carried by the edge that references it, the field name along the path, never by the leaf.
+The same leaf type can sit under two terminals by two different paths. Its intrinsic meaning does not change with position. What changes is the role, and the role is carried by the edge that references it, usually the field name along the path, never by the leaf.
 
 ```text
 CatalogEnvironment
@@ -39,4 +44,10 @@ OrderConfirmation
 
 `Product` means a product in both places. "Known to the catalog" is the meaning of `ProductRegistry`; "reserved for this order" is the meaning of `reserved_items`. The leaf is shared because its intrinsic meaning is identical; the path supplies the role through its edges.
 
-The review test follows directly. When a shared leaf feels overloaded, ask whether the edge already carries the role. If it does, the sharing is honest. If the leaf would need different intrinsic structure in the two places, a reservation quantity here, a shelf location there, then it is not one type carrying a role; it is two types, and meaning lives in the type, so you split it.
+The review test follows directly. When a shared leaf feels overloaded, ask whether the edge already carries the role. If it does, the sharing is honest. If the leaf would need different intrinsic structure in the two places, a reservation quantity here, a shelf location there, then it is not one type carrying a role. It is two types, and meaning lives in the type, so you split it.
+
+## The Working Question
+
+For any proposed shape, ask: what proof obligation does this construction discharge, and where is that obligation carried in the graph?
+
+If the answer is "in the next step," the meaning has escaped into procedure. If the answer is "in two places," the meaning is duplicated. If the answer is "nowhere," the structure is vacuous. If the answer names two obligations at once, the structure is fused. The four breaks from [`definition.md`](definition.md) become practical because the graph gives you somewhere to point.
