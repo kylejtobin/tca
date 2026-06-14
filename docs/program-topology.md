@@ -1,6 +1,6 @@
 # TCA Program Topology
 
-The structural companion to TCA's doctrine — [the authority](type-construction-architecture.md) and the `tca-*` construct skills in `.claude/skills/` taken together. The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
+The structural companion to TCA's doctrine, [the construct patterns](construct.md) and the `tca-construct-*` skills in `.claude/skills/` taken together. The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
 
 ---
 
@@ -121,7 +121,7 @@ Cross-context imports at this layer are natural. Domains are primitives, not sea
 ### `[consistency_model].py`
 
 **Is:** The convergence point. One per context.
-**Contains:** A `BaseModel` that composes all layers below it. Domain logic as construction, derivation, and projection. May hold a transport client as a field. The file holds the consistency model's declared verb surface and the chains those verbs expand from; behavior creates no other file and no other home in the topology.
+**Contains:** A `BaseModel` that composes all layers below it. Domain logic as construction and derivation. May hold a transport client as a field. The file holds the consistency model's declared verb surface and the chains those verbs expand from; behavior creates no other file and no other home in the topology.
 **Imports from:** `type.py`, `value.py`, frozen domain models in this context, peer context types.
 **Imported by:** `service/context.py` for transport binding. `api.py` for contract composition.
 
