@@ -1,0 +1,1 @@
+"""The resource context: TCA doctrine served to agents as read-only MCP resources. Every doctrine resource is a Document lifted whole from a Claude-Code markdown file (frontmatter name and description above a markdown body); the MCP wire types are built at the route, never here."""

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tca": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "app.main"]
+    }
+  }
+}

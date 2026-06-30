@@ -13,7 +13,7 @@ A value exists only when the fact it represents has been proven. A validation yo
 Read these in order if you are new:
 
 1. [`definition.md`](definition.md): the core test and the four breaks.
-2. [`executable-ontology.md`](executable-ontology.md): why the old split between ontology and runtime now has execution cost.
+2. [`programs-are-ontologies.md`](programs-are-ontologies.md): why the old split between ontology and runtime now has execution cost.
 3. [`construct.md`](construct.md): the closed set of legal program shapes.
 4. [`program-topology.md`](program-topology.md): where those shapes live and which direction dependencies flow.
 5. [`proofs-and-graph.md`](proofs-and-graph.md): how to start from proof obligations and read the construction graph.
@@ -26,7 +26,7 @@ That order is deliberate. First learn the test, then the reason it matters now, 
 ```mermaid
 flowchart TD
     Definition["definition.md\ncore test + four breaks"]
-    Executable["executable-ontology.md\nwhy executable meaning matters now"]
+    Executable["programs-are-ontologies.md\nwhy executable meaning matters now"]
     Constructs["construct.md\nclosed construct set"]
     Topology["program-topology.md\nfile homes + import direction"]
     Graph["proofs-and-graph.md\ngraph practice"]
@@ -49,7 +49,7 @@ Read the arrows as dependencies of understanding. You can enter from the problem
 
 [`definition.md`](definition.md) is the doctrine in its smallest form. It gives the one-to-one correspondence between meanings and structures, then names the four ways that correspondence breaks: escaped, duplicated, vacuous, and fused. Use it when a design argument feels subjective. The question is not "which shape do I prefer?" The question is "does this meaning have exactly one structural home, and does this structure carry exactly one meaning?"
 
-[`executable-ontology.md`](executable-ontology.md) is the why-now argument. It explains the event: a neural reader now consumes the program's semantic surface at the application's execution surface. That makes every mismatch between semantic structure and runtime mechanism more expensive. It also places TCA beside knowledge graphs and type-driven traditions as kin, not competitors.
+[`programs-are-ontologies.md`](programs-are-ontologies.md) is the why-now argument. It explains the event: a neural reader now consumes the program's semantic surface at the application's execution surface. That makes every mismatch between semantic structure and runtime mechanism more expensive. It also places TCA beside knowledge graphs and type-driven traditions as kin, not competitors.
 
 [`construct.md`](construct.md) is the rulebook. It is not background reading. It is the source every legal source shape derives from: definitions, required forms, sorting rules, replaced forms, allowed patterns, forbidden patterns, and substrate claims. If a structure feels missing, read this before inventing a helper, mapper, validator, service, branch, or fallback.
 
@@ -61,25 +61,25 @@ Read the arrows as dependencies of understanding. You can enter from the problem
 
 ## How To Use The Docs
 
-If you are trying to understand TCA, read [`definition.md`](definition.md), then [`executable-ontology.md`](executable-ontology.md). The first gives the test. The second explains why the test matters more now.
+If you are trying to understand TCA, read [`definition.md`](definition.md), then [`programs-are-ontologies.md`](programs-are-ontologies.md). The first gives the test. The second explains why the test matters more now.
 
 If you are modeling a feature, start with [`definition.md`](definition.md) for the four breaks, use [`proofs-and-graph.md`](proofs-and-graph.md) to name the proof obligation, use [`construct.md`](construct.md) to choose the legal home, and use [`program-topology.md`](program-topology.md) to place it.
 
 If you are auditing existing code, start with [`proofs-and-graph.md`](proofs-and-graph.md). Find terminals, trace them to leaves, then use [`construct.md`](construct.md) to classify escaped meanings and [`program-topology.md`](program-topology.md) to find ownership and import violations.
 
-If you are reviewing AI-facing surfaces, read [`semantic-index-types.md`](semantic-index-types.md) with [`executable-ontology.md`](executable-ontology.md). The key question is whether the same structure that constrains the machine also gives the model the right semantic instruction.
+If you are reviewing AI-facing surfaces, read [`semantic-index-types.md`](semantic-index-types.md) with [`programs-are-ontologies.md`](programs-are-ontologies.md). The key question is whether the same structure that constrains the machine also gives the model the right semantic instruction.
 
 If you are using this repository's agentic workflow, read [`.claude/README.md`](../.claude/README.md) after the doctrine spine. The build system is not a second doctrine. It is a constrained way to make agents consume the doctrine without drifting back into procedural Python.
 
 ## The Build Loop In One Paragraph
 
-Product intent goes into the target's `spec/product.json`. Program meanings go into the target's `spec/ontology.json`. The ontology rows choose construct homes and file homes before source is built. The builder renders rows through construct cards. The gate checks catalog coherence and source conformance. Human review decides whether the product judgment, ontology, ledger, generated files, and proof runs actually satisfy the work.
+Product intent goes into the target's `spec/product.json`. Program meanings go into the target's `spec/ontology.json`. The ontology rows choose construct homes and file homes before source is built. The builder renders rows through construct cards. Human review decides whether the product judgment, ontology, ledger, generated files, and proof runs actually satisfy the work.
 
 The docs feed that loop:
 
 - [`definition.md`](definition.md) supplies the break taxonomy used in ontology review and violation ledgers.
-- [`construct.md`](construct.md) is mirrored into construct cards in [`../.claude/skills/`](../.claude/skills/).
-- [`program-topology.md`](program-topology.md) is distilled into [`../.claude/skills/tca-topology/SKILL.md`](../.claude/skills/tca-topology/SKILL.md) and checked by the gate.
+- [`construct.md`](construct.md) is mirrored into the `tca_authorized_construct_*` cards served as MCP tools.
+- [`program-topology.md`](program-topology.md) is distilled into the `tca_required_reference_topology` card served as an MCP tool.
 - [`proofs-and-graph.md`](proofs-and-graph.md) gives the human reviewer a way to reason from obligations to graph shape.
 - [`semantic-index-types.md`](semantic-index-types.md) explains why exposed names and descriptions are part of the AI behavior surface.
 
