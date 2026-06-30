@@ -9,19 +9,5 @@
       "WebSearch(*)",
       "Agent(*)"
     ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-/home/kyle/src/tca}\" && uv run python .claude/scripts/tca_gate",
-            "timeout": 30
-          }
-        ]
-      }
-    ]
   }
 }

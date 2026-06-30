@@ -1,0 +1,52 @@
+# api/ is the wire boundary
+
+`api/` is where the program meets MCP's transport. It is the only place the MCP library (`FastMCP`)
+is named: the domain never names an MCP type, and `api/` never holds a domain decision. It is the
+route layer, transport ingress and nothing more.
+
+## The pattern: one tool per document
+
+`mcp.py` constructs a `FastMCP("tca")` server and declares one `@mcp.tool` per doctrine document in
+the collection. Each tool is the route over a single already-constructed `Document`:
+
+- its **name** and **description** are read from the document (`.name.root`, `.description.root`) to
+  parameterize the tool, the trigger the model reads at discovery;
+- its **body** is returned on call (`.body.root`), the markdown payload served whole.
+
+The document's frontmatter name, the module-level constant in `resource/collection.py`, and the tool
+name are the same string in all three places.
+
+```
+   DOMAIN (resource/)        │   api/ (route)            │   WIRE
+ constructed Document        │                           │   FastMCP
+ ─────────────────────────── │ ───────────────────────── │ ────────────────────
+ name.root ──────────────────┼──▶ @mcp.tool(name=,       │
+ description.root ───────────┼──▶            description=)│ ──▶ tool advertised
+                             │                           │
+ body.root ──────────────────┼──▶ return ────────────────┼──▶ call result
+                             │                           │
+```
+
+## The crossing is outbound only
+
+The foreign-model crossing that lifts the Claude-Code markdown file happens in the domain
+(`resource/`), at import, through `Document.model_validate_context`. By the time a tool runs its
+document is already a proven construct, so `api/` performs no inbound lift and the tools take no
+arguments. The single wire-meeting here is the reply: the route reads the construct's `.root` and
+hands the string to the wire.
+
+This is the semantic-scalar root discipline. `.root` is read where the program meets the wire, at a
+route reply. The route defines no type and computes no domain fact; it turns a constructed document
+into its served string, nothing more.
+
+## Why one tool per document and not a loop
+
+A loop registering tools over the collection would make the surface result from a procedure running.
+The 46 explicit `@mcp.tool` declarations make each tool exist as a constructed route instead. Each
+carries a distinct document, so no meaning is duplicated, and the server exists rather than executes.
+
+## The only foreign model is the markdown file
+
+`api/` re-declares no MCP shape. It uses `FastMCP` directly and returns the document's body string,
+which the library renders to the wire. The one foreign model in the resource world is the genuinely
+unproven input, the Claude-Code markdown file, and it is lifted in the domain, never here.

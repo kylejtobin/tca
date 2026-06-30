@@ -1,6 +1,6 @@
 # TCA Program Topology
 
-The structural companion to TCA's doctrine, [the construct patterns](construct.md) and the `tca-construct-*` skills in `.claude/skills/` taken together. The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
+The structural companion to TCA's doctrine, [the construct patterns](construct.md) and the `tca_authorized_construct_*` cards served as MCP tools taken together. The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
 
 ---
 
@@ -39,7 +39,7 @@ flowchart TD
 
 `main.py` is the composition root — it reaches across to both `service/` and `api/` to wire the program together. Service and route both reach inward to `domain/`. Inside `domain/`, a strict layered dependency descends from the consistency model down to `type.py`. The arrow means "imports from."
 
-Peer domain contexts compose freely at the frozen model layer. `domain/catalog/type.py` may be imported by `domain/inventory/stock.py`. Domains are primitives, forged to be combined.
+Peer domain contexts compose freely at the frozen model layer and below. `domain/catalog/type.py` may be imported by `domain/inventory/stock.py`. Domains are primitives, forged to be combined.
 
 ---
 
@@ -93,7 +93,7 @@ Inside each context, files have a strict layered dependency. Each layer composes
 
 **Is:** The dependency root. The atomic vocabulary.
 **Contains:** `RootModel` subclasses with `frozen=True` and `Field()` constraints.
-**Imports from:** Standard library and third-party only. Nothing from the program.
+**Imports from:** Standard library and third-party. From the program, only a value-space enum it would otherwise have to duplicate, taken from a foundation peer context; that import is downward and forms no cycle. Never anything from a higher layer.
 **Imported by:** Everything. Every file in this context and every peer context may import from `type.py`.
 
 Each scalar owns a single value with identity, constraints, and semantic distinction. `LineNumber` is not `int`, it carries `ge=1` and is a different type than `ColumnOffset`, which is also `int` with `ge=0`. The type system distinguishes them. Bare primitives do not.
@@ -102,7 +102,7 @@ Each scalar owns a single value with identity, constraints, and semantic distinc
 
 **Is:** The second layer. Composed value objects.
 **Contains:** `BaseModel` subclasses with `frozen=True` that compose scalars into richer structures.
-**Imports from:** `type.py` in its own context. Nothing else from the program.
+**Imports from:** Its own context's `type.py`, and scalars from foundation peer contexts. Only downward; nothing from a higher layer.
 **Imported by:** Frozen domain models, the consistency model, `api.py` in this context.
 
 A `SourceLocation` composes `LineNumber` with optional `ClassName` and `MethodName`. A `Smell` composes `InvariantName`, `Message`, and `SourceLocation`. These are small proven compositions, richer than a single scalar and simpler than a full domain model.
@@ -175,11 +175,13 @@ The constraints:
 
 These properties hold for every TCA program. They are the invariants of the topology itself.
 
+One invariant underwrites the rest: the construction graph is acyclic. Nothing depends, even transitively, on what depends on it, which is why a value can always be built before the values that compose it. The per-file rows are the conservative, within-context way to keep it acyclic; across contexts the binding rule is acyclicity itself, so a context composes a foundation peer's constructs freely at any frozen layer. Context boundaries seal exactly one thing, the live node: one consistency model per context. Every frozen construct is placed by layer and composes across contexts; only the live edge is context-bound. The invariant is proven by construction order.
+
 **Every model is frozen except the consistency model.** Frozen means proven and sealed. The consistency model earns its exception by being the single convergence point of live context state. One exception per context.
 
-**`type.py` imports nothing from the program.** It is the root. If it looks upward, the entire dependency hierarchy is compromised — every file that imports from `type.py` now transitively depends on whatever `type.py` imported.
+**`type.py` looks only downward.** It is its context's root and imports nothing from a higher layer; if it looked upward, every file that imports it would transitively inherit the cycle. It may compose a value-space enum from a foundation peer context rather than duplicate that vocabulary, because that import is downward and forms no cycle.
 
-**`value.py` imports only from `type.py` in its context.** It is the second layer. It composes scalars and nothing else.
+**`value.py` composes scalars, looking only downward.** Its own context's `type.py`, and scalars from foundation peer contexts; never a higher layer. Re-declaring a peer's scalar to keep the import in-context would duplicate a meaning, which is the worse violation.
 
 **Types flow from domain toward edge.** Domain defines types. Services, routes, and `main.py` import them. No edge file defines a type that a domain file imports.
 

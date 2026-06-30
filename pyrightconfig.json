@@ -2,15 +2,12 @@
   "reportImportCycles": "none",
   "reportImplicitStringConcatenation": "none",
   "reportUnannotatedClassAttribute": "none",
+  "reportMissingTypeStubs": "none",
   "exclude": [
     ".venv",
-    ".claude/scripts/tca_gate/tests"
+    "tests"
   ],
   "extraPaths": [
-    ".claude/scripts"
-  ],
-  "executionEnvironments": [
-    { "root": "src", "extraPaths": ["src", ".claude/scripts"] },
-    { "root": "demo", "extraPaths": ["demo", ".claude/scripts"] }
+    "src"
   ]
 }

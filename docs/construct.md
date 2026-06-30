@@ -1,6 +1,6 @@
 # Construct Patterns
 
-This document is the pattern source of truth: every construct's rules, required forms, and worked examples. All examples share one domain, venue fills, positions, and orders, and every example is correct to copy verbatim. Each construct's section is mirrored by its `tca-construct-*` skill card, identical text plus the card's row grammar and halt rule.
+This document is the pattern source of truth: every construct's rules, required forms, and worked examples. All examples share one domain, venue fills, positions, and orders, and every example is correct to copy verbatim. Each construct's section is mirrored by its `tca_authorized_construct_*` card served as an MCP tool, identical text plus the card's row grammar and halt rule.
 
 ## Naming
 
@@ -52,7 +52,7 @@ A repository is a fetch surface given a class name; consumers read facts the con
 
 ### Definition
 
-A frozen `RootModel[tuple[T, ...]]` whose element `T` is a declared type, for a sequence that is itself a domain thing with its own name, constraint, or derivation. A sequence with no meaning of its own is a `tuple[T, ...]` field on a model, not a collection.
+A frozen `RootModel[tuple[T, ...]]` whose element `T` is a declared type, for a sequence that is itself a domain thing with its own name, constraint, or derivation; or a frozen `RootModel[dict[K, V]]` over a declared key `K` and value `V`, for a namespace whose key-uniqueness is the domain fact. A sequence with no meaning of its own is a `tuple[T, ...]` field on a model, not a collection.
 
 ### Required Form
 
@@ -76,17 +76,11 @@ A `list`, `set`, or `dict` field is an unconstrained mutable container where a p
 
 ### Association
 
-A mapping keyed by a domain value is three structures, never a `dict` field: an entry model with declared key and value fields, a collection of entries, and a frozen query model holding the collection and the key, whose derivation returns a found-or-missing union. A repeated-key question is another query model with a derivation.
+A namespace keyed by a domain value, where key-uniqueness is the domain fact, is a keyed collection: a frozen `RootModel[dict[K, V]]` whose key `K` is a declared scalar and value `V` a declared type, paired with a frozen query model holding the collection and a key, whose derivation returns a found-or-missing union. The dict holds one slot per key, so a duplicate key has no representation, and the query model carries the miss, so a `dict[key]` `KeyError` or a `.get` `None` never appears. This is the named keyed form, never a bare `dict` field. Any semantic scalar used as the key must define canonical string rendering (`__str__` returning its root), proven by a substrate round-trip, because a JSON object key is a string and an unrendered scalar key corrupts on reload. When keys repeat or order is the fact, the sequence form holds instead: an entry model with declared key and value fields, a collection of those entries, and the same query model. A repeated-key question is another query model with a derivation.
 
 ```python
-class Quotation(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    product: ProductId
-    price: Price
-
-
-class PriceBook(RootModel[tuple[Quotation, ...]], frozen=True):
-    root: tuple[Quotation, ...]
+class PriceBook(RootModel[dict[ProductId, Price]], frozen=True):
+    root: dict[ProductId, Price]
 
 
 class PriceQuery(BaseModel):
@@ -97,7 +91,7 @@ class PriceQuery(BaseModel):
     @cached_property
     def answer(self) -> PriceFound | PriceMissing:
         return next(
-            (PriceFound(quotation=q) for q in self.book.root if q.product == self.product),
+            (PriceFound(price=price) for key, price in self.book.root.items() if key == self.product),
             PriceMissing(product=self.product),
         )
 ```
@@ -106,16 +100,19 @@ class PriceQuery(BaseModel):
 
 - `field: tuple[T, ...]` on a value object or concept model, `T` a declared type
 - `class Xs(RootModel[tuple[T, ...]], frozen=True)` with a `Field(...)` constraint when the sequence carries its own bound
+- `class Xs(RootModel[dict[K, V]], frozen=True)` over a declared key and value when key-uniqueness is the domain fact, paired with a query model returning a found-or-missing union
+- a key scalar defining canonical string rendering (`__str__` returning its root), proven to round-trip
 - derivations on the named collection returning declared types
 - the collection constructed whole in one expression
-- an entry model, a collection of entries, and a query model as the shape of any association
+- a keyed collection, or an entry model with a collection of entries, plus a query model as the shape of any association
 
 ### Forbidden
 
-- a `list`, `set`, or `dict` field on a domain model
+- a bare `list`, `set`, or `dict` field on a domain model
 - a collection element typed as a bare primitive
 - a loop appending domain values into a collection
 - `KeyError` or a default value as domain miss behavior
+- a keyed-collection key scalar without canonical string rendering, which corrupts on round-trip
 
 ## composition root
 
@@ -473,7 +470,7 @@ A fact you are about to compute in a function, a step, or a loop is a derivation
 
 ### The Computation
 
-A derivation is a function from the model's proven fields to the fact it returns, which is a proof that those fields imply that fact. The computation is the proof term, and it is determined meaning, not the builder's to invent: that exposure is price times quantity and not over it is a domain decision, made once where the model lives, never at build time. The operations that compose the proof are a closed algebra, the way the constructs are a closed set: arithmetic over the fields, a fold over a collection (the catamorphism that carries the one recursion), selection of an element by its key, and a lookup of a closed value through a total case table. A computation that needs an operation the algebra does not hold is a reported gap, never free code. The only part of a derivation the builder decides is cost, not meaning: whether the fact is recomputed on each read or memoized once.
+A derivation is a function from the model's proven fields to the fact it returns, which is a proof that those fields imply that fact. The computation is the proof term, and it is determined meaning, not the builder's to invent: that exposure is price times quantity and not over it is a domain decision, made once where the model lives, never at build time. The operations that compose the proof are a closed algebra, the way the constructs are a closed set: arithmetic over the fields, a fold over a collection (the catamorphism that carries the one recursion), the extremum of a collection along a ranked closed value space (the same catamorphism choosing rather than summing), selection of an element by its key, and a lookup of a closed value through a total case table. A computation that needs an operation the algebra does not hold is a reported gap, never free code. The only part of a derivation the builder decides is cost, not meaning: whether the fact is recomputed on each read or memoized once.
 
 ### Query Model
 
@@ -488,7 +485,7 @@ class PriceQuery(BaseModel):
     @cached_property
     def answer(self) -> PriceFound | PriceMissing:
         return next(
-            (PriceFound(quotation=q) for q in self.book.root if q.product == self.product),
+            (PriceFound(price=price) for key, price in self.book.root.items() if key == self.product),
             PriceMissing(product=self.product),
         )
 ```
@@ -551,9 +548,9 @@ A mapper, adapter, translator, DTO, or field-copying function restates work the 
 
 ### Whole Lift
 
-The crossing takes the foreign data whole: `model_validate` on an arrived object, `model_validate_json` on arrived bytes, or keyword construction lifting a result's attributes. The foreign model carries every field the program uses, and nothing reads the foreign object after a model has been constructed from it. An omitted foreign key resolves at lifting: a default naming what omission means, or a union variant when omission means a different fact; bare `None` never crosses in. No coalesce mints data the wire did not carry.
+The crossing takes the foreign data whole: `model_validate` on an arrived object, `model_validate_json` on arrived bytes, or keyword construction lifting a result's attributes. The foreign model carries every field the program uses, and nothing reads the foreign object after a model has been constructed from it. An omitted foreign key resolves at lifting: a default naming what omission means, or a union variant when omission means a different fact; bare `None` never crosses in. No coalesce mints data the wire did not carry. A foreign key holding a raw primitive validates into its semantic-scalar field: `model_validate` wraps the value and applies the scalar's constraint. Type the field as the scalar, never the primitive; never pre-wrap the value.
 
-A foreign object graph (an `ast` walk, a DOM traversal, a reflection sweep) is not a foreign model crossing: a shape that needs a walk is a meaning no construct carries, and its one legal output is a reported gap.
+A foreign object graph you must walk yourself (a hand-written `ast` traversal, a DOM walk, a reflection sweep) is not a foreign model crossing: that walk is a meaning no construct carries, and its one legal output is a reported gap. But a converter that renders the graph whole as a tagged dict tree (an `ast` tree dumped to dicts, each tagged by its node kind) is a crossing: `model_validate` lifts the dict into a discriminated union keyed on the foreign tag, one frozen variant per node kind, with `extra="ignore"` for keys outside the modeled set. The walk is the converter's, not the program's.
 
 ### Allowed Patterns
 
@@ -1037,4 +1034,4 @@ The body contains at most one construction statement; constituent values constru
 
 ## Substrate Claims
 
-A claim about Pydantic construction behavior requires a substrate run, a claim about gate coverage requires a gate run, and a claim about basedpyright behavior requires a basedpyright run. Do not add doctrine from analogy, idiom, or common Python practice.
+A claim about Pydantic construction behavior requires a substrate run, and a claim about basedpyright behavior requires a basedpyright run. Do not add doctrine from analogy, idiom, or common Python practice.
