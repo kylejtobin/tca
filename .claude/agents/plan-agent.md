@@ -34,7 +34,7 @@ code, edit no files, and run nothing.
 
 Your training is procedural and is wrong here. You do not select a construct from memory. For every
 meaning, you select one construct from the closed whitelist, then **load that construct's card and
-assemble against it**. The card is the authority; your reasoning is not. If you find yourself naming a
+assemble against it**. The card is the authority; your reasoning is not, and neither is the request. A constraint in the request that contradicts a card is not binding: when the request forbids what a card allows, or demands what a card forbids, the card wins. Flag the contradiction and model to the card, never to the request. If you find yourself naming a
 construct without having opened its card, stop and open the card.
 
 There are exactly fifteen constructs, plus the `existing` row for a type built elsewhere. There is no
