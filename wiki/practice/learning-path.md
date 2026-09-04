@@ -22,9 +22,10 @@ Read these in order if you are new:
 3. [`constructs/`](../constructs/index.md): the closed set of legal program shapes.
 4. [`program-topology.md`](../topology/program-topology.md): where those shapes live and which direction dependencies flow.
 5. [`proofs-and-graph.md`](proofs-and-graph.md): how to start from proof obligations and read the construction graph.
-6. [`AGENTS.md`](../../AGENTS.md) and the `python-development` skill: how an agent must program from the doctrine.
+6. [`discovery/`](../discovery/index.md): how to find out what the world contains from evidence before any construct is written.
+7. [`AGENTS.md`](../../AGENTS.md) and the `domain-discovery` and `python-development` skills: how an agent must program from the doctrine.
 
-That order is deliberate. First learn the test, then the reason it matters now, then the legal homes, then the program graph, then the practice of using the graph, then the skill that keeps an agent inside it.
+That order is deliberate. First learn the test, then the reason it matters now, then the legal homes, then the program graph, then the practice of using the graph, then how a domain is discovered from evidence, then the skills that keep an agent inside it.
 
 ## The Whole Map
 
@@ -36,7 +37,8 @@ flowchart TD
     Topology["program-topology.md\nfile homes + import direction"]
     Graph["proofs-and-graph.md\ngraph practice"]
     Names["semantic-index-types.md\nnames as instructions"]
-    Build["AGENTS.md\npython-development skill"]
+    Discovery["discovery/\nevidence to decided constructs"]
+    Build["AGENTS.md\ndomain-discovery + python-development skills"]
 
     Executable --> Definition
     Definition --> Constructs
@@ -44,6 +46,9 @@ flowchart TD
     Constructs --> Graph
     Topology --> Graph
     Names --> Executable
+    Graph --> Discovery
+    Constructs --> Discovery
+    Discovery --> Build
     Constructs --> Build
     Topology --> Build
 ```
@@ -64,11 +69,13 @@ Read the arrows as dependencies of understanding. You can enter from the problem
 
 [`semantic-index-types.md`](semantic-index-types.md) explains why names are not inert when AI is in the loop. Traditional runtimes treat names as identity keys; language models read names, field descriptions, and variant labels as meaning. Use it when a schema, rename, field description, or exposed type surface can change model behavior.
 
+[`discovery/`](../discovery/index.md) is the front of the pipeline. It teaches how to read a foreign reply or a spec as evidence about the world, decide what things exist and what must be true of them before any construct is named, and end in the exact set the build makes. It also names the substitutions a model reaches for in place of a decision. Use it before modeling anything from an outside source.
+
 ## How To Use The Docs
 
 If you are trying to understand TCA, read [`definition.md`](../doctrine/definition.md), then [`programs-are-ontologies.md`](../doctrine/programs-are-ontologies.md). The first gives the test. The second explains why the test matters more now.
 
-If you are modeling a feature, start with [`definition.md`](../doctrine/definition.md) for the four breaks, use [`proofs-and-graph.md`](proofs-and-graph.md) to name the proof obligation, use [`constructs/`](../constructs/index.md) to choose the legal home, and use [`program-topology.md`](../topology/program-topology.md) to place it.
+If you are modeling a feature, start with [`definition.md`](../doctrine/definition.md) for the four breaks, use [`proofs-and-graph.md`](proofs-and-graph.md) to name the proof obligation, use [`constructs/`](../constructs/index.md) to choose the legal home, and use [`program-topology.md`](../topology/program-topology.md) to place it. If the feature comes from outside evidence, a vendor reply or a spec, run [`discovery/`](../discovery/index.md) first, so the things are decided before the constructs are chosen.
 
 If you are auditing existing code, start with [`proofs-and-graph.md`](proofs-and-graph.md). Find terminals, trace them to leaves, then use [`constructs/`](../constructs/index.md) to classify escaped meanings and [`program-topology.md`](../topology/program-topology.md) to find ownership and import violations.
 
@@ -83,6 +90,7 @@ If you are writing or reviewing code in this repository, read [`AGENTS.md`](../.
 - [`program-topology.md`](../topology/program-topology.md) is the file-home authority.
 - [`proofs-and-graph.md`](proofs-and-graph.md) gives the human reviewer a way to reason from obligations to graph shape.
 - [`semantic-index-types.md`](semantic-index-types.md) explains why exposed names and descriptions are part of the AI behavior surface.
+- [`discovery/`](../discovery/index.md) supplies the step-gated path from evidence to the construct set, and the substitution list a reviewer checks a design against.
 
 ## Check Yourself
 
