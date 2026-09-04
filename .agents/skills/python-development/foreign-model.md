@@ -1,0 +1,64 @@
+---
+type: construct
+---
+
+# Foreign model
+
+## Definition
+
+A frozen `BaseModel` of another system's data shape, named for the other system's thing: its aliases hold that system's keys, and its fields are this program's domain meanings. It exists only when the foreign shape differs from the domain shape, and it carries every field the program uses from the foreign data.
+
+## Required form
+
+```python
+class VenueFill(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    order_id: OrderId = Field(alias="ordId")
+    account_id: AccountId = Field(alias="acct")
+    fill_price: Price = Field(alias="px")
+    filled_quantity: Quantity = Field(alias="qty")
+
+
+class VenueFillMessage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    fill: VenueFill = Field(validation_alias="data")
+
+
+class VenueStreamMessage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    fill: VenueFill = Field(validation_alias=AliasPath("data", "payload"))
+```
+
+The declarative inventory: `Field(alias=...)` for a key rename, `validation_alias` for data wrapped at one key, `AliasPath` for data under nested wrapper keys, nested foreign models for nested structure, `from_attributes=True` for objects, `model_validate_json` for serialized data.
+
+## Whole lift
+
+The crossing takes the foreign data whole: `model_validate` on an arrived object, `model_validate_json` on arrived bytes, or keyword construction lifting a result's attributes. The foreign model carries every field the program uses, and nothing reads the foreign object after a model has been constructed from it. An omitted foreign key resolves at lifting: a default naming what omission means, or a union variant when omission means a different fact; bare `None` never crosses in. No coalesce mints data the wire did not carry. A foreign key holding a raw primitive validates into its [semantic scalar](semantic-scalar.md) field: `model_validate` wraps the value and applies the scalar's constraint. Type the field as the scalar, never the primitive; never pre-wrap the value.
+
+A foreign object graph you must walk yourself (a hand-written `ast` traversal, a DOM walk, a reflection sweep) is not a foreign model crossing: that walk is a meaning no construct carries, and its one legal output is a reported gap. But a converter that renders the graph whole as a tagged dict tree (an `ast` tree dumped to dicts, each tagged by its node kind) is a crossing: `model_validate` lifts the dict into a discriminated union keyed on the foreign tag, one frozen variant per node kind, with `extra="ignore"` for keys outside the modeled set. The walk is the converter's, not the program's.
+
+## Sorting
+
+- Another system's data shape, differing from the domain shape → this construct.
+- The foreign shape already matches the domain model → construct the domain model directly; the constructor does the entire job and no foreign model exists.
+- This program's own API shape → [contract model](contract-model.md).
+- Foreign data carrying no identity, expected sometimes to fail → [ordered union](ordered-union.md).
+- A live client → held by the [consistency model](consistency-model.md), never on a foreign model.
+
+## Allowed
+
+- a frozen `BaseModel`, `extra="forbid"`, every field a declared type, named for the foreign thing
+- `Field(alias=...)` for every rename, the aliases holding the foreign keys
+- a nested foreign model for every nested foreign structure
+- `validation_alias` and `AliasPath` for transport wrappers, the wrapper modeled, never indexed past
+- `from_attributes=True` for objects; `model_validate_json` for serialized data
+- an omitted key resolved by a named default or a variant
+
+## Forbidden
+
+- a mapper, adapter, translator, DTO, or field-copying function
+- a `json.loads` result carried as a dict
+- a before-validator that indexes, renames, routes, or computes; any `mode="after"` validator
+- a model named for a pipeline stage instead of the foreign thing
+- an attribute read on a foreign object after its model was constructed
+- a live client or handle retained as a field

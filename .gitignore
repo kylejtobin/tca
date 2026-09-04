@@ -1,45 +1,13 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# Environment variables
+.env
+.env.*
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-*.egg
+# Local agent settings (machine paths, never committed)
+.claude/settings.local.json
 
-# Virtual environments
-.venv/
-venv/
-
-# Testing / coverage
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-coverage.json
-coverage.lcov
-
-# Type checking
-.basedpyright/
-.pyright/
-
-# IDE (keep .vscode tracked)
+# IDE
 .idea/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Environment variables
-.env
-.env.*
-env/.env.*
-!env/.env.*.example
-
-# Compose local override
-compose.local.override.yml
-
-# Local agent settings (machine paths, never committed)
-.claude/settings.local.json
