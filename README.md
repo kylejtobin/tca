@@ -84,9 +84,10 @@ The doctrine is written twice, once for each reader, and the two are kept in agr
 | [`doctrine/`](wiki/doctrine/index.md) | What the test is, and why it binds now |
 | [`constructs/`](wiki/constructs/index.md) | What the fifteen legal shapes are |
 | [`topology/`](wiki/topology/index.md) | Where each shape lives, and which way dependencies flow |
+| [`discovery/`](wiki/discovery/index.md) | How you find out what the world contains before you build it |
 | [`practice/`](wiki/practice/index.md) | How to design from a proof obligation and read a construction graph |
 
-**For the agent:** the `python-development` skill under [`.agents/skills/`](.agents/skills/python-development/SKILL.md). It loads when a model is about to write Python and holds the same test, the same fifteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to it.
+**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-development`](.agents/skills/python-development/SKILL.md) loads when a model is about to write Python and holds the same test, the same fifteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
 
 ---
 
