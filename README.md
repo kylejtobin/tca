@@ -5,10 +5,9 @@
 <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=0d1117" alt="Python 3.12+"></a>
 <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white&labelColor=0d1117" alt="Pydantic v2"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSL 1.1"></a>
-<a href="https://github.com/DetachHead/basedpyright"><img src="https://img.shields.io/badge/Type%20Checked-basedpyright-22D3EE?style=flat-square&labelColor=0d1117" alt="Type Checked: basedpyright"></a>
 </p>
 
-<p align="center"><strong>Your software's meaning lives in its types.<br>The compiler proves the meaning true.<br>You bring a feature to a crew of AI agents.<br>One models it as constructs.<br>The others build it from the model.<br>One construct, one type, one file at a time.<br>No agent guessing allowed.</strong></p>
+<p align="center"><strong>Your software's meaning lives in its types.<br>Construction is its proof.<br>Every meaning has one structural home.<br>Every structure carries one meaning.<br>Fifteen constructs. No sixteenth.</strong></p>
 
 ---
 
@@ -49,75 +48,57 @@ The rigor that used to be good taste is now the thing that makes AI-built softwa
 
 ---
 
-## The Construction Crew
+## The Test
 
-The SDLC was never about building. It is a coordination protocol for multiple humans at human speed: the requirements doc, the handoffs, the standup, the roles, all of it exists to keep work split across many brains from contradicting itself. Remove the need to split the work, and the apparatus is just overhead.
+Every meaning has exactly one structural home, and every structure carries exactly one meaning. That correspondence is the whole of TCA, applied continuously as a test.
 
-<p align="center"><img src="img/tca-construction-crew.png" alt="The TCA construction crew. The operator holds authority and acceptance and dispatches the main agent. The main agent orchestrates and writes no code: it sends the request to the plan agent, receives the returned plan, sets file targets and context, dispatches the build agents in graph order, and reviews. The plan agent works the construction worksheet, selects only whitelist constructs from the MCP skill cards, and emits a validated plan through tca_construction_plan, where an off-construct entry cannot enter. The build agents each render one construct of one type into one file from its card, one agent per type per file, stacked serially when a file takes several types. The source code flows to evidence, basedpyright and pytest, which returns to the operator. A block, a meaning no card carries or a construct that will not render, returns to the operator. The fifteen construct cards feed both the plan agent's selection and the build agents' form." width="680"></p>
+It is one-to-one, so it fails in exactly four ways:
 
-So this drops the apparatus. You own the product. A crew of specialized agents does the labor, each one allowed a single job:
+- **Escaped.** A meaning with no structure: it lives in a comment, a procedure, or a convention the type does not carry.
+- **Duplicated.** A meaning with more than one structure: a second copy kept in agreement by hand.
+- **Vacuous.** A structure with no meaning: a type minted to save repetition, a name that says nothing real.
+- **Fused.** A structure with more than one meaning: several domain axes in one field, so the type tells none of them cleanly.
 
-- **The operator** is you. You hold authority and acceptance, you bring the feature, and you make the calls only you can make.
-- **The main agent** orchestrates. It sends the request to the plan agent, receives the plan back, sets each construct's file target and the context a builder needs, dispatches the build agents, reviews every result, and diagnoses every block. It models nothing and writes no code.
-- **The plan agent** turns the request into a validated plan. It works the construction worksheet, selects the one whitelist construct that carries each meaning from its card, and emits the plan through `tca_construction_plan`. It writes no code.
-- **The build agents** build. Each renders one construct, of one type, into one file, from that construct's card. One agent per type per file, so a file holding three kinds is built by three agents in series. A build agent decides nothing; it transcribes the card's required form and leaves everything else alone.
-
-Legality is proven where it is cheapest. An illegal construct cannot enter the plan, a build agent scoped to a single card cannot wander, and `basedpyright` and `pytest` prove what lands.
-
-You make the calls only you can make. The walls the last era fought to tear down, dev from ops and the deeper one between the people who know the business and the people who build it, fall here for the same reason: one builder, holding the meaning, commands the whole line.
-
-It works for a team, exactly as well. What it makes newly possible is one person owning a product at a scale that used to take a room, and the process to keep the room in sync.
-
----
-
-## A Scaffold, Not a Method
-
-You pull the repo, bring a feature, and run the loop. The starter app is a placeholder; the crew overwrites it with the system built from your plan, so you begin from a clean shape and end with your own. What is here today scaffolds the application. Templatizing the infrastructure beneath it, at cloud scale, is the next chapter.
-
----
-
-## Set Against the Alternatives
-
-<p align="center"><img src="img/table-alternatives.png" alt="Set against the alternatives. Who picks the structure: typical AI coding, the model mid-keystroke; spec-driven (Spec Kit, Kiro, BMAD), a written spec it can read past; TCA, you, in the model. What stops a wrong write: nothing; nothing; the construct boundary, before it enters the plan. When it is not sure: it guesses; it guesses; it stops and asks you. Who reviews the output: you, every line; you, every line; you review the plan, the checker proves the build." width="880"></p>
-
-The spec-driven tools split the work across a pretend team, one agent each playing analyst, PM, architect, scrum master: waterfall with robots. The benchmarks show the bill, slower than writing the code yourself and more tokens spent re-reading its own rules than doing the work. TCA has no manager agents, because there is no room of humans to coordinate. The split is by authority, and the construct boundary, not your patience, holds the line.
+There is no fifth. Every forbidden pattern is one of these four, and every approved structure holds one meaning, once, proven by construction. The full statement is [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md).
 
 ---
 
 ## Fifteen Shapes, No Sixteenth
 
-You build your whole domain from fifteen constructs. There is no sixteenth, and reaching for one is the single move the system will not allow. Each carries one meaning and rejects the shapes that bury it: the bare primitive, the `if/elif` ladder, the mapper, the stray helper.
+You build your whole domain from fifteen constructs. Each carries one meaning and rejects the shapes that bury it: the bare primitive, the `if/elif` ladder, the mapper, the stray helper.
 
 <p align="center"><img src="img/table-constructs.png" alt="The fifteen constructs, each with what it means and what it replaces. Semantic scalar: one atomic domain value, replacing the bare primitive. Value object: a small value made of scalars with no identity, replacing the tuple or dict of primitives. Concept model: one full domain thing or fact made of declared types, replacing the dataclass, the T-or-None field, the validator. Collection: a sequence that is its own domain thing, replacing the raw list, set, or dict field. Union: a closed choice over one axis, replacing the bool, the if/elif, the isinstance ladder. Ordered union: outside data tried in order, allowed to fail, replacing the try/except that returns a default. Derivation: a fact worked out from a value's own proven fields, replacing the helper, util, or stored computed field. Foreign model: another system's shape taken in whole at the edge, replacing the mapper, adapter, DTO. Contract model: your own API request or reply shape, replacing reuse of a foreign shape. Consistency model: the one live spot where changing state collects, replacing the manager, engine, or module-level client. Verb: one change of state on the consistency model, replacing the multi-step service method. Binding: the clients tied to the consistency model, replacing the repository. Route: build a value, send it in, return the reply, replacing the handler that parses, computes, and decides. Config: the environment read once into a typed value, replacing scattered os.environ reads. Composition root: the start that wires config, clients, bindings, routes, replacing the runner, orchestrator, or step list." width="900"></p>
 
-Every shape it rejects is one of four mistakes: a meaning with no type to hold it, the same meaning kept in two places by hand, a type that means nothing, or one type trying to mean two things. There is no fifth. That is the whole test, and the constructs enforce it by their shape: a shape that fails it cannot enter the plan.
+Each construct has one page: definition, required form, sorting rules, the forms it replaces, and what it forbids. Every example shares one domain, venue fills, positions, and orders, and is correct to copy verbatim. The set is [`wiki/constructs/`](wiki/constructs/index.md).
 
 ---
 
-## It Is Cheap to Run
+## Two Readers, Two Documents
 
-- **You do not pay the model to redesign on every run.** Your design is saved as the plan. A build agent reads one construct entry; it does not work out what a `Price` is again.
-- **The boundary is free.** An illegal construct fails validation at the plan tool, plain Pydantic, zero model tokens.
-- **The check is deterministic.** `basedpyright` and `pytest` prove each file the same way every run, substrate not model, no tokens spent guessing.
-- **It stops instead of thrashing.** When a construct will not build, the run raises a block and tells you. It cannot spin for an hour down a dead path.
-- **You pay for the strong model only where it earns it.** A capable model to plan with you, a cheap one for the near-mechanical build agents, no model at all for the boundary or the checker.
+The doctrine is written twice, once for each reader, and the two are kept in agreement.
+
+**For people:** [`wiki/`](wiki/index.md), an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle. One concept per page, an index at every level, plain markdown that renders where it sits.
+
+| Directory | Question it answers |
+|-----------|---------------------|
+| [`doctrine/`](wiki/doctrine/index.md) | What the test is, and why it binds now |
+| [`constructs/`](wiki/constructs/index.md) | What the fifteen legal shapes are |
+| [`topology/`](wiki/topology/index.md) | Where each shape lives, and which way dependencies flow |
+| [`practice/`](wiki/practice/index.md) | How to design from a proof obligation and read a construction graph |
+
+**For the agent:** the `python-development` skill under [`.agents/skills/`](.agents/skills/python-development/SKILL.md). It loads when a model is about to write Python and holds the same test, the same fifteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to it.
 
 ---
 
 ## Almost None of This Is New, and That Is the Point
 
-It is the good half of typed functional programming, domain-driven design, and a few older schools, pulled together and made to hold under one test. Two camps spent decades saying the domain's structure should come first. They were right, and ignored, because the systems that ran the work never read what they wrote. A model reads it now, and the gap they were marginalized for is the gap that costs you on every run.
+It is the good half of typed functional programming, domain-driven design, and a few older schools, pulled together and made to hold under one test. Two camps spent decades saying the domain's structure should come first. They were right, and ignored, because the systems that ran the work never read what they wrote. A model reads it now, and the gap they were marginalized for is the gap that costs you on every run. The schools, and what TCA keeps and refuses from each, are in [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md#lineage).
 
 ---
 
 ## Start Here
 
-```bash
-git clone https://github.com/kylejtobin/tca && cd tca
-uv sync
-```
-
-- **The whole idea**, the one rule and the four ways it breaks: [`docs/definition.md`](docs/definition.md)
-- **Why the domain belongs in the running code now**: [`docs/programs-are-ontologies.md`](docs/programs-are-ontologies.md)
-- **Learn it by building**: [`docs/learning-path.md`](docs/learning-path.md)
-- **The crew and the loop in full**: [`.claude/README.md`](.claude/README.md)
+- **The whole idea**, the one rule and the four ways it breaks: [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md)
+- **Why the domain belongs in the running code now**: [`wiki/doctrine/programs-are-ontologies.md`](wiki/doctrine/programs-are-ontologies.md)
+- **How the wiki fits together, and what to read first**: [`wiki/practice/learning-path.md`](wiki/practice/learning-path.md)
+- **The fifteen constructs**: [`wiki/constructs/`](wiki/constructs/index.md)
