@@ -4,4 +4,4 @@ This repository develops and documents Type Construction Architecture. It holds 
 
 You must only program with modeling according to the `python-development` skill.
 
-**Wiki.** [`wiki/index.md`](wiki/index.md). The construct pages live under [`wiki/constructs/`](wiki/constructs/index.md).
+**Knowledge base.** [`wiki/`](wiki/index.md) is an Open Knowledge Format bundle and the single home for what this project knows. When you learn or decide something durable about TCA, write it there as a page, not in chat, not in a comment. Build and maintain it according to the `okf-wiki` skill. The construct pages live under [`wiki/constructs/`](wiki/constructs/index.md).
