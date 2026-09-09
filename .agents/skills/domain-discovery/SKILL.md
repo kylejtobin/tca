@@ -9,7 +9,7 @@ Output of every step: written answers. No step passes on judgment. Every answer 
 
 ## 1. Evidence
 
-Render the real evidence: an API reply constructed through the vendor's SDK and printed as pretty JSON; a document or spec quoted. Read it before naming anything. Never author evidence from memory.
+Render the real evidence: instances of the thing, whole and unedited — an API reply constructed through the vendor's SDK and printed as pretty JSON; a document quoted; another program's model read as written. Read it before naming anything. Never author the evidence for this model: what you render was made for some other purpose than modeling this.
 
 ## 2. Things
 
@@ -37,7 +37,8 @@ Output: the filled schema. No construct types.
 2. Holders of changed things: one line per holder, per changed thing: what the field becomes.
 3. Placement: one line per construct: context, file.
 4. Breaks: one line per entry, per break: escaped, duplicated, vacuous, fused. State why it does not break. A pass is written or it is not a pass.
-5. From the answers above, fill this and nothing else:
+5. Any break that did not pass: name the earliest question whose answer produced it and resume there, voiding every answer after it. Otherwise 3.6.
+6. From the answers above, fill this and nothing else:
 
 ```json
 {
