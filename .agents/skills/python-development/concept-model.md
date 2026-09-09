@@ -84,6 +84,7 @@ class QuoteSubscription(BaseModel):
 ## Allowed
 
 - `class X(BaseModel)` with `model_config = ConfigDict(frozen=True, extra="forbid")`
+- `class Kind(Parent)` when the child is a kind of that concept model
 - every field a declared type: a scalar, a value object, a collection element form, a concept model, or a union
 - `from_attributes=True` in the config when the model lifts from objects
 - a defaulted field whose default states what omission means
