@@ -38,17 +38,32 @@ class PriceBook(RootModel[dict[ProductId, Price]], frozen=True):
     root: dict[ProductId, Price]
 
 
+class PriceFound(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    price: Price
+
+
+class PriceMissing(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    product: ProductId
+
+
+PriceAnswer = Annotated[PriceFound | PriceMissing, Field(union_mode="left_to_right")]
+PriceAnswerConstructor = TypeAdapter(PriceAnswer)
+
+
 class PriceQuery(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     book: PriceBook
     product: ProductId
 
+    @property
+    def price(self) -> Price | None:
+        return self.book.root.get(self.product)
+
     @cached_property
-    def answer(self) -> PriceFound | PriceMissing:
-        return next(
-            (PriceFound(price=price) for key, price in self.book.root.items() if key == self.product),
-            PriceMissing(product=self.product),
-        )
+    def answer(self) -> PriceAnswer:
+        return PriceAnswerConstructor.validate_python(self, from_attributes=True)
 ```
 
 ## Allowed Patterns
