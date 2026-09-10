@@ -1,6 +1,6 @@
 ---
 name: python-development
-description: The construct standard for all Python code in this repo is Type Construction Architecture (TCA). In TCA meaning lives in the structure of the type, construction is its proof, every meaning has exactly one structural home and every structure carries exactly one meaning. Use when writing, reviewing, or refactoring any Python code. Covers the executable ontology, the core test, the four breaks, inherited and broken rules, program topology, the 15 constructs, naming, construction discipline, substrate verification, and lineage.
+description: The construct standard for all Python code in this repo is Type Construction Architecture (TCA). In TCA meaning lives in the structure of the type, construction is its proof, every meaning has exactly one structural home and every structure carries exactly one meaning. Use when writing, reviewing, or refactoring any Python code. Covers the executable ontology, the core test, the four breaks, inherited and broken rules, program topology, the 15 constructs, naming, construction discipline, Pydantic as the execution substrate, substrate verification, and lineage.
 ---
 
 # Python Development
@@ -14,6 +14,8 @@ Carried to its conclusion, the correspondence makes the program an **executable 
 Type-driven design argued this principle for the compiler, the reader that erases names and reads structure to decide what is valid. It binds harder now because a second reader has arrived. A language model reads the names and descriptions as instructions and decides what is likely, so the same declaration is read by both: the structure that proves correctness to the machine is identically what programs and bounds the model. One structure carrying one meaning is a single constraint to the machine and a single instruction to the model; a structure carrying several meanings, or a meaning smeared across several structures, dulls both readers at once. For software built on a language model, the executable ontology stops being good taste and becomes the substrate, because every gap between the meaning and the running program is paid on every inference.
 
 **Domain execution is a dependency graph of constructed values, never procedural orchestration.**
+
+Read [pydantic.md](pydantic.md) before interpreting or writing any Pydantic model. Pydantic executes the declared construction graph; it is not a validation step before domain work.
 
 ## The Core Test
 

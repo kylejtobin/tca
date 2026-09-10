@@ -29,17 +29,32 @@ class PriceBook(RootModel[dict[ProductId, Price]], frozen=True):
     root: dict[ProductId, Price]
 
 
+class PriceFound(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    price: Price
+
+
+class PriceMissing(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    product: ProductId
+
+
+PriceAnswer = Annotated[PriceFound | PriceMissing, Field(union_mode="left_to_right")]
+PriceAnswerConstructor = TypeAdapter(PriceAnswer)
+
+
 class PriceQuery(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     book: PriceBook
     product: ProductId
 
+    @property
+    def price(self) -> Price | None:
+        return self.book.root.get(self.product)
+
     @cached_property
-    def answer(self) -> PriceFound | PriceMissing:
-        return next(
-            (PriceFound(price=price) for key, price in self.book.root.items() if key == self.product),
-            PriceMissing(product=self.product),
-        )
+    def answer(self) -> PriceAnswer:
+        return PriceAnswerConstructor.validate_python(self, from_attributes=True)
 ```
 
 The dict holds one slot per key, so a duplicate key has no representation. The query model carries the miss, so a `dict[key]` `KeyError` or a `.get` `None` never appears. This is the named keyed form, never a bare `dict` field. Any semantic scalar used as the key defines canonical string rendering (`__str__` returning its root), proven by a substrate round-trip: a JSON object key is a string, and an unrendered scalar key corrupts on reload. When keys repeat or order is the fact, the sequence form holds instead: an entry model with declared key and value fields, a collection of those entries, and the same query model. A repeated-key question is another query model with a derivation.

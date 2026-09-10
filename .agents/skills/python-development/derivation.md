@@ -65,17 +65,32 @@ A derivation is a function from the model's proven fields to the fact it returns
 A question with an input is a composite fact: a frozen `BaseModel` holding the input and the value being queried, with the answer as a derivation on it, returning a constructed choice.
 
 ```python
+class PriceFound(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    price: Price
+
+
+class PriceMissing(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    product: ProductId
+
+
+PriceAnswer = Annotated[PriceFound | PriceMissing, Field(union_mode="left_to_right")]
+PriceAnswerConstructor = TypeAdapter(PriceAnswer)
+
+
 class PriceQuery(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     book: PriceBook
     product: ProductId
 
+    @property
+    def price(self) -> Price | None:
+        return self.book.root.get(self.product)
+
     @cached_property
-    def answer(self) -> PriceFound | PriceMissing:
-        return next(
-            (PriceFound(price=price) for key, price in self.book.root.items() if key == self.product),
-            PriceMissing(product=self.product),
-        )
+    def answer(self) -> PriceAnswer:
+        return PriceAnswerConstructor.validate_python(self, from_attributes=True)
 ```
 
 ## Sorting
@@ -92,7 +107,7 @@ class PriceQuery(BaseModel):
 - a derivation taking only `self`, body one returned expression, returning a declared type, model, or union
 - `@property` to recompute a cheap fact, `@cached_property` to compute a costly, recursive, or repeatedly-read fact once, both pure over the fields
 - `@computed_field` above `@cached_property` when the fact belongs to a contract's serialized shape
-- a comprehension or generator expression inside the one returned expression
+- a comprehension or generator expression for a collection fold inside the one returned expression
 - the same-named derivation on every variant of a union, read from the union value
 - a frozen query model holding the input and the queried value, its derivation returning the answer
 
@@ -103,5 +118,5 @@ class PriceQuery(BaseModel):
 - a derivable field stored on a model
 - a body that reads anything but the model's own fields (the clock, a client, a random source); a `@cached_property` freezes its first-read value and a `@property` returns a different value each call, so neither is a fact of the fields
 - a derivation returning bare `bool`, `str`, or `int`; a `bool`-returning check is an undeclared union — a staleness check returns `Fresh | Stale`, each variant carrying its own facts
-- a ternary, `and`, `or`, `match`, or private helper call inside the body
+- a ternary, `and`, `or`, `match`, or private helper call inside the body; an `if` clause in a comprehension or generator to simulate branching
 - serialization inside a derivation
