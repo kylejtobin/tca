@@ -1,51 +1,45 @@
 ---
 type: Construct
-description: A frozen BaseSettings model, the only structure that reads environment values.
+description: Environment input constructed once into a frozen settings model, lax on input because the environment is text.
 ---
 
-# config
+# Config
 
 ## Definition
 
-A frozen `BaseSettings` model, the only structure that reads environment values. Every field is a declared scalar or secret type, and it is constructed once by the composition root and injected.
+Deployment values, constructed once from the environment into a frozen `BaseSettings` model. Environment input is text; strict numeric construction on that text rejects the representation before it can become a configuration fact, so settings construct lax. Lax input is not lax meaning: output types, constraints, freezing, and validated defaults are retained.
+
+The package declaring this construct declares `pydantic-settings>=2,<3` beside its Pydantic dependency.
 
 ## Required Form
 
 ```python
-class VenueUrl(RootModel[str], frozen=True):
-    root: str = Field(min_length=1)
-
-
-class PositionConfig(BaseSettings):
-    model_config = SettingsConfigDict(frozen=True, extra="forbid", env_prefix="VENUE_")
+class VenueConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=False,
+        validate_default=True,
+        revalidate_instances="never",
+        env_prefix="VENUE_",
+    )
     url: VenueUrl
     token: SecretStr
 ```
 
-## Sorting Rules
-
-A configured value used in the domain is carried as its declared scalar, never re-read from the environment. Client instantiation from config values belongs to the composition root. A value that is domain state rather than environment fact belongs on the consistency model.
-
-## Replaced Forms
-
-An `os.environ` read scatters the environment through the program; config proves it once at startup. A settings dict carries unproven values; a config singleton hides the read behind import order.
-
-## Secrets
-
-A secret is never a bare `str`: `SecretStr` keeps it out of every dump, repr, and log. `get_secret_value()` is called exactly once, at client instantiation in the composition root.
-
-`BaseSettings` lives in the `pydantic-settings` package; if it is not installed, that is a gap to report, not a reason to read the environment directly.
-
-## Allowed Patterns
-
-- one frozen `BaseSettings` model per program with `SettingsConfigDict(frozen=True, extra="forbid")`
-- an `env_prefix` naming the program's environment namespace
-- every field a declared scalar or `SecretStr`
-- constructed once in the composition root and injected
+- Each independently deployed configuration constructs once at its boundary and is reused as an immutable fact in dependent constructions.
+- Every non-secret field is a semantic scalar or value object.
+- `SecretStr` holds credentials and is revealed only while constructing the concrete client that consumes it, at the [composition-root site](./composition-root.md).
+- Source names live in settings aliases or `env_prefix`.
+- Every default is validated and its omission meaning is explicit.
+- The constructed config, or the capability constructed from it, is injected; the environment is never re-read.
 
 ## Forbidden
 
-- an `os.environ` read anywhere
-- a settings dict or config singleton
-- a secret typed as bare `str`
-- `get_secret_value()` outside the composition root
+- `os.environ` read outside `BaseSettings`
+- a settings dictionary, global singleton accessor, or module-level primitive in place of the settings model
+- a secret typed as `str`
+- a revealed secret logged, serialized, derived, or returned
+- deployment input mixed with mutable runtime state
+- domain `strict=True` copied into settings, or settings' laxness spread into domain models
+- textual input compensated by a parser, validator, or field-copying conversion

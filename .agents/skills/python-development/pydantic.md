@@ -1,154 +1,59 @@
 ---
-type: reference
+type: Reference
+description: How Pydantic executes TCA construction graphs as the runtime construction substrate. Read before implementing or interpreting any whitelisted construct.
 ---
 
-# Pydantic execution substrate
+# Pydantic Execution Substrate
 
-## Governing reading
+## Governing Reading
 
-In TCA, Pydantic is the runtime that executes the declared construction graph. Annotations declare dependencies, models declare constructed facts, fields declare construction edges, and a constructor call evaluates the reachable graph. Success returns a graph of proven domain values. Failure returns no domain value.
+Pydantic is the runtime for TCA. Its annotations compile the construction graph; its constructors execute that graph. Read `model_validate`, `model_validate_json`, `validate_python`, and `validate_json` as constructors. They do not validate a value before the real program; their successful output is the program value.
 
-Pydantic calls this process validation, but it guarantees the constructed output, not the input. Read `model_validate`, `model_validate_json`, `validate_python`, and `validate_json` as constructors. Their API names do not determine their architectural meaning.
+## Construct Mapping
 
-Pydantic is not a preliminary validator in front of the program. The constructed models are the program's values, and constructing them is domain execution.
+- `RootModel` constructs a semantic scalar or named collection.
+- `BaseModel` constructs products: values, concepts (including the state-transition shape), foreign models, contracts, transformations, actions, routes, and interpreters.
+- `Annotated[A | B, Field(...)]` declares a union or ordered union.
+- `TypeAdapter` constructs and serializes a bare union or ordered-union alias.
+- `BaseSettings` constructs configuration from deployment input.
+- Nested annotations create construction edges.
+- `Field`, model configuration, and nested shapes define inhabitable values. Program-owned custom validators are not admitted; [construction](construction.md) carries the rule in the representation.
+- Aliases, `validation_alias`, and `AliasPath` lift foreign names and wrappers.
 
-## The executable graph
+## Mandatory Configuration
 
-At model declaration, Pydantic turns annotations, `Field` metadata, model configuration, collection shapes, and union metadata into a core schema. At construction, `pydantic-core` executes that schema recursively:
+| Construct substrate | Exact configuration |
+|---|---|
+| Owned `BaseModel` | `frozen=True`, `extra="forbid"`, `strict=True`, `validate_default=True`, `revalidate_instances="never"` |
+| Semantic `RootModel` | `frozen=True`, `strict=True`, `validate_default=True`, `revalidate_instances="never"` |
+| Foreign `BaseModel` | `frozen=True`, `strict=True`, `validate_default=True`, `revalidate_instances="never"`; `extra` exactly matches the source contract |
+| `BaseSettings` | `frozen=True`, `extra="forbid"`, `strict=False`, `validate_default=True`, `revalidate_instances="never"` |
+| Effect interpreter | `frozen=True`, `extra="forbid"`, `strict=True`, `validate_default=True`, `revalidate_instances="never"`, `arbitrary_types_allowed=True` |
 
-- a `RootModel` constructs one atomic meaning
-- a `BaseModel` constructs a product from its declared dependencies
-- a nested annotation creates a construction edge to another declared type
-- a tuple or dict annotation constructs its members
-- a discriminated union selects the constructor named by the input's identity
-- a left-to-right union attempts constructors in declared order
-- an alias or `AliasPath` declares how foreign structure reaches a field
-- a default settles the declared meaning of omission
-- `frozen=True` preserves the proof after construction
+Raw nested input constructs recursively. TCA treats existing model instances as prior proofs because every program introduction path uses normal construction; Pydantic does not verify that provenance when revalidation is disabled. `model_construct`, unchecked copying, assignment, `PrivateAttr`, undeclared instance state, and `object.__setattr__` are forbidden proof bypasses. Pydantic freezing is faux immutability under supported APIs, so every semantic constituent uses recursively immutable field types.
 
-The outer value exists only after every required constituent has constructed. No intermediate primitive, dict, partial model, or failed case moves forward.
+The constructor graph is eager: required constituents construct before the outer fact exists. Owned derivations are demand-driven: their declared facts construct when read. Neither requires a mutable current-state reference or a runner that stages domain constructions. The composition root is a named site: `main.py` registers a framework callback once, and that callback evaluates the per-input terminal expression, including read and write interpreters. It is not another declaration form.
 
-## One outer call
+`arbitrary_types_allowed=True` appears only on an effect interpreter field typed as an imported non-program-owned standard-library or third-party capability. That field uses `Field(exclude=True, repr=False)`. Provenance is enforced by the import boundary; Pydantic performs only the instance check. The capability is neither semantic proof nor serializable state, and no program-owned arbitrary class is admitted through it.
 
-Given the [foreign model](foreign-model.md) declarations for `VenueFillMessage`, `VenueFill`, and their semantic-scalar fields:
+## Construction Surfaces
 
-```python
-message = VenueFillMessage.model_validate_json(raw)
-```
+- Use the ordinary constructor for already named Python inputs.
+- Use `model_validate_json` for serialized JSON.
+- Use `model_validate` with `from_attributes=True` for object-shaped foreign input.
+- In attribute mode, use the input alias as the source attribute name: `price: Price = Field(alias="px")` reads `source.px`, not `source.price`. `AliasPath` starts from its named attribute; output-only `serialization_alias` does not affect lookup. Do not infer a domain-named source attribute or compensate with a field-copying mapper.
+- Respect the input mode, not just the annotation. Under `strict=True`, pass `Side.BUY` to a Python constructor; raw Python `"buy"` is refused. JSON construction accepts `"buy"` and constructs the member. Do not infer Python coercion from JSON acceptance or loosen the semantic model to make both inputs alike.
+- Use `TypeAdapter` for a bare union or ordered-union alias.
+- Use `model_dump_json` or the declared framework serializer only at a route or effect interpreter.
+- Use `@property` for every semantic transformation; its one returned expression follows the closed [transformation](constructs/transformation.md) algebra and constructs its typed result. Model membership does not admit arbitrary method bodies.
+- Do not use `@cached_property` on a semantic model because its cache is assignable despite `frozen=True`.
+- Use `@computed_field` only to publish a derived contract field; construct its returned semantic value explicitly because Pydantic does not validate computed output.
+- Serialize alias-bearing wire models with `by_alias=True`. `validation_alias` and `AliasPath` affect input only; `serialization_alias` affects output only.
+- Distinguish computed wire output from reconstruction input; reconstruct with `round_trip=True` or exclude computed output.
+- Use `strict=False` for settings: environment text must construct numeric and other typed configuration values. Keep output constraints and immutability; do not copy this input exception into ordinary semantic models.
 
-Read the call as this graph execution:
+## Forbidden Substrate Paths
 
-```text
-raw transport bytes
-└── VenueFillMessage
-    └── data.payload
-        └── VenueFill
-            ├── ordId → OrderId
-            ├── acct  → AccountId
-            ├── px    → Price
-            └── qty   → Quantity
-```
+`model_construct`, unchecked model copying, assignment mutation, `PrivateAttr`, undeclared instance state, `Any`, `SkipValidation`, mutable nested values, and unvalidated defaults cannot create or alter a semantic value. Report `ValidationError` as construction refusal, never as a domain witness.
 
-One construction decodes the transport representation, traverses its wrappers, resolves its aliases, constructs every semantic scalar, proves every scalar constraint, constructs the nested foreign model, and freezes the completed graph. It does not validate a payload and then require a parser, mapper, normalizer, or domain constructor to finish the work.
-
-Where the foreign shape already matches the domain shape, the domain model itself is the outer constructor and no foreign model exists.
-
-## Construction is execution
-
-Construction does more than admit data at ingress. A newly constructed model can be the next fact in an execution:
-
-```python
-self.latest = Position(prior=self.latest, fill=report)
-```
-
-`Position` is not a record emitted by a procedure. It is the successor fact. Its `prior` field carries the previous proven state, its `fill` field constructs the declared `Fill` from the venue fact, and its existence proves that the transition's dependencies were present. Repeating this construction produces an immutable recursive history.
-
-Model-owned [derivations](derivation.md) execute the rest of the frozen graph on demand. A `@property` derives a cheap fact each time it is read; a `@cached_property` derives a costly or recursive fact once from the proven fields. A recursive derivation reaches the full history through its declared dependencies, without a runner loop walking states or a pipeline accumulating intermediate values.
-
-The constructor graph is eager: constituents must construct before the outer value exists. The derivation graph is demand-driven: a fact is computed when read from its owner. Both are domain execution because both are determined by the structure of declared types.
-
-## Construction selects
-
-Selection belongs to construction, not to a consumer after construction:
-
-- a [union](union.md) discriminator selects and constructs the identified variant
-- an [ordered union](ordered-union.md) attempts the stronger constructor first and constructs the first inhabitable variant
-- a closed semantic scalar constructs one member of its declared value space
-- a declared default settles omission without admitting `None`
-
-The resulting value carries the selected case. A later `match`, `if` ladder, `isinstance` ladder, routing validator, or handler re-decides what construction already proved.
-
-`TypeAdapter` is the constructor for a union alias when raw data arrives without a containing model. It defines no domain structure and makes no decision beyond executing the alias's declared schema.
-
-## Whole foreign lifts
-
-The graph consumes foreign input whole:
-
-- `model_validate_json` constructs from serialized bytes or text
-- `model_validate` constructs from an arrived Python shape
-- `from_attributes=True` constructs from an object's declared attributes
-- `Field(alias=...)` declares a foreign key rename
-- `validation_alias` declares a transport wrapper
-- `AliasPath` declares a path through nested wrappers
-- nested foreign models declare nested foreign structure
-
-If this declarative inventory can reach the value, no parser, mapper, adapter, translator, field-copying function, or before-validator exists. Nothing reads the foreign object after its declared model has constructed.
-
-At other boundaries the same substrate constructs environment facts through [config](config.md), constructs bare aliases through `TypeAdapter`, and serializes contract values at a [route](route.md) or binding. `@computed_field` includes an owned derivation in a contract's serialized shape; it does not make serialization a domain operation.
-
-## Refusal is not a domain result
-
-A successful construction returns the witness that its constraints held. A `ValidationError` means no witness was constructed. It is never caught to manufacture a default, flag, partial object, retry value, or domain refusal.
-
-A domain no is itself a constructible fact: a union variant or ordered-union outcome carrying what that refusal means. Construction failure proves nothing and propagates.
-
-The following APIs bypass proof and are forbidden:
-
-- `model_construct`, which allocates a model without executing its construction schema
-- `model_copy(update=...)`, whose update is not constructed or checked
-- `Any`, `SkipValidation`, or another annotation that removes a domain edge from the executable schema
-- mutation of a frozen value after its construction
-
-State evolves by constructing a successor and re-pointing the [consistency model](consistency-model.md) to it, never by copying a model with unchecked updates.
-
-## The substrate boundary
-
-Pydantic executes declared construction. It does not own time, clients, effects, or arbitrary workflow.
-
-- frozen models construct and derive facts
-- the single consistency model holds live clients and current proven state
-- a [verb](verb.md) admits an arrived fact, constructs at most one successor, re-points state, and emits the proven fact
-- routes and bindings perform transport construction and serialization
-
-The Pydantic API is larger than TCA's legal vocabulary. A custom validator being possible does not give escaped meaning a structural home. Reparameterize cross-field relations, use aliases and unions for structural selection, and report an invariant the construct set cannot prove.
-
-## Mandatory vocabulary
-
-- Not “validate the payload”; **construct the declared fact from transport input**.
-- Not “coerce nested data”; **construct the declared constituent**.
-- Not “map into the domain model”; **lift the foreign shape whole**.
-- Not “run validators”; **execute the construction graph**.
-- Not “handle validation failure”; **no domain value was constructed**.
-- Not “parse and then construct”; **the outer construction consumes the foreign representation**.
-- Not “process the next step”; **construct the fact whose dependencies are already proven**.
-
-## Reader protocol
-
-Before writing or reviewing Pydantic code:
-
-1. Name the outer fact whose existence is required.
-2. Trace its annotated fields, collection members, and variants down to semantic-scalar leaves.
-3. Identify the one outer construction call that can receive the available input.
-4. Let annotations construct every reachable constituent inside that call.
-5. Before proposing a mapper or validator, identify the missing structural node or edge.
-6. Before proposing a branch, identify the union whose construction should select the case.
-7. Pass only the completed constructed value onward.
-8. Put facts implied by proven fields in derivations on their owner.
-9. Keep time and effects at the one live boundary.
-10. Run a substrate probe for every behavioral assumption.
-
-## Substrate claims
-
-Probe the installed Pydantic version before relying on construction behavior. A probe constructs the smallest declared shape, observes the resulting runtime types and serialized identity, and records refusal where construction must fail. Probe nested construction, aliases, discriminators, ordered-union order, defaults, freezing, and round trips at the exact substrate surface the design uses.
-
-The probe establishes what Pydantic executes. The domain model decides what that execution means.
+No program-owned custom validator, constructor override, `model_post_init`, or schema hook supplies domain meaning. Pydantic's built-in construction constraints remain the substrate; handwritten validation is not another construct.

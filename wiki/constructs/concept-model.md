@@ -1,94 +1,66 @@
 ---
 type: Construct
-description: A frozen BaseModel composing declared types into one full domain thing or fact.
+description: A frozen complete domain thing, durable fact, or refinement; the class is the kind.
 ---
 
-# concept model
+# Concept Model
 
 ## Definition
 
-A frozen `BaseModel` composing declared types into one full domain thing or domain fact. The product type whose sum-type sibling is the union: the type is the concept, each field a relation to another concept.
+One complete domain thing, durable fact, or genuine refinement of another concept. The class is the kind: refinement is subclassing, never a `type`, `kind`, registry, or URI field.
 
 ## Required Form
 
 ```python
-class Fill(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
-    order_id: OrderId
-    account_id: AccountId
-    fill_price: Price
-    filled_quantity: Quantity
+class Order(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    id: OrderId
+    account: AccountId
+    instrument: InstrumentId
+    side: Side
+    quantity: Quantity
 
 
-class Position(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    kind: Literal[PositionKind.OPEN] = PositionKind.OPEN
-    prior: PositionState
-    fill: Fill
-
-    @cached_property
-    def exposure(self) -> Exposure:
-        return Exposure(self.prior.exposure.root + self.fill.exposure.root)
+class LimitOrder(Order):
+    limit: Price
 ```
 
-Every field is a declared type: never a bare primitive, never `T | None`, and never a value derivable from other fields. A concept model that pins a `kind` is a union variant.
+An order is the account's instruction, identified by the `OrderId` that `Fill.order_id` references; a limit order is an order with a limit price. A fill is complete when it occurs, so remaining quantity belongs to the order, not to a `PartialFill` refinement invented to demonstrate subclassing.
 
-## Sorting Rules
-
-A small identity-less composition of scalars, equal by value, is a value object. A single value is a semantic scalar. A choice among concept models is a union, and a concept model pinning one axis member is that union's variant. Another system's shape is a foreign model; this program's API shape is a contract model; mutable state is the consistency model.
-
-## Replaced Forms
-
-A dataclass, `NamedTuple`, `TypedDict`, or dict-shaped value carries the shape without the proof. A validator that asserts a relation is a check performed inside construction; the relation reparameterizes. A base class created only to share fields is a second structure for one meaning; the shared field is already shared as the leaf both models compose.
-
-## Construction Discipline
-
-A composite constructs whole in one call: constituents are proven by coercion inside it, never pre-constructed one at a time beside it. Keywords express the lift from a foreign result's attributes; `from_attributes` lifts a whole object; `model_validate_json` lifts serialized data. A dict assembled by hand and fed to `model_validate` where keywords express it is a mapper in miniature. A coalesce on the way in (`x or default`) manufactures a value nothing proved. A check after construction un-proves the value it guards.
-
-## Absence
-
-"May be missing" is never a field. Absence that means something is a union variant named for what absence means, or separate models when absence changes the state shape. When constructing from foreign data, an omitted key resolves to a default that states what omission means, or a variant when omission means a different fact; bare `None` never crosses into the domain.
+The recorded fact couples the ledger's acknowledged sequence to the position it recorded:
 
 ```python
-class PositionKind(StrEnum):
-    OPEN = "open"
-    FLAT = "flat"
-
-
-class Flat(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    kind: Literal[PositionKind.FLAT] = PositionKind.FLAT
-
-    @property
-    def exposure(self) -> Exposure:
-        return Exposure(Decimal("0"))
-
-
-class QuoteSubscription(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    product: ProductId
-    depth: BookDepth = BookDepth(50)
+class PositionRecorded(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    sequence: LedgerSequence
+    position: Position
 ```
 
-`Flat` is the account with no position, and it carries no position fields: absence changed the state shape, so absence is its own variant. `QuoteSubscription.depth` defaults to the venue default, so an omitted foreign key never enters as `None`.
-
-## Allowed Patterns
-
-- `class X(BaseModel)` with `model_config = ConfigDict(frozen=True, extra="forbid")`
-- `class Kind(Parent)` when the child is a kind of that concept model
-- every field a declared type: a scalar, a value object, a collection element form, a concept model, or a union
-- `from_attributes=True` in the config when the model lifts from objects
-- a defaulted field whose default states what omission means
-- derivations implying the model's facts
-- the kind pin `kind: Literal[Axis.MEMBER] = Axis.MEMBER` when the row declares a variant
+- Fields are declared semantic relations to other constructs.
+- A self-typed `prior` field is the [state-transition shape](./state-transition.md); the declaration remains a concept model.
+- Subclass only when every child is a kind of the parent. A refinement inherits every parent field, configuration, property, and semantic method unchanged and only adds stricter facts.
+- Enduring identity is its own semantic scalar field when the thing has identity.
+- Completed facts are frozen and recursively immutable.
+- Facts implied by existing fields are derived through a [transformation](./transformation.md).
+- Identity survives in memory through the class. It does not survive JSON at a base-typed field, so serialized subtype identity that must cross a wire is carried by a discriminated [union](./union.md).
 
 ## Forbidden
 
-- a bare primitive field
-- a `T | None` field
-- a stored field derivable from the others
-- a validator that computes, normalizes, or asserts
-- a `Present` or `Absent` wrapper
-- subclassing a domain model for field reuse
-- a constituent constructed in a separate statement beside its composite
-- an unfrozen model that is not the consistency model
+- a `type`, `kind`, registry, or URI field to simulate class identity
+- subclassing to reuse fields when the child is not a kind of the parent
+- a stored derived fact
+- clients, resources, current state, or effect execution
+- `None`, `Optional`, or a nullable field instead of named constructed absence
+- a foreign or contract representation mirrored without distinct ownership

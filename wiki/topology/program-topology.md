@@ -3,215 +3,77 @@ type: Reference
 description: Where TCA code belongs and which direction dependencies flow.
 ---
 
-# TCA Program Topology
+# Program Topology
 
-The structural companion to TCA's doctrine and [the construct patterns](../constructs/index.md). The doctrine defines what the constructs are and how to build them; this document defines where that code belongs. One without the other is incomplete: well-constructed code in the wrong place, or correctly placed code written as procedure.
+The structural companion to the [definition](../doctrine/definition.md) and the [construct pages](../constructs/index.md). The construct pages define what each form is and how to build it; this page defines where that code belongs and what it may import. Well-constructed code in the wrong place is still the escaped break, because placement is a convention the type does not carry.
 
----
+## Dependency Direction
 
-## The Dependency Graph
+Every arrow means "may depend on". The Python import graph is acyclic. A semantic type may refer recursively to itself or a forward-declared peer; every constructed runtime value remains finite and complete.
 
-A TCA program has gravitational structure. The densest layer — the scalars — sits at the bottom. Everything above composes from below. Nothing below depends on what is above.
+| Construct | May depend on |
+|---|---|
+| Semantic scalar | Pydantic and its primitive or `StrEnum` value space |
+| Value object | Semantic scalars, value objects, unions, collections |
+| Concept model | Semantic scalars, value objects, concept models, unions, collections; a fact that authorizes effects may also derive actions over lower-level concepts |
+| Union | Alternatives on one semantic axis; the union occupies its variants' dependency layer |
+| Ordered union | Domain or foreign alternatives satisfying the sole-failure fallback rule |
+| Collection | Members from its own layer or a lower semantic layer |
+| Transformation | Semantic scalars, value objects, concept models, unions, admitted ordered unions, collections, foreign models, contract models, actions, transformations |
+| Action | Semantic scalars, value objects, concept models including state-transition shapes, unions, collections |
+| Foreign model | Semantic scalars, matching domain values or concepts, and nested foreign models, unions, or collections |
+| Contract model | Semantic scalars, value objects, concept models, unions, collections |
+| Config | Semantic scalars, value objects, `SecretStr`, and the settings substrate |
+| Route | Domain models matching ingress or supplying facts for egress projection, foreign models, and contract models |
+| Effect interpreter | Actions, foreign models, concept-model or union outcomes, and one imported capability |
 
-```mermaid
-flowchart TD
-    M["main.py"] --> SV["service/"]
-    M --> R["api/"]
-    SV --> CM
-    R --> DAPI
+State transition is a concept-model shape and composition root is a site; neither adds a row. A successor fact may derive an action carrying that same fact: the two declarations share their domain module with a forward return annotation, and construction establishes the successor's fields before the derivation is read. A foreign-to-domain transformation depends on both representations only when their meanings actually differ; name or wrapper lifting is nested construction.
 
-    subgraph DOM ["domain / context"]
-        direction TD
-        DAPI["api.py"] --> CM["consistency model"]
-        CM --> FRZ["frozen models"]
-        FRZ <-.-> PEER["peer contexts"]
-        FRZ --> VAL["value.py"]
-        VAL --> TYP["type.py"]
-    end
+Peer domain contexts compose freely at every layer, because every construct is frozen and nothing is context-bound. Direction is always inward: domain modules never import from routes, interpreters, or `main.py`, and a model that serves several contexts lives in the context whose concept it most directly represents.
 
-    classDef sky fill:#dbeafe,color:#1e3a8a,stroke:#93c5fd
-    classDef blue fill:#93c5fd,color:#1e3a8a,stroke:#3b82f6
-    classDef mid fill:#3b82f6,color:#ffffff,stroke:#1d4ed8
-    classDef deep fill:#1e40af,color:#dbeafe,stroke:#1e3a8a
-    classDef abyss fill:#172554,color:#bfdbfe,stroke:#1e3a8a
+## Placement
 
-    class M sky
-    class R,SV blue
-    class DAPI mid
-    class CM,FRZ,PEER deep
-    class VAL,TYP abyss
+```text
+domain/<context>/type.py              semantic scalars
+domain/<context>/value.py             value objects and their unions or collections
+domain/<context>/<concept>.py         concepts, transformations, actions, transitions,
+                                     and their owned unions or collections
+domain/<context>/api.py               contract models
+integration/<system>/model.py         foreign models
+integration/<system>/<meaning>.py     necessary foreign-to-domain transformations
+integration/<system>/interpreter.py   effect interpreters
+api/<context>.py                      routes
+config.py                             config
+main.py                               one-time callback registration and per-input terminal expression
 ```
 
-`main.py` is the composition root — it reaches across to both `service/` and `api/` to wire the program together. Service and route both reach inward to `domain/`. Inside `domain/`, a strict layered dependency descends from the consistency model down to `type.py`. The arrow means "imports from."
+Domain concept files are named for their domain meaning, including files containing transformations, actions, or transitions. Several declarations in a file do not justify `transformation.py`, `action.py`, or `transition.py`; they live with their owning domain concept. `type.py`, `value.py`, and `api.py` keep their stated roles as the vocabulary and contract layers. Foreign models and interpreters live under `integration/<system>/` because their shape and names belong to the other system, so their owner is that crossing.
 
-Peer domain contexts compose freely at the frozen model layer and below. `domain/catalog/type.py` may be imported by `domain/inventory/stock.py`. Domains are primitives, forged to be combined.
+Technology-pattern filenames are forbidden in the domain: `store`, `repository`, `handler`, `controller`, `manager`, `processor`, `router`, and `crud`. They appear in every project regardless of domain, so they say nothing about this one. Dumping-ground names are forbidden too: `utils`, `helpers`, `common`, `misc`, and `shared`; in a TCA program every declaration belongs to a domain concept, and a declaration that cannot be placed is a fact that has not been named. The test: does the filename describe something the domain contains, or something the technology does? Declaration names follow [naming](../constructs/naming.md).
 
----
+A union or collection is colocated with the layer of its variants or members and never moves those dependencies to a higher or lower layer.
 
-## File Roles
+## Boundaries
 
-### `main.py`
+- Domain constructs import no SDK, framework, environment, client, database, broker, filesystem, or subprocess capability.
+- Foreign models contain no live client.
+- Actions contain no interpreter, client, outcome, or mutable current-state reference; an immutable state value may be an effect input.
+- State transitions are immutable successor facts, not procedures; they own any action authorization but no effect execution and no current-state holder.
+- Routes contain no domain decision.
+- Effect interpreters contain no domain transition.
+- `main.py` registers the one-expression callback once and obtains prior state through its nested read interpreter. Omitting either the read source or the evaluation site leaves wiring as escaped meaning. Current-state slots, receive loops, and domain orchestration stay out of the callback.
 
-**Is:** The composition root.
-**Contains:** Dependency construction, service startup, route registration.
-**Imports from:** `config.py`, `service/*.py`, `api/*.py`.
-**Imported by:** Nothing.
-
-This is the outermost shell. It builds the clients, passes them to services, and registers routes with the framework. The only file that reaches across both service and route layers.
-
-### `config.py`
-
-**Is:** Typed configuration.
-**Contains:** Pydantic `BaseSettings` models.
-**Imports from:** Standard library, third-party only.
-**Imported by:** `main.py`, services.
-
-Configuration is a constructed model. A `BaseSettings` object that exists is proven valid — environment variables are typed, constrained, and owned, not scattered as bare `os.environ` reads.
-
-### `api/context.py`
-
-**Is:** A route file. One per domain context with an API surface.
-**Contains:** Route definitions using framework decorators. Request and response types are imported, not defined here.
-**Imports from:** `domain/context/api.py` for contracts. Framework imports for routing.
-**Imported by:** `main.py` for route registration.
-
-The route is a membrane. It maps transport (HTTP, websocket) to domain contracts. Every route file has the same shape: import contracts, declare endpoints, defer to domain types. When a route file grows interesting, meaning has escaped from the domain.
-
-### `service/context.py`
-
-**Is:** A transport shim. One per domain context with a transport dependency.
-**Contains:** A class with a single connect function. The connect function accepts a client (message bus, database, HTTP) and binds it to the context's consistency model.
-**Imports from:** `domain/context/[consistency_model].py`.
-**Imported by:** `main.py` for service startup.
-
-The connect function may include transport-level setup: connection, authentication, channel subscription. It contains no domain logic, no derivation, no classification, no computation. Every service file has the same boring shape. If a service becomes interesting, it is doing work that belongs on the consistency model.
-
----
-
-## Domain Structure
-
-Everything that matters lives in `domain/`. Each context is a subdirectory named for the domain concept it represents — not for a technology, not for a framework role, not for an architectural pattern.
-
-Inside each context, files have a strict layered dependency. Each layer composes from the layers below it and is composed by the layers above.
-
-### `type.py`
-
-**Is:** The dependency root. The atomic vocabulary.
-**Contains:** `RootModel` subclasses with `frozen=True` and `Field()` constraints.
-**Imports from:** Standard library and third-party. From the program, only a value-space enum it would otherwise have to duplicate, taken from a foundation peer context; that import is downward and forms no cycle. Never anything from a higher layer.
-**Imported by:** Everything. Every file in this context and every peer context may import from `type.py`.
-
-Each scalar owns a single value with identity, constraints, and semantic distinction. `LineNumber` is not `int`, it carries `ge=1` and is a different type than `ColumnOffset`, which is also `int` with `ge=0`. The type system distinguishes them. Bare primitives do not.
-
-### `value.py`
-
-**Is:** The second layer. Composed value objects.
-**Contains:** `BaseModel` subclasses with `frozen=True` that compose scalars into richer structures.
-**Imports from:** Its own context's `type.py`, and scalars from foundation peer contexts. Only downward; nothing from a higher layer.
-**Imported by:** Frozen domain models, the consistency model, `api.py` in this context.
-
-A `SourceLocation` composes `LineNumber` with optional `ClassName` and `MethodName`. A `Smell` composes `InvariantName`, `Message`, and `SourceLocation`. These are small proven compositions, richer than a single scalar and simpler than a full domain model.
-
-### `[concept].py` — Frozen Domain Models
-
-**Is:** A domain concept, named for what it represents. `product.py`, `order.py`, `inventory.py`, `customer.py`.
-**Contains:** `BaseModel` subclasses with `frozen=True`. Derivations as `@cached_property`, `@computed_field`, or `@property`.
-**Imports from:** `type.py` and `value.py` in this context. Scalars, values, and frozen models from peer contexts.
-**Imported by:** The consistency model, `api.py`, other frozen models in this context or peer contexts.
-
-Each frozen model is a proven snapshot — correct as of the moment it was built. Its derivations extend that proof. A `@cached_property` that computes from the model's own proven fields is an intrinsic fact that belongs to this model and no other.
-
-Cross-context imports at this layer are natural. Domains are primitives, not sealed bounded contexts. A frozen model in `domain/order/` composing with a scalar from `domain/catalog/type.py` is expected — the dependency graph permits peer-level composition.
-
-### `[consistency_model].py`
-
-**Is:** The convergence point. One per context.
-**Contains:** A `BaseModel` that composes all layers below it. Domain logic as construction and derivation. May hold a transport client as a field. The file holds the consistency model's declared verb surface and the chains those verbs expand from; behavior creates no other file and no other home in the topology.
-**Imports from:** `type.py`, `value.py`, frozen domain models in this context, peer context types.
-**Imported by:** `service/context.py` for transport binding. `api.py` for contract composition.
-
-Named for the domain concept it represents: `catalog.py`, `cart.py`, `session.py`. Not `consistency_model.py`, not `state_manager.py`, not `orchestrator.py`.
-
-**The single frozen exception.** The consistency model may be unfrozen — the only model in the program permitted to be. It represents live state of a bounded context that evolves through model operations on this single object. The mutability is contained:
-
-- One unfrozen model per context. A second unfrozen model means the context is two contexts, or mutability has escaped its container.
-- State evolves through model operations — construction, field-level updates through model methods, derivation. Not through external code reaching in to set attributes.
-- The unfrozen exception is earned by being the convergence point, not granted to any model that finds freezing inconvenient.
-
-### `api.py`
-
-**Is:** Route contracts. Domain-owned boundary types.
-**Contains:** `BaseModel` subclasses defining what crosses the API surface. Request models, response models, contract types.
-**Imports from:** `type.py`, `value.py`, frozen domain models in this context.
-**Imported by:** `api/context.py` route files.
-
-The contracts live in the domain because the domain owns what crosses the boundary. Route files are consumers of these contracts. Types flow outward — domain defines, edge imports. Never the reverse.
-
----
-
-## The Naming Principle
-
-Every file in `domain/` is named for a concept the domain contains. This is a consequence of the types owning the program: if the types are the program, and each type represents a domain concept, then the files that contain those types are the domain vocabulary made visible as directory structure.
-
-**Domain-concept names** describe what the program contains: `product`, `order`, `event`, `inventory`, `session`, `customer`, `invoice`. They differ between projects because domains differ.
-
-**Technology-pattern names** describe what frameworks do: `store`, `repository`, `handler`, `controller`, `manager`, `processor`, `router`, `crud`. They appear in every project regardless of domain.
-
-**Dumping-ground names** admit that code has no domain owner: `utils`, `helpers`, `common`, `misc`, `shared`. In a TCA program every piece of logic belongs to a domain concept. If the concept cannot be named, the logic belongs on an existing model as a derivation.
-
-A domain concept may exist in multiple contexts independently. `event.py` in every context that publishes facts is correct: each context owns the types of the facts it publishes. A technology name in every context (`store.py` in each one) is the opposite signal: files are named for the pattern, not the domain.
-
-The test: does this filename describe something the domain *contains*, or something the technology *does*?
-
----
-
-## Cross-Context Composition
-
-Domains compose freely across context boundaries at the frozen model layer and below. A model in `domain/order/` may import scalars from `domain/catalog/type.py` and frozen models from `domain/catalog/product.py`. The dependency graph permits this — frozen models see their own type and value layers plus peer context types.
-
-The constraints:
-
-- **Direction is always inward.** Domain modules never import from services, routes, or infrastructure. Cross-context imports flow between domain peers only.
-- **Ownership follows the domain.** When a model serves multiple contexts, it lives in the context whose domain concept it most directly represents. When one context already depends on another, the shared model lives in the depended-upon context.
-
----
-
-## Structural Properties
-
-These properties hold for every TCA program. They are the invariants of the topology itself.
-
-One invariant underwrites the rest: the construction graph is acyclic. Nothing depends, even transitively, on what depends on it, which is why a value can always be built before the values that compose it. The per-file rows are the conservative, within-context way to keep it acyclic; across contexts the binding rule is acyclicity itself, so a context composes a foundation peer's constructs freely at any frozen layer. Context boundaries seal exactly one thing, the live node: one consistency model per context. Every frozen construct is placed by layer and composes across contexts; only the live edge is context-bound. The invariant is proven by construction order.
-
-**Every model is frozen except the consistency model.** Frozen means proven and sealed. The consistency model earns its exception by being the single convergence point of live context state. One exception per context.
-
-**`type.py` looks only downward.** It is its context's root and imports nothing from a higher layer; if it looked upward, every file that imports it would transitively inherit the cycle. It may compose a value-space enum from a foundation peer context rather than duplicate that vocabulary, because that import is downward and forms no cycle.
-
-**`value.py` composes scalars, looking only downward.** Its own context's `type.py`, and scalars from foundation peer contexts; never a higher layer. Re-declaring a peer's scalar to keep the import in-context would duplicate a meaning, which is the worse violation.
-
-**Types flow from domain toward edge.** Domain defines types. Services, routes, and `main.py` import them. No edge file defines a type that a domain file imports.
-
-**Every file in `domain/` is named for a domain concept.** Technology-pattern names and dumping-ground names are structural violations, not style preferences.
-
-**Services have one shape.** A class with a connect function that accepts a client. Transport binding only. If the shape varies, domain logic has escaped.
-
-**Routes import contracts from `domain/context/api.py`.** They do not define their own request or response models. The domain owns its boundary types.
-
----
-
-## Reading The Program
-
-The topology is self-documenting. Each layer answers a specific question:
+## Reading the Program
 
 | Layer | Answers |
 |:---|:---|
-| `main.py` | What services and routes compose this program? |
+| `main.py` | What capabilities are bound, and what expression runs per input? |
 | `config.py` | What does the program require from its environment? |
-| `service/` | What transport connections does the program hold? |
 | `api/` | What surfaces does the program expose? |
-| `domain/context/type.py` | What are the atomic values? |
-| `domain/context/value.py` | How do those values compose? |
-| `domain/context/[concept].py` | What concepts does the domain contain? |
-| `domain/context/[consistency_model].py` | Where does live state converge? |
-| `domain/context/api.py` | What crosses the boundary? |
+| `integration/<system>/` | Which other systems does the program read from and act on, and in what shapes? |
+| `domain/<context>/type.py` | What are the atomic values? |
+| `domain/<context>/value.py` | How do those values compose? |
+| `domain/<context>/<concept>.py` | What concepts does the domain contain, what do they imply, what do they authorize, and how do they succeed one another? |
+| `domain/<context>/api.py` | What crosses the boundary? |
 
-Open the domain directory and read the domain. The file listing is the vocabulary. The import graph is the dependency structure. The consistency model is where the context comes alive. No file is mysterious. No file requires reading other files to understand its role.
+Open the domain directory and read the domain. The file listing is the vocabulary. The import graph is the dependency structure. No file is mysterious, and no file requires reading another to understand its role.

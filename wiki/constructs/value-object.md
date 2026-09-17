@@ -1,50 +1,44 @@
 ---
 type: Construct
-description: A frozen BaseModel composing scalars into a small value with no identity.
+description: A frozen identityless product whose meaning is exhausted by field equality.
 ---
 
-# value object
+# Value Object
 
 ## Definition
 
-A frozen `BaseModel` composing scalars into a small value with no identity, equal by value: a measurement, a description, an amount. The composition layer between the semantic scalar and the concept model.
+One descriptive or measured meaning with no identity, occurrence, lifecycle, or independent reference beyond its fields. Equality of all fields exhausts its meaning.
 
 ## Required Form
 
 ```python
-class Spread(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    best_bid: Price
-    width: SpreadWidth
+class Quote(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    bid: Price
+    spread: Spread
 
-    @cached_property
-    def best_ask(self) -> Price:
-        return Price(self.best_bid.root + self.width.root)
+    @property
+    def ask(self) -> Price:
+        return Price(self.bid.root + self.spread.root)
 ```
 
-## Sorting Rules
+[Spread](./semantic-scalar.md) is the nonnegative width. `Quote` owns the bid, the spread, and the derived ask; a product is never named for one of its fields.
 
-A single value is a semantic scalar. A full domain thing or fact, anything with domain identity or a kind pin, is a concept model. A value object never holds a client, never pins a kind, and two value objects with equal fields are the same value.
-
-## Replaced Forms
-
-A tuple or dict of primitives carries the parts without the proof or the name. A dataclass pair carries the shape without construction as proof. A validator asserting a relation between fields is a check performed inside construction; the relation is reparameterized instead.
-
-## Reparameterization
-
-A relation no single field constrains is part of the composite proof, never a guard after it: reparameterize so the relation collapses into a single-field constraint and a derivation. `Spread` holds `best_bid` and a non-negative `width` and derives `best_ask`, so an inverted spread has no representation. A reparameterization that seems to distort the model is the signal that the related fields are their own concept, not yet factored.
-
-## Allowed Patterns
-
-- `class X(BaseModel)` with `model_config = ConfigDict(frozen=True, extra="forbid")`, fields scalars or value objects
-- a cross-field relation reparameterized into one constrained field plus a derivation
-- derivations implying the value's facts
+- Every field is a semantic scalar, value object, union, or collection; a reference to an identified concept is its identity scalar, not the concept model, because embedding the concept would make equality depend on its whole state and fuse identity with content.
+- The independent parameters are stored and every implied fact is derived.
+- A cross-field relation is reparameterized so invalid combinations have no representation.
+- Meaningful absence or distinct alternatives are named union variants, never nullable fields.
 
 ## Forbidden
 
-- a bare primitive field
-- a `T | None` field
-- a kind pin or any identity field
-- a client or handle as a field
-- a validator asserting a relation between fields
-- a stored field derivable from the others
+- an identity field
+- a derived field stored beside its source fields
+- a mutable constituent
+- a client, resource, interpreter, or current-state pointer
+- an anonymous tuple or dictionary in place of the value object

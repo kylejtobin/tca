@@ -7,7 +7,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSL 1.1"></a>
 </p>
 
-<p align="center"><strong>Your software's meaning lives in its types.<br>Construction is its proof.<br>Every meaning has one structural home.<br>Every structure carries one meaning.<br>Fifteen constructs. No sixteenth.</strong></p>
+<p align="center"><strong>Your software's meaning lives in its types.<br>Construction is its proof.<br>Every meaning has one structural home.<br>Every structure carries one meaning.<br>Thirteen constructs. No fourteenth.</strong></p>
 
 ---
 
@@ -63,13 +63,29 @@ There is no fifth. Every forbidden pattern is one of these four, and every appro
 
 ---
 
-## Fifteen Shapes, No Sixteenth
+## Thirteen Shapes, No Fourteenth
 
-You build your whole domain from fifteen constructs. Each carries one meaning and rejects the shapes that bury it: the bare primitive, the `if/elif` ladder, the mapper, the stray helper.
+You build your whole domain from thirteen declaration forms, one named shape, and one named site. Each carries one meaning and rejects the shapes that bury it: the bare primitive, the `if/elif` ladder, the mapper, the stray helper.
 
-<p align="center"><img src="img/table-constructs.png" alt="The fifteen constructs, each with what it means and what it replaces. Semantic scalar: one atomic domain value, replacing the bare primitive. Value object: a small value made of scalars with no identity, replacing the tuple or dict of primitives. Concept model: one full domain thing or fact made of declared types, replacing the dataclass, the T-or-None field, the validator. Collection: a sequence that is its own domain thing, replacing the raw list, set, or dict field. Union: a closed choice over one axis, replacing the bool, the if/elif, the isinstance ladder. Ordered union: outside data tried in order, allowed to fail, replacing the try/except that returns a default. Derivation: a fact worked out from a value's own proven fields, replacing the helper, util, or stored computed field. Foreign model: another system's shape taken in whole at the edge, replacing the mapper, adapter, DTO. Contract model: your own API request or reply shape, replacing reuse of a foreign shape. Consistency model: the one live spot where changing state collects, replacing the manager, engine, or module-level client. Verb: one change of state on the consistency model, replacing the multi-step service method. Binding: the clients tied to the consistency model, replacing the repository. Route: build a value, send it in, return the reply, replacing the handler that parses, computes, and decides. Config: the environment read once into a typed value, replacing scattered os.environ reads. Composition root: the start that wires config, clients, bindings, routes, replacing the runner, orchestrator, or step list." width="900"></p>
+| Construct | What it means | What it replaces |
+|---|---|---|
+| [Semantic scalar](wiki/constructs/semantic-scalar.md) | One atomic meaning over a primitive or closed value space | The bare primitive |
+| [Value object](wiki/constructs/value-object.md) | A frozen identityless product exhausted by field equality | The tuple or dict of parts |
+| [Concept model](wiki/constructs/concept-model.md) | A complete domain thing, durable fact, or refinement; the class is the kind | The `kind` field and the registry |
+| [Union](wiki/constructs/union.md) | A closed sum on one semantic axis, each variant carrying its own facts | The `if/elif` ladder and the `bool` decision |
+| [Ordered union](wiki/constructs/ordered-union.md) | Attempt-order construction where the strong variant's sole failure means the fallback | The `try/except` and the `.get()` returning `None` |
+| [Collection](wiki/constructs/collection.md) | A frozen typed sequence with meaning of its own | The mutable list and the dict used as a namespace |
+| [Transformation](wiki/constructs/transformation.md) | A pure implication from proven inputs to a constructed output, one expression from a closed algebra | The helper function and the service method |
+| [Foreign model](wiki/constructs/foreign-model.md) | Another system's shape lifted whole into a frozen model | The mapper, the adapter, the DTO |
+| [Contract model](wiki/constructs/contract-model.md) | This program's published request or reply, exactly the decided wire facts | The hand-built response dict |
+| [Config](wiki/constructs/config.md) | Environment input constructed once into a frozen settings model | The scattered `os.environ` read |
+| [Route](wiki/constructs/route.md) | One transport crossing, constructing ingress and projecting egress | The handler that parses by hand |
+| [Effect interpreter](wiki/constructs/effect-interpreter.md) | Execution of one action through one capability, constructing the observed outcome | The client call inside domain code |
+| [Action](wiki/constructs/action.md) | An intended external effect as a frozen value | The side effect performed in place |
+| [State transition](wiki/constructs/state-transition.md) | The concept-model shape whose self-typed `prior` represents succession | The mutable aggregate and the re-pointed field |
+| [Composition root](wiki/constructs/composition-root.md) | The site where a framework callback evaluates the per-input terminal expression | The runner, the loop, the current-state local |
 
-Each construct has one page: definition, required form, sorting rules, the forms it replaces, and what it forbids. Every example shares one domain, venue fills, positions, and orders, and is correct to copy verbatim. The set is [`wiki/constructs/`](wiki/constructs/index.md).
+Each construct has one page: definition, required form, the rules that follow from the principle, and what it forbids. Every example shares one domain, venue fills, positions, and orders, and is correct to copy verbatim. The set is [`wiki/constructs/`](wiki/constructs/index.md).
 
 ---
 
@@ -82,12 +98,12 @@ The doctrine is written twice, once for each reader, and the two are kept in agr
 | Directory | Question it answers |
 |-----------|---------------------|
 | [`doctrine/`](wiki/doctrine/index.md) | What the test is, and why it binds now |
-| [`constructs/`](wiki/constructs/index.md) | What the fifteen legal shapes are |
+| [`constructs/`](wiki/constructs/index.md) | What the thirteen legal shapes, the succession shape, and the composition site are |
 | [`topology/`](wiki/topology/index.md) | Where each shape lives, and which way dependencies flow |
 | [`discovery/`](wiki/discovery/index.md) | How you find out what the world contains before you build it |
 | [`practice/`](wiki/practice/index.md) | How to design from a proof obligation and read a construction graph |
 
-**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-development`](.agents/skills/python-development/SKILL.md) loads when a model is about to write Python and holds the same test, the same fifteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
+**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-development`](.agents/skills/python-development/SKILL.md) loads when a model is about to write Python and holds the same test, the same thirteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
 
 ---
 
@@ -102,4 +118,4 @@ It is the good half of typed functional programming, domain-driven design, and a
 - **The whole idea**, the one rule and the four ways it breaks: [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md)
 - **Why the domain belongs in the running code now**: [`wiki/doctrine/programs-are-ontologies.md`](wiki/doctrine/programs-are-ontologies.md)
 - **How the wiki fits together, and what to read first**: [`wiki/practice/learning-path.md`](wiki/practice/learning-path.md)
-- **The fifteen constructs**: [`wiki/constructs/`](wiki/constructs/index.md)
+- **The thirteen constructs**: [`wiki/constructs/`](wiki/constructs/index.md)

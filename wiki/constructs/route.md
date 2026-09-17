@@ -1,43 +1,67 @@
 ---
 type: Construct
-description: The function at transport ingress: construct, dispatch, serialize.
+description: A frozen model of one transport crossing, constructing ingress and projecting egress.
 ---
 
-# route
+# Route
 
 ## Definition
 
-The function at transport ingress. It constructs a contract model or foreign model from raw transport data, unwraps transport wrapper structure, dispatches the value the verb consumes, and serializes the reply. It defines no types and computes no domain fact.
+Where a transport representation enters or leaves the program. A route is a frozen model whose construction completes one transport crossing. `Route` is an admitted edge suffix: it identifies the crossing rather than claiming another domain meaning, and it is not permission for role-named domain models.
 
 ## Required Form
 
 ```python
-def fill_route(raw: str, model: PositionConsistencyModel) -> str:
-    message = VenueFillMessage.model_validate_json(raw)
-    model.book(message.fill)
-    return OrderReceipt(order_id=message.fill.order_id).model_dump_json()
+class FillRoute(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    fill: Fill = Field(
+        validation_alias=AliasPath("data", "payload")
+    )
+
+    @classmethod
+    def receive(cls, raw: str) -> "FillRoute":
+        return cls.model_validate_json(raw)
+
+
+class FillReplyRoute(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    recorded: PositionRecorded
+
+    def emit(self) -> str:
+        return FillBooked(
+            sequence=self.recorded.sequence,
+            net_quantity=self.recorded.position.net_quantity,
+        ).model_dump_json(by_alias=True)
 ```
 
-The route dispatches `message.fill`, the innermost value the verb consumes, never the transport wrapper. The reply is one of the two legal serialization sites.
+The [composition-root callback](./composition-root.md) returns `FillReplyRoute` holding the interpreter's `PositionRecorded` fact once. `emit` projects its sequence and net quantity into `FillBooked` and serializes only that contract, not the recorded position history.
 
-## Sorting Rules
-
-The shape the route constructs belongs to whoever owns it: a contract model when this program publishes the API, a foreign model when the caller's shape is another system's. Domain work belongs to the verb the route dispatches to. Wiring and registration belong to the composition root.
-
-## Replaced Forms
-
-A handler that parses fields by hand restates the construction the model performs in one call. A handler that computes or decides is domain meaning escaped to the edge; the route turns transport into a construction and back, nothing more.
-
-## Allowed Patterns
-
-- one function per ingress: one construction from raw transport data, one dispatch of the innermost value, one serialized reply
-- contract and foreign models imported from the files that declare them
-- `model_dump_json` on the reply contract, the route being a legal serialization site
+- Exactly one route constructs from the whole transport representation.
+- The route's annotated domain, foreign, or contract field recursively constructs the ingress value. Here `data.payload` already has the domain `Fill` shape and meaning, so a foreign model or lift would duplicate that construction.
+- The constructed field is exposed to the transformation, transition, or interpreter that consumes it.
+- A separate egress route holds the constructed fact from which it projects the declared outbound contract.
+- `FillRoute.receive` is registered as the framework's input constructor and `FillReplyRoute.emit` as its output serializer. The route contains no domain execution.
+- Authentication extraction, status codes, headers, and protocol framing stay inside the route when they are transport facts.
 
 ## Forbidden
 
-- parsing transport fields by hand
-- transforming or computing domain data
-- branching on a domain case
-- dispatching a transport wrapper into a verb
-- defining any type in the route's file
+- a domain decision
+- a successor state constructed
+- an action executed
+- current state or a concrete client held
+- fields parsed by hand where the declared construction graph expresses the transport
+- a transport wrapper passed into a domain construct
+- a domain transformation; projecting already-declared facts into an outbound contract is egress, not a new domain calculation
+- reply dictionaries assembled, or semantic fields selectively included or excluded

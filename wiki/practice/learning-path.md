@@ -11,7 +11,7 @@ You do not need to read everything before you can start. You do need one mental 
 
 > Meaning lives in the structure of the type, and construction is its proof.
 
-A value exists only when the fact it represents has been proven. A validation you would write later is a type you have not written yet. A mapper that copies fields is a sign that one meaning has been split across places. A service method that computes a fact from a model's own fields is a derivation that escaped its owner.
+A value exists only when the fact it represents has been proven. A validation you would write later is a type you have not written yet. A mapper that copies fields is a sign that one meaning has been split across places. A service method that computes a fact from a model's own fields is a transformation that escaped its owner.
 
 ## The Fast Path
 
@@ -63,7 +63,7 @@ Read the arrows as dependencies of understanding. You can enter from the problem
 
 [`constructs/`](../constructs/index.md) is the rulebook. It is not background reading. It is the source every legal source shape derives from: definitions, required forms, sorting rules, replaced forms, allowed patterns, forbidden patterns, and substrate claims. If a structure feels missing, read this before inventing a helper, mapper, validator, service, branch, or fallback.
 
-[`program-topology.md`](../topology/program-topology.md) is the ownership map. TCA is not only a set of model shapes; it is a dependency graph. Scalars sit at the root, values compose scalars, concepts compose declared types, the consistency model is the one live node, and edge files wire transport and startup without owning domain meaning.
+[`program-topology.md`](../topology/program-topology.md) is the ownership map. TCA is not only a set of model shapes; it is a dependency graph. Scalars sit at the root, values compose scalars, concepts compose declared types and derive the actions they authorize, and edge files carry transport and capabilities without owning domain meaning.
 
 [`proofs-and-graph.md`](proofs-and-graph.md) is the practice guide. It teaches how to start from a proof obligation instead of a class shape, how to recover the hidden construction graph from procedural code, and how to decide whether a shared leaf is honest reuse or a fused meaning.
 

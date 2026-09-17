@@ -1,74 +1,62 @@
 ---
 type: Construct
-description: A frozen RootModel over one primitive or one closed value space.
+description: One atomic meaning over a primitive or a closed value space.
 ---
 
-# semantic scalar
+# Semantic Scalar
 
 ## Definition
 
-A frozen `RootModel[P]` over one primitive or one closed value space, carrying a `Field(...)` constraint or a docstring stating why the open range is the domain fact. The atomic domain value: it references no domain type.
+One atomic program meaning whose value space is primitive, constrained primitive, or closed vocabulary. If the value has no independent meaning, it stays inside its owning construct.
 
 ## Required Form
 
 ```python
-class Price(RootModel[Decimal], frozen=True):
+class Price(RootModel[Decimal]):
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
     root: Decimal = Field(gt=0, decimal_places=8)
 
 
-class Quantity(RootModel[Decimal], frozen=True):
-    root: Decimal = Field(gt=0)
+class Spread(RootModel[Decimal]):
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: Decimal = Field(ge=0)
 
 
-class OrderId(RootModel[str], frozen=True):
-    root: str = Field(min_length=1)
+class NetQuantity(RootModel[Decimal]):
+    """Signed holding; negative is short."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
 
 
 class Side(StrEnum):
     BUY = "buy"
     SELL = "sell"
-
-
-class OrderSide(RootModel[Side], frozen=True):
-    root: Side
-
-    @property
-    def opposite(self) -> "OrderSide":
-        return OrderSide({Side.BUY: Side.SELL, Side.SELL: Side.BUY}[self.root])
-
-
-class OrderNote(RootModel[str], frozen=True):
-    """A trader's free-text note on an order. Unconstrained on purpose: any text, including empty, is a legal note."""
-
-    root: str
 ```
 
-The allowed primitives are `str`, `int`, `float`, `Decimal`, `bool`, `bytes`, and `date`. A closed vocabulary wraps a `StrEnum` or `Literal` value space; the `StrEnum` is the value space, the role `gt=0` plays. A scalar derivation on a closed value space selects by data lookup, never by a ternary or a branch.
-
-## Sorting Rules
-
-One axis, every member the same kind of thing: a scalar. A member needing a field or behavior a sibling lacks: two axes, a union. A value composed of other values: a value object or concept model.
-
-## Replaced Forms
-
-A bare primitive standing for a domain value holds its meaning in a variable name no downstream reader receives. A vocabulary scattered as string literals is unnamed and unproven. An unconstrained `RootModel[str]` with no docstring and no genuine name is a structure with no meaning.
-
-## Root Discipline
-
-A scalar constructs where its composite is proven: a raw value passed where the scalar field stands constructs it inside the composite's own call. Pass the declared value onward. `.root` is read in exactly two settings: inside a derivation's one returned expression, where the bare value immediately feeds the construction of the declared type the derivation returns, and where the program meets the wire, at a client binding or a route reply. A bare `.root` value is consumed by the construction or the client call that reads it, never assigned, stored, or passed onward.
-
-## Allowed Patterns
-
-- `class X(RootModel[P], frozen=True)` over one allowed primitive with a `Field(...)` constraint stating the domain's bound
-- `class X(RootModel[E], frozen=True)` over a `StrEnum` or `Literal` value space
-- an unconstrained scalar whose docstring states why the open range is the domain fact
-- a derivation on the scalar returning a declared type, selecting by data lookup on a closed space
+- A frozen `RootModel[P]` wraps a primitive; a `StrEnum` is a closed string vocabulary on its own, and wrapping it again is a second structure for one meaning.
+- In strict Python construction, pass the enum member (`Side.BUY`), not raw `"buy"`. JSON accepts that string and constructs the member; acceptance in JSON mode does not grant Python-mode coercion.
+- Every bound goes in `Field`; an open range has a docstring stating that every primitive value is valid.
+- The scalar itself crosses semantic boundaries. `.root` is read only inside a transformation, route, interpreter, or composition-root expression that immediately consumes the primitive.
 
 ## Forbidden
 
-- a bare primitive used as a domain value
-- string literals used as a closed vocabulary
-- a standalone enum used as a field type
-- an unconstrained `RootModel` without a stated openness
-- a ternary or branch inside a scalar derivation
-- a bare `.root` value assigned, stored, or passed onward; `.root` is read only inside a derivation's returned construction, at a client binding, or at a route reply
+- the same scalar type for values with different meanings
+- a scalar for an incidental primitive
+- a bare primitive where a semantic scalar is required
+- a `StrEnum` wrapped again unless the wrapper adds a different meaning
+- a branch to enforce a bound after construction

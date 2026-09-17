@@ -29,7 +29,7 @@ Structure comes before vocabulary here too. "Transfer" as a purpose duplicates a
 
 ## The whitelist is the pattern
 
-The construct pages are a whitelist, and anything not on it is forbidden. The whitelist is the fifteen constructs and each page's allowed and forbidden forms. It is not a vocabulary of names, and its primitive list is not a closed set of atoms. A scalar over `AwareDatetime` and a scalar over `UUID7` are the semantic scalar pattern: one value space, one constraint, proven at construction. Offering `str` with a regex to stay inside a literal reading of the primitive list is modeling the primitive to avoid the work, which is the forbidden thing wearing a whitelist costume. Model everything: for every noun the evidence shows, pick the value space in which the wrong value cannot be built.
+The construct pages are a whitelist, and anything not on it is forbidden. The whitelist is the thirteen declaration forms, the state-transition shape, the composition-root site, and each page's required and forbidden forms. It is not a vocabulary of names, and its primitive list is not a closed set of atoms. A scalar over `AwareDatetime` and a scalar over `UUID7` are the semantic scalar pattern: one value space, one constraint, proven at construction. Offering `str` with a regex to stay inside a literal reading of the primitive list is modeling the primitive to avoid the work, which is the forbidden thing wearing a whitelist costume. Model everything: for every noun the evidence shows, pick the value space in which the wrong value cannot be built.
 
 ## The written pass
 

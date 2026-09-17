@@ -1,65 +1,60 @@
 ---
 type: Construct
-description: Another system's data shape, named for the other system's thing.
+description: Another system's representation lifted whole into a frozen typed boundary model.
 ---
 
-# foreign model
+# Foreign Model
 
 ## Definition
 
-A frozen `BaseModel` of another system's data shape, named for the other system's thing: its aliases hold that system's keys, and its fields are this program's domain meanings. It exists only when the foreign shape differs from the domain shape, and it carries every field the program uses from the foreign data.
+Another system owns a representation whose names, nesting, omission, or value meanings differ from this program's domain model. The foreign model is named for the other system's thing, its aliases hold that system's keys, and it lifts the source whole in one construction.
 
 ## Required Form
 
 ```python
 class VenueFill(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
     order_id: OrderId = Field(alias="ordId")
-    account_id: AccountId = Field(alias="acct")
-    fill_price: Price = Field(alias="px")
-    filled_quantity: Quantity = Field(alias="qty")
+    account: AccountId
+    instrument: InstrumentId
+    side: Side
+    price: VenuePrice = Field(alias="px")
+    quantity: VenueQuantity = Field(alias="qty")
 
 
-class VenueFillMessage(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    fill: VenueFill = Field(validation_alias="data")
-
-
-class VenueStreamMessage(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    fill: VenueFill = Field(validation_alias=AliasPath("data", "payload"))
+class LedgerAcknowledgement(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    sequence: LedgerSequence
 ```
 
-The declarative inventory: `Field(alias=...)` for a key rename, `validation_alias` for data wrapped at one key, `AliasPath` for data under nested wrapper keys, nested foreign models for nested structure, `from_attributes=True` for objects, `model_validate_json` for serialized data.
+`LedgerAcknowledgement` is the ledger's reply, containing its assigned sequence. The [interpreter](./effect-interpreter.md) combines it with the position it submitted to construct the domain fact `PositionRecorded`; the foreign reply does not claim to carry that position.
 
-## Sorting Rules
-
-If the foreign shape already matches the domain model, construct the domain model directly; the constructor does the entire job and no foreign model exists. This program's own API shape is a contract model, never a foreign model. Foreign data that carries no identity and is expected to fail constructs through the ordered union. A live client is held by the consistency model, never on a foreign model.
-
-## Replaced Forms
-
-A mapper, adapter, translator, DTO, or field-copying function restates work the constructor owns: the foreign model lifts whole in one call. A `json.loads` dict carries unproven data through the program. A before-validator that indexes, renames, routes, or computes is an alias, a path, or a nested model not yet written.
-
-## Whole Lift
-
-The crossing takes the foreign data whole: `model_validate` on an arrived object, `model_validate_json` on arrived bytes, or keyword construction lifting a result's attributes. The foreign model carries every field the program uses, and nothing reads the foreign object after a model has been constructed from it. An omitted foreign key resolves at lifting: a default naming what omission means, or a union variant when omission means a different fact; bare `None` never crosses in. No coalesce mints data the wire did not carry. A foreign key holding a raw primitive validates into its semantic-scalar field: `model_validate` wraps the value and applies the scalar's constraint. Type the field as the scalar, never the primitive; never pre-wrap the value.
-
-A foreign object graph you must walk yourself (a hand-written `ast` traversal, a DOM walk, a reflection sweep) is not a foreign model crossing: that walk is a meaning no construct carries, and its one legal output is a reported gap. But a converter that renders the graph whole as a tagged dict tree (an `ast` tree dumped to dicts, each tagged by its node kind) is a crossing: `model_validate` lifts the dict into a discriminated union keyed on the foreign tag, one frozen variant per node kind, with `extra="ignore"` for keys outside the modeled set. The walk is the converter's, not the program's.
-
-## Allowed Patterns
-
-- a frozen `BaseModel`, `extra="forbid"`, every field a declared type, named for the foreign thing
-- `Field(alias=...)` for every rename, the aliases holding the foreign keys
-- a nested foreign model for every nested foreign structure
-- `validation_alias` and `AliasPath` for transport wrappers, the wrapper modeled, never indexed past
-- `from_attributes=True` for objects; `model_validate_json` for serialized data
-- an omitted key resolved by a named default or a variant
+- Nested annotations model nested source structure; domain types are reused where meaning and shape agree, and nested foreign models appear only where they differ.
+- `validation_alias`, `AliasPath`, `model_validate_json`, and `from_attributes=True` lift the source whole. With `from_attributes=True` the aliases are the attribute names read from the object: `ordId`, `px`, `qty`.
+- Every source field the program consumes is modeled, and no unconsumed field.
+- Source-owned scalar meanings are used where the source's semantics differ.
+- Names and nesting are lifted through annotations and aliases, never a field-copying transformation. A [transformation](./transformation.md) exists only for an actual semantic conversion, such as source quantities in a different unit; crossing the boundary alone justifies no lift.
+- `extra` matches the source contract: forbid closed input, ignore only fields the source explicitly permits consumers to ignore.
+- An alias-bearing source representation serializes with `by_alias=True`; `validation_alias` and `AliasPath` do not define output names.
 
 ## Forbidden
 
-- a mapper, adapter, translator, DTO, or field-copying function
-- a `json.loads` result carried as a dict
-- a before-validator that indexes, renames, routes, or computes; any `mode="after"` validator
-- a model named for a pipeline stage instead of the foreign thing
-- an attribute read on a foreign object after its model was constructed
-- a live client or handle retained as a field
+- foreign vocabulary copied into a domain concept
+- raw dictionaries or SDK objects kept after the foreign model constructs
+- fields read again from the source object
+- any program-owned custom validator; annotations and aliases express construction
+- a live client or resource held as a field
+- a foreign model where the domain model already matches the source meaning and shape
+- a transformation repeating construction already expressed by annotations, aliases, or `from_attributes=True`

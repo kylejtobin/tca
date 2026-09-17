@@ -1,60 +1,69 @@
 ---
 type: Construct
-description: The program entrypoint that wires config, clients, bindings, and routes.
+description: The site where a framework callback evaluates the per-input terminal expression.
 ---
 
-# composition root
+# Composition Root
 
 ## Definition
 
-The program entrypoint. It constructs config, instantiates concrete clients, passes them to bindings, constructs the consistency model, and registers or invokes routes. It holds no domain logic and defines no domain model.
+`main.py` is the registration site, not a declaration form. The pointer to the last successor has nothing to prove, so it has no type, and the in-memory copy of it would duplicate the fact the ledger holds. So there is no runner, no receive loop, and no current-state local. The framework owns the stream; the program owns one expression per input, and that expression nests the read of prior state so that state acquisition and evaluation are both modeled.
 
 ## Required Form
 
-```python
-def main() -> None:
-    config = PositionConfig()
-    bus = BusClient(config.url.root, config.token.get_secret_value())
-    ledger = LedgerClient(config.url.root, config.token.get_secret_value())
-    model = PositionBinding().connect(bus=bus, ledger=ledger, opening=Flat())
-    run_ingress(lambda raw: fill_route(raw, model))
-```
-
-A long-running program's root is the same shape made async; signal handling and graceful teardown are wiring and live here, nowhere else.
+In `main.py`, configuration constructs and the concrete client binds at module scope, once:
 
 ```python
-async def main() -> None:
-    config = PositionConfig()
-    bus = BusClient(config.url.root, config.token.get_secret_value())
-    ledger = LedgerClient(config.url.root, config.token.get_secret_value())
-    model = PositionBinding().connect(bus=bus, ledger=ledger, opening=Flat())
-    shutdown = asyncio.Event()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        asyncio.get_running_loop().add_signal_handler(sig, shutdown.set)
-    await shutdown.wait()
-    await bus.drain()
+config = VenueConfig()
+client = PositionClient(config.url.root, config.token.get_secret_value())
 ```
 
-`.root` and `get_secret_value()` are legal here because the composition root is a client binding site, one of the two places the program meets the wire.
+`receive_fill` closes over this `client`. A capability bound here is not a break, because a capability is not a meaning; this is the composition-site binding, not a module-level domain value or current-state holder.
 
-## Sorting Rules
+Registration uses the application's existing framework API:
 
-Domain construction belongs to the consistency model and its verbs; the root only wires. Client binding belongs to the binding; the root instantiates clients and hands them over. Request handling belongs to routes; the root registers or invokes them. Environment reads belong to config; the root constructs it once.
+```text
+Registration: once, in main.py
+Input constructor: FillRoute.receive
+Callback: receive_fill
+Output serializer: FillReplyRoute.emit
+```
 
-## Replaced Forms
+```python
+def receive_fill(message: FillRoute) -> FillReplyRoute:
+    return FillReplyRoute(
+        recorded=PersistPositionInterpreter(
+            action=Position(
+                prior=ReadPositionInterpreter(
+                    action=ReadPosition(
+                        account=message.fill.account,
+                        instrument=message.fill.instrument,
+                    ),
+                    client=client,
+                ).execute(),
+                fill=message.fill,
+            ).persistence,
+            client=client,
+        ).execute(),
+    )
+```
 
-A runner, pipeline, orchestrator, or step list is a hand-kept copy of an order the construction graph already determines: a value cannot construct before its inputs, so evaluation order is the sequence. A function that calls everything in order means the terminal object has not been named; name it and construct it.
+The read executes because the successor's construction depends on its outcome; the dependency graph determines order, and no statement sequences it. The acknowledgement carries the position that was recorded, so the reply route holds one fact once and its registered `emit` projects the two-field contract.
 
-## Allowed Patterns
-
-- one `main()` that constructs config, instantiates clients, binds through bindings, constructs the consistency model, and registers or invokes routes
-- the async form with signal handlers, a shutdown event, and client drain
-- `.root` and `get_secret_value()` at client instantiation
-- input read and output emitted only at the edges of `main`
+- Configuration, the concrete client, and callback registration bind once at this site, following the client's documented resource lifetime.
+- The input constructor, callback, and output serializer register explicitly; "the framework handles it" substitutes for no binding.
+- The terminal meaning is named and constructed; its annotated dependencies construct inside the outer call. Already constructed inputs pass directly.
+- Externally owned prior state arrives through the read interpreter inside the expression, never through a retained snapshot.
+- The declared interpreter binds without class tests or a dispatch registry. A fact with several effect families exposes each as its own derivation, and each binds to its own interpreter.
+- This free boundary callback is the only admitted free function: typed input, one returned terminal expression, no local staging or domain branching.
 
 ## Forbidden
 
-- an orchestrator, pipeline, or step-runner sequencing domain work
-- a domain computation in the entrypoint
-- a domain model defined in the entrypoint's file
-- an environment read outside config
+- a program-owned runner, receive loop, state-advancement loop, or multi-statement domain callback
+- orchestration moved into a model method, property, constructor hook, callback chain, or custom validator
+- a mutable consistency holder or a local or global current-state reference to re-point
+- a runner, pipeline, manager, service, graph registry, or step list
+- domain policy supplied through construction order, action selection, or action filtering
+- an effect executed in a constructor, or constructing an interpreter mistaken for performing its effect
+- a domain-relevant observed outcome discarded; it is a fact for the next declared construction, not a flag for a runner
+- the source of prior state or the site that evaluates the terminal expression left implicit
