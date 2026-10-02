@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# smell-check: find the five procedural patterns in TCA Python code.
+# Usage: smell-check <path>...   Exit 1 if anything is found, 0 if clean.
+# Every hit is a violation. There is no severity. Fix the model, not the line.
+set -u
+if [ "$#" -eq 0 ]; then
+  echo "usage: smell-check <path>..." >&2
+  exit 2
+fi
+
+found=0
+scan() {
+  local label="$1" pattern="$2"; shift 2
+  local out
+  out="$(rg -n --no-heading --color never -g '*.py' "$@" -e "$pattern" -- "${PATHS[@]}" 2>/dev/null)"
+  if [ -n "$out" ]; then
+    found=1
+    printf '%s\n' "$out" | sed "s/^/${label}  /"
+  fi
+}
+PATHS=("$@")
+
+# 1. FREE FUNCTION: a def at column 0. The only admitted one is the callback in main.py.
+scan 'FREE-FUNCTION ' '^(async )?def ' -g '!main.py'
+
+# 2. ISINSTANCE: asking a value what it is. It already said, by existing as its variant.
+scan 'ISINSTANCE    ' '\bisinstance\('
+
+# 3. LOOP: a fold with no name.
+scan 'LOOP          ' '^\s*(async\s+)?for\s.*:\s*(#.*)?$|^\s*while\s.*:\s*(#.*)?$'
+
+# 4. CONDITIONAL: a branch. The only branch is construction choosing a union variant.
+scan 'CONDITIONAL   ' '^\s*(if|elif)\b|^\s*else\s*:|^\s*match\b.*:\s*$|^\s*case\b.*:\s*$|\sif\s.+\selse\s|\sfor\s.+\sif\s'
+
+# 5. DICT: a shape nobody proved. A violation. JsonValue and Json[...] are the same shape under a Pydantic name.
+# The one admitted dict is a case table: a literal whose every key is Enum.MEMBER, indexed directly.
+# Its shape is recognized here and printed as CASE-TABLE without failing; whether it names every
+# member of the enum is not visible on the line and is the judge's question, not this script's.
+case_table='\{\s*([A-Z]\w*\.[A-Z_][A-Z0-9_]*\s*:\s*[^,{}\n]+\s*,?\s*)+\}\['
+case_lines="$(rg -nU --no-heading --color never -g '*.py' -e "$case_table" -- "${PATHS[@]}" 2>/dev/null | sed -E 's/^([^:]+:[0-9]+):.*/\1/')"
+dict_out="$(rg -n --no-heading --color never -g '*.py' -e '\bdict\[|\bdict\(|[=:(,]\s*\{|\breturn\s+\{|\bJsonValue\b|\bJson\[' -- "${PATHS[@]}" 2>/dev/null)"
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  key="$(printf '%s' "$line" | sed -E 's/^([^:]+:[0-9]+):.*/\1/')"
+  if printf '%s\n' "$case_lines" | grep -qxF -- "$key"; then
+    printf 'CASE-TABLE     %s\n' "$line"
+  else
+    found=1
+    printf 'DICT           %s\n' "$line"
+  fi
+done <<< "$dict_out"
+
+# 6. PARSE METHOD: procedure hung on a model. A derivation takes only self and returns one expression.
+scan 'PARSE-METHOD  ' 'def \w+\(\s*self\s*,|@staticmethod|validator|\bstr\('
+
+exit "$found"
