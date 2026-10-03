@@ -22,6 +22,14 @@ PATHS=("$@")
 
 # 1. FREE FUNCTION: a def at column 0. The only admitted one is the callback in main.py.
 scan 'FREE-FUNCTION ' '^(async )?def ' -g '!main.py'
+# main.py admits one def. A second def there is a free function wearing the callback's exemption.
+while IFS= read -r mainpy; do
+  [ -z "$mainpy" ] && continue
+  if [ "$(rg -c '^(async )?def ' -- "$mainpy" 2>/dev/null || echo 0)" -gt 1 ]; then
+    found=1
+    rg -n --no-heading --color never -e '^(async )?def ' -- "$mainpy" | sed "s|^|FREE-FUNCTION  ${mainpy}:|"
+  fi
+done <<< "$(rg --files -g 'main.py' -- "${PATHS[@]}" 2>/dev/null)"
 
 # 2. ISINSTANCE: asking a value what it is. It already said, by existing as its variant.
 scan 'ISINSTANCE    ' '\bisinstance\('

@@ -19,7 +19,7 @@ Every hit is a violation. There is no severity, no "edge work", no "serializatio
 
 | Label | What you wrote | What it actually is |
 |---|---|---|
-| FREE-FUNCTION | a `def` at module level | a meaning that should be a type. The only admitted free function is the framework callback in `main.py`. |
+| FREE-FUNCTION | a `def` at module level | a meaning that should be a type. The only admitted free function is the framework callback in `main.py`; a second `def` in `main.py` is a free function and fails. |
 | ISINSTANCE | `isinstance(x, T)` | a question the value already answered by existing as its variant. Behavior that differs by variant is a same-named property on each variant. |
 | LOOP | `for` or `while` | a fold whose result has no name. A fold is a comprehension inside the one returned expression of a derivation, with no `if`. |
 | CONDITIONAL | `if`, `elif`, `else`, `match`, `case`, ternary | a branch. The only branch in TCA is Pydantic construction choosing a union variant. Zero conditionals in a domain package, not "fewer". |
