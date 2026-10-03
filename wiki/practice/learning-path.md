@@ -23,7 +23,8 @@ Read these in order if you are new:
 4. [`program-topology.md`](../topology/program-topology.md): where those shapes live and which direction dependencies flow.
 5. [`proofs-and-graph.md`](proofs-and-graph.md): how to start from proof obligations and read the construction graph.
 6. [`discovery/`](../discovery/index.md): how to find out what the world contains from evidence before any construct is written.
-7. [`AGENTS.md`](../../AGENTS.md) and the `domain-discovery` and `python-development` skills: how an agent must program from the doctrine.
+7. [`AGENTS.md`](../../AGENTS.md) and the `domain-discovery` and `python-dev-tca` skills: how an agent must program from the doctrine.
+8. [`smell-check.md`](smell-check.md): the scan every build must pass before it is reported complete.
 
 That order is deliberate. First learn the test, then the reason it matters now, then the legal homes, then the program graph, then the practice of using the graph, then how a domain is discovered from evidence, then the skills that keep an agent inside it.
 
@@ -38,7 +39,7 @@ flowchart TD
     Graph["proofs-and-graph.md\ngraph practice"]
     Names["semantic-index-types.md\nnames as instructions"]
     Discovery["discovery/\nevidence to decided constructs"]
-    Build["AGENTS.md\ndomain-discovery + python-development skills"]
+    Build["AGENTS.md\ndomain-discovery + python-dev-tca skills"]
 
     Executable --> Definition
     Definition --> Constructs
@@ -81,7 +82,7 @@ If you are auditing existing code, start with [`proofs-and-graph.md`](proofs-and
 
 If you are reviewing AI-facing surfaces, read [`semantic-index-types.md`](semantic-index-types.md) with [`programs-are-ontologies.md`](../doctrine/programs-are-ontologies.md). The key question is whether the same structure that constrains the machine also gives the model the right semantic instruction.
 
-If you are writing or reviewing code in this repository, read [`AGENTS.md`](../../AGENTS.md) and the `python-development` skill after the doctrine spine. The skill is not a second doctrine. It is the constrained way an agent consumes the doctrine without drifting back into procedural Python.
+If you are writing or reviewing code in this repository, read [`AGENTS.md`](../../AGENTS.md) and the `python-dev-tca` skill after the doctrine spine. The skill is not a second doctrine. It is the constrained way an agent consumes the doctrine without drifting back into procedural Python.
 
 ## What Each Doc Supplies
 

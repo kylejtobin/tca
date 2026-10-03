@@ -103,7 +103,7 @@ The doctrine is written twice, once for each reader, and the two are kept in agr
 | [`discovery/`](wiki/discovery/index.md) | How you find out what the world contains before you build it |
 | [`practice/`](wiki/practice/index.md) | How to design from a proof obligation and read a construction graph |
 
-**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-development`](.agents/skills/python-development/SKILL.md) loads when a model is about to write Python and holds the same test, the same thirteen constructs, and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
+**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) loads when a model is about to write Python. It routes each step the model is about to write to the classes that declare it, and holds the same thirteen constructs and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
 
 ---
 

@@ -15,7 +15,7 @@ It prints one line per hit, labeled, with file and line. Exit 1 means violations
 
 ## What a hit means
 
-Every hit is a violation. There is no severity, no "edge work", no "serialization", no "just a helper". Those words are how procedural code rationalizes itself. The patterns below are the procedural style, and in TCA they are forbidden by the python-development skill.
+Every hit is a violation. There is no severity, no "edge work", no "serialization", no "just a helper". Those words are how procedural code rationalizes itself. The patterns below are the procedural style, and in TCA they are forbidden by the python-dev-tca skill.
 
 | Label | What you wrote | What it actually is |
 |---|---|---|
