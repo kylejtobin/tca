@@ -1,5 +1,5 @@
 <h1 align="center">Type Construction Architecture</h1>
-<p align="center"><img src="img/hero.png" alt="Type Construction Architecture" width="100%"></p>
+<p align="center"><img src="img/hero.png" alt="Type Construction Architecture: each fact holds the one before it" width="100%"></p>
 
 <p align="center">
 <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=0d1117" alt="Python 3.12+"></a>
@@ -7,95 +7,127 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSL 1.1"></a>
 </p>
 
-<p align="center"><strong>Your software's meaning lives in its types.<br>Construction is its proof.<br>Every meaning has one structural home.<br>Every structure carries one meaning.<br>Thirteen constructs. No fourteenth.</strong></p>
+<p align="center"><strong>A program is a set of types. Constructing them is the only operation.</strong></p>
 
 ---
 
-For decades, the best engineers argued that meaning belongs in the types:
+## The same feature, twice
 
-> Model the domain, make illegal states impossible to construct, and let a value's existence prove its own correctness instead of bolting validation on after the fact.
+A venue sends a fill. The program updates the account's position, records it with a clearing house, and replies.
 
-They were right. That didn't matter. Because project management runs on one rule it rarely says out loud:
+Here is the version everyone writes, and every coding agent writes by default:
 
-> We separate the cost of finishing the first task from the lifetime cost of what we build.
+```python
+positions = {}
 
-Make the first task look 75% faster, move the real cost into every month that follows, and call that delivery. That is what imperative procedural code inside a poorly typed architecture really is: not speed, but cost displacement. A loan drawn on day one and repaid for the life of the system in bug-interest toil.
+def on_fill(raw):
+    body = json.loads(raw)
+    fill = body["data"]["payload"]
+    key = (fill["account"], fill["instrument"])
+    position = positions.get(key)
+    if position is None:
+        position = {"net": Decimal(0)}
+    if fill["side"] == "buy":
+        position["net"] += Decimal(fill["quantity"])
+    else:
+        position["net"] -= Decimal(fill["quantity"])
+    try:
+        reply = client.save(position)
+    except ClearingError:
+        return None
+    positions[key] = position
+    return {"sequence": reply["sequence"], "net": str(position["net"])}
+```
 
-AI changes that math. Radically.
+It works on the day it is written. It also contains these, none of which a test suite will find until production does:
 
-Not by making the shortcut safe. By taking away the shortcut's only advantage.
+- `"Buy"` with a capital B is a sell.
+- A halted clearing house and a bug both return `None`, and the caller cannot tell them apart.
+- A restart forgets every position.
+- A refused save leaves the position already changed in memory.
+- A missing `quantity` is a `KeyError` three lines after the bad message was accepted.
 
-The deferred-cost path had one thing to sell: visible first-day movement. It let the team arrive at "done" before the system had to prove anything. But now an LLM can read your field names, your variants, and your type structure en masse. It can help you name the domain, shape the cases, close the gaps, and build the modeled design at speed.
+Here is the same feature in TCA. Every class is frozen and strict; that configuration is left out here and is exact in the skill.
 
-So the bad trade loses its cover story.
+```python
+class Position(BaseModel):
+    """One account's holding in one instrument, the fold of its fills."""
 
-The disciplined path now gets the early movement the shortcut used to sell, without inheriting the hidden tax the shortcut always carried. You get the fast start and the durable architecture. The path they called slow and expensive becomes the one that ships cleanly, changes safely, and ages cheaply.
+    prior: "FlatPosition | Position"
+    fill: Fill
 
-That is the smaller half of it.
+    @property
+    def net_quantity(self) -> NetQuantity:
+        return NetQuantity(
+            self.prior.net_quantity.root
+            + {Side.BUY: 1, Side.SELL: -1}[self.fill.side] * self.fill.quantity.root
+        )
 
-The larger half is that a type is an instruction.
+    @property
+    def persistence(self) -> "PersistPosition":
+        return PersistPosition(position=self)
 
-The same declaration that proves your code correct to the compiler now tells a model what is allowed to exist, and what is not. One structure carries two jobs at once:
 
-- The constraint that stops a generator from inventing
-- The context that tells it what you meant
+ClearingReply = ClearingAcknowledgement | ClearingRefusal
+PositionOutcome = RecordedPosition | RefusedPosition
+FillReply = FillBooked | FillDeclined
+```
 
-Your types are no longer just implementation detail. They become the shared language between the compiler, the AI, and the next engineer who has to live inside the system.
+And this is the entire program that runs:
 
-That changes the center of gravity. Design, code, and documentation stop drifting apart as separate copies of intent. The domain model becomes the place intent lives. The compiler enforces it. The AI reads it. The engineer extends it.
+```python
+def receive_fill(message: FillRoute) -> FillReplyRoute:
+    return FillReplyRoute(
+        outcome=PersistPositionInterpreter(
+            action=Position(
+                prior=ReadPositionInterpreter(
+                    action=ReadPosition(
+                        account=message.fill.account,
+                        instrument=message.fill.instrument,
+                    ),
+                    client=client,
+                ).execute(),
+                fill=message.fill,
+            ).persistence,
+            client=client,
+        ).execute(),
+    )
+```
 
-The rigor that used to be good taste is now the thing that makes AI-built software worth trusting.
+One function, one returned expression. No `if`, no `try`, no `None`, no loop, no dictionary, nothing kept between messages.
 
----
+## What happened to each line
 
-## The Test
-
-Every meaning has exactly one structural home, and every structure carries exactly one meaning. That correspondence is the whole of TCA, applied continuously as a test.
-
-It is one-to-one, so it fails in exactly four ways:
-
-- **Escaped.** A meaning with no structure: it lives in a comment, a procedure, or a convention the type does not carry.
-- **Duplicated.** A meaning with more than one structure: a second copy kept in agreement by hand.
-- **Vacuous.** A structure with no meaning: a type minted to save repetition, a name that says nothing real.
-- **Fused.** A structure with more than one meaning: several domain axes in one field, so the type tells none of them cleanly.
-
-There is no fifth. Every forbidden pattern is one of these four, and every approved structure holds one meaning, once, proven by construction.
-
----
-
-## Thirteen Shapes, No Fourteenth
-
-You build your whole domain from thirteen declaration forms, one named shape, and one named site. Each carries one meaning and rejects the shapes that bury it: the bare primitive, the `if/elif` ladder, the mapper, the stray helper.
-
-| Construct | What it means | What it replaces |
+| The procedural line | What it became | What can no longer be written |
 |---|---|---|
-| [Semantic scalar](.agents/skills/python-dev-tca/constructs/semantic-scalar.md) | One atomic meaning over a primitive or closed value space | The bare primitive |
-| [Value object](.agents/skills/python-dev-tca/constructs/value-object.md) | A frozen identityless product exhausted by field equality | The tuple or dict of parts |
-| [Concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) | A complete domain thing, durable fact, or refinement; the class is the kind | The `kind` field and the registry |
-| [Union](.agents/skills/python-dev-tca/constructs/union.md) | A closed sum on one semantic axis, each variant carrying its own facts | The `if/elif` ladder and the `bool` decision |
-| [Ordered union](.agents/skills/python-dev-tca/constructs/ordered-union.md) | Attempt-order construction where the strong variant's sole failure means the fallback | The `try/except` and the `.get()` returning `None` |
-| [Collection](.agents/skills/python-dev-tca/constructs/collection.md) | A frozen typed sequence with meaning of its own | The mutable list and the dict used as a namespace |
-| [Transformation](.agents/skills/python-dev-tca/constructs/transformation.md) | A pure implication from proven inputs to a constructed output, one expression from a closed algebra | The helper function and the service method |
-| [Foreign model](.agents/skills/python-dev-tca/constructs/foreign-model.md) | Another system's shape lifted whole into a frozen model | The mapper, the adapter, the DTO |
-| [Contract model](.agents/skills/python-dev-tca/constructs/contract-model.md) | This program's published request or reply, exactly the decided wire facts | The hand-built response dict |
-| [Config](.agents/skills/python-dev-tca/constructs/config.md) | Environment input constructed once into a frozen settings model | The scattered `os.environ` read |
-| [Route](.agents/skills/python-dev-tca/constructs/route.md) | One transport crossing, constructing ingress and projecting egress | The handler that parses by hand |
-| [Effect interpreter](.agents/skills/python-dev-tca/constructs/effect-interpreter.md) | Execution of one action through one capability, constructing the observed outcome | The client call inside domain code |
-| [Action](.agents/skills/python-dev-tca/constructs/action.md) | An intended external effect as a frozen value | The side effect performed in place |
-| [State transition](.agents/skills/python-dev-tca/constructs/concept-model.md) | The concept-model shape whose self-typed `prior` represents succession | The mutable aggregate and the re-pointed field |
-| [Composition root](.agents/skills/python-dev-tca/constructs/composition-root.md) | The site where a framework callback evaluates the per-input terminal expression | The runner, the loop, the current-state local |
+| `json.loads(raw)` and `body["data"]["payload"]` | `FillRoute.receive(raw)`: the whole message given to one constructor | a half-read message; a `KeyError` downstream |
+| `if fill["side"] == "buy"` | `Side`, a closed vocabulary, and a table with every member as a key | a third spelling of "buy" |
+| `positions.get(key)` and `if position is None` | `FlatPosition`, the holding of an account with no fills | a forgotten `None` check |
+| `position["net"] += ...` | a new `Position` that holds its `prior` and one `Fill` | a position changed before the save succeeded |
+| `positions = {}` | the prior is read from the clearing house on every message | state lost on restart |
+| `try` / `except` / `return None` | `ClearingRefusal`, a variant of the reply; `RefusedPosition`, a variant of the outcome | a refusal the caller cannot see |
+| `return {...}` | `FillBooked` or `FillDeclined`, picked by construction | a reply shape nobody declared |
 
-Each construct has one page in the skill: the class shape, its exact configuration, and what is visible in a finished file. Every example shares one world: a trading venue's fills, the positions they fold into, and a clearing house that records, refuses, and answers empty. That world is [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md).
+The hard cases are ordinary values:
 
----
+```python
+ClearingReplyConstructor.validate_json('{"sequence": 7}')        # ClearingAcknowledgement
+ClearingReplyConstructor.validate_json('{"error": "halted"}')    # ClearingRefusal
+PositionStateConstructor.validate_json('{"account": "A1", "instrument": "ESZ6"}')  # FlatPosition
+Bids.model_validate_json("[]").top                               # NoBids
+```
 
-## How an Agent Builds With It
+When the clearing house says `{"error": "halted"}`, the caller receives `{"reason":"halted"}`. Nothing was caught. The refusal was constructed, carried, and published like any other fact.
 
-The standard is a skill an agent reads just before it writes Python, not a document it is asked to remember.
+## Each fact holds the one before it
 
-[`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) meets the agent at the moment a procedural step comes to mind and hands it the classes that declare that step as a thing.
+That is the picture at the top of this page, and it is the whole method.
 
-| The agent is about to… | It declares |
+A procedure says: do this, then that. TCA says: the later thing holds the earlier thing. A reply holds the outcome. The outcome holds the position. The position holds the fill and the position before it, down to the flat position at the start. Order is depth, and Pydantic's constructors run it. You never write the sequence, so you cannot write it wrong.
+
+Every step you are about to type is a thing you have not named yet:
+
+| You are about to… | You declare |
 |---|---|
 | do this, then that | a later fact holding the earlier fact as a field |
 | check whether | a union; construction picks the variant |
@@ -106,23 +138,82 @@ The standard is a skill an agent reads just before it writes Python, not a docum
 | ask another system for something | an action, one interpreter, and the raw reply given to a union |
 | keep something between arrivals | a prior read on each arrival, and a successor constructed from it |
 
-Around it:
+## One test
 
-- [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build.
-- [`smell-check`](.agents/skills/smell-check/SKILL.md) scans the result for the procedural patterns a model writes by habit. A build is not complete until it exits 0.
-- [`code-review-tca`](.agents/agents/code-review-tca.md) is the review agent. It reads the work as written by someone looking for a way around the standard.
-- [`AGENTS.md`](AGENTS.md) binds an agent to all of it.
+Every meaning has exactly one structural home, and every structure carries exactly one meaning. That fails in exactly four ways:
 
----
+- **Escaped.** A meaning with no structure: it lives in a comment, a procedure, or a convention.
+- **Duplicated.** A meaning with two structures, kept in agreement by hand.
+- **Vacuous.** A structure with no meaning: a wrapper, a helper, a name that says nothing.
+- **Fused.** A structure with two meanings that vary independently.
 
-## Almost None of This Is New, and That Is the Point
+There is no fifth. Every design argument reduces to which of the four it is.
 
-It is the good half of typed functional programming, domain-driven design, and a few older schools, pulled together and made to hold under one test. Two camps spent decades saying the domain's structure should come first. They were right, and ignored, because the systems that ran the work never read what they wrote. A model reads it now, and the gap they were marginalized for is the gap that costs you on every run.
+## Thirteen shapes, no fourteenth
 
----
+A whole program is built from thirteen declaration forms. Each one replaces a habit.
 
-## Start Here
+| Construct | What it is | What it replaces |
+|---|---|---|
+| [Semantic scalar](.agents/skills/python-dev-tca/constructs/semantic-scalar.md) | One atomic meaning over a primitive or a closed vocabulary | The bare `str` and `Decimal` |
+| [Value object](.agents/skills/python-dev-tca/constructs/value-object.md) | A frozen product with no identity, equal when its fields are equal | The tuple or dict of parts |
+| [Concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) | A full domain thing or durable fact; the class is the kind | The `kind` field and the registry |
+| [Union](.agents/skills/python-dev-tca/constructs/union.md) | Closed alternatives, each holding its own facts | The `if/elif` ladder and the `bool` |
+| [Ordered union](.agents/skills/python-dev-tca/constructs/ordered-union.md) | A strong alternative whose only failure means the fallback | `try/except` and `.get()` returning `None` |
+| [Collection](.agents/skills/python-dev-tca/constructs/collection.md) | Several with a meaning of their own, as a frozen tuple | The mutable list |
+| [Transformation](.agents/skills/python-dev-tca/constructs/transformation.md) | A derivation of one returned expression on the thing that holds its inputs | The helper function and the service method |
+| [Foreign model](.agents/skills/python-dev-tca/constructs/foreign-model.md) | Another system's thing, lifted whole by aliases | The mapper, the adapter, the DTO |
+| [Contract model](.agents/skills/python-dev-tca/constructs/contract-model.md) | This program's published request or reply | The hand-built response dict |
+| [Config](.agents/skills/python-dev-tca/constructs/config.md) | Deployment input constructed once | The scattered `os.environ` read |
+| [Route](.agents/skills/python-dev-tca/constructs/route.md) | One transport crossing, in or out | The handler that parses by hand |
+| [Action](.agents/skills/python-dev-tca/constructs/action.md) | One intended external effect, as a value that performs nothing | The side effect performed in place |
+| [Effect interpreter](.agents/skills/python-dev-tca/constructs/effect-interpreter.md) | The one place an action's external call is made | The client call inside domain code |
 
-- **The skill's entry point**, every moment and every construct: [`python-dev-tca/SKILL.md`](.agents/skills/python-dev-tca/SKILL.md)
-- **The example world** every page is written in: [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md)
-- **The signals** that a step was written where a thing belonged: [`signals.md`](.agents/skills/python-dev-tca/signals.md)
+Succession is a [concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) with a self-typed `prior`. The program's one function lives at the [composition root](.agents/skills/python-dev-tca/constructs/composition-root.md).
+
+## Built for the agent that writes your code
+
+A coding agent can recite all of the above and will still write the procedural version, because reciting is recall and writing code is habit. TCA is delivered as a system that works against that, not as a document to be remembered.
+
+- **The skill meets the agent at the moment.** [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) is read just before the agent writes Python. Each page starts from the two procedural lines the agent was about to type and hands it the classes that replace them, including the case that fails, is empty, or is several.
+- **The smell check does not negotiate.** [`smell-check`](.agents/skills/smell-check/SKILL.md) scans for the free function, `isinstance`, the loop, the conditional, the dict, and the parse method. Every hit is a violation. A build is complete when it exits 0.
+
+  ```text
+  CONDITIONAL   src/venue/position.py:12:    if position is None:
+  LOOP          src/venue/bids.py:8:    for bid in bids:
+  DICT          src/venue/fill.py:21:    return {"sequence": sequence}
+  ```
+
+- **The reviewer assumes bad faith.** [`code-review-tca`](.agents/agents/code-review-tca.md) reads the work as written by someone looking for a way around the standard: tests that pass by construction, exceptions used as the normal path, compliance with a rule's wording that defeats its purpose.
+- **Discovery comes first.** [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) decides what the world contains from evidence before any type is written.
+
+## Adopt it
+
+1. Copy [`.agents/skills/`](.agents/skills/) and [`.agents/agents/`](.agents/agents/) into your repository.
+2. Bind your agent to it, in `AGENTS.md`:
+
+   ```text
+   You MUST use the python-dev-tca skill to make every decision.
+   Before reporting any Python build complete, run the smell-check skill; a nonzero exit is not complete.
+   ```
+
+3. Put the smell check in front of every commit, in `.pre-commit-config.yaml`:
+
+   ```yaml
+   - repo: https://github.com/kylejtobin/tca
+     rev: <commit>
+     hooks:
+       - id: smell-check
+   ```
+
+The example world every page of the skill is written in, with every union and derivation: [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md).
+
+## Why this, why now
+
+The procedural version was always the cheap one on day one and the expensive one for the life of the system. Teams took that trade because modeling first looked slow.
+
+A model that can read your field names, your variants, and your type structure removes the reason for the trade. The modeled design now arrives at the speed the shortcut used to, without the bugs listed at the top of this page.
+
+And a type is an instruction. The same declaration that stops an invalid value from existing tells a model what is allowed to exist. One structure does both jobs, so design, code, and documentation stop being three copies of the same intent.
+
+None of the ideas are new. This is the good half of typed functional programming and domain-driven design, held to one test and delivered in a form an agent cannot talk its way around.
