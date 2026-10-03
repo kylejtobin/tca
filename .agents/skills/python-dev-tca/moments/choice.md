@@ -116,14 +116,6 @@ class FillReplyRoute(BaseModel):
         ).model_dump_json(by_alias=True)
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| FlatPosition | The holding of an account with no fills in an instrument. | AccountId, InstrumentId | concept model |
-| Position | One account's holding in one instrument, the fold of its fills. | PositionState, Fill | concept model, state-transition shape |
-| PositionState | An account's holding in an instrument. | FlatPosition, Position | union |
-
 The hard case, constructed:
 
 `PositionStateConstructor.validate_json('{"account": "A1", "instrument": "ESZ6"}')` is a `FlatPosition`, and its `net_quantity` is `NetQuantity(Decimal(0))`.

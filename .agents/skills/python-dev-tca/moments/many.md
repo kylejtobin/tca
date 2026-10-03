@@ -80,15 +80,6 @@ class Position(BaseModel):
 
 `Position.net_quantity` reads `self.prior.net_quantity`, which reads its own `prior`, down to `FlatPosition.net_quantity`.
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| Bid | A resting offer to buy at a price and quantity. | Price, Quantity | value object |
-| Bids | The resting bids for one instrument, best first. | Bid, several | collection |
-| Depth | The quantity resting across the bids, zero or more. | a Decimal | semantic scalar |
-| Position | One account's holding in one instrument, the fold of its fills. | PositionState, Fill | concept model, state-transition shape |
-
 The hard case, constructed:
 
 `Bids.model_validate_json("[]")` is `Bids` holding no `Bid`. Its `top` is `NoBids` and its `depth` is `Depth(Decimal(0))`.

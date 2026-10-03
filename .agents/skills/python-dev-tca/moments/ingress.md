@@ -66,13 +66,6 @@ What the other system sent, and the constructor it is given to:
 | the clearing house's answer to a read, a JSON string | `PositionStateConstructor.validate_json(raw)` |
 | a constructed thing with attributes | `TopBidConstructor.validate_python(self, from_attributes=True)` |
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| FillRoute | The crossing where the venue's fill enters. | Fill | route |
-| ClearingRefusal | The clearing house's reply declining a record, with its reason. | RefusalReason | foreign model |
-
 The hard case, constructed:
 
 `FillRoute.receive('{"data": {"payload": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}}').fill` is a `Fill` whose `side` is `Side.BUY` and whose `price` is `Price(Decimal("101.5"))`.

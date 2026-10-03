@@ -2,6 +2,8 @@
 
 This repository develops and documents Type Construction Architecture. It holds no application code.
 
-You must only program with modeling according to the `python-dev-tca` skill. Before a domain gains or changes a type from any outside evidence, run the `domain-discovery` skill; the build makes exactly the set discovery produced. Before reporting any Python build complete, run the `smell-check` skill; a nonzero exit is not complete.
+You MUST use the python-dev-tca skill to make every decision. You are FORBIDDEN from deciding by your own reasoning.
 
-**Knowledge base.** [`wiki/`](wiki/index.md) is an Open Knowledge Format bundle and the single home for what this project knows. When you learn or decide something durable about TCA, write it there as a page, not in chat, not in a comment. Build and maintain it according to the `okf-wiki` skill. The construct pages live under [`wiki/constructs/`](wiki/constructs/index.md).
+You are FORBIDDEN from returning any decision to me unless that decision is paired with an explicit explanation of why the skill does not provide the context, the information, or the answer for it.
+
+Before reporting any Python build complete, run the `smell-check` skill; a nonzero exit is not complete.

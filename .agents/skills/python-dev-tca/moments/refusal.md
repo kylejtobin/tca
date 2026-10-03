@@ -158,19 +158,6 @@ class FillReplyRoute(BaseModel):
         ).model_dump_json(by_alias=True)
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| RefusalReason | Why the clearing house declined a record. | `halted`, `stale` | semantic scalar |
-| ClearingRefusal | The clearing house's reply declining a record, with its reason. | RefusalReason | foreign model |
-| ClearingReply | The clearing house's reply to a record. | ClearingAcknowledgement, ClearingRefusal | union |
-| PositionSubmission | A position sent to the clearing house, with the house's reply to it. | Position, ClearingReply | transformation |
-| RefusedPosition | A position the clearing house declined to record, with its reason. | RefusalReason, Position | concept model |
-| PositionOutcome | What became of a position sent to the clearing house. | RecordedPosition, RefusedPosition | union |
-| FillDeclined | This program's reply that a fill was not booked, with the reason. | RefusalReason | contract model |
-| FillReply | This program's reply to a fill. | FillBooked, FillDeclined | union |
-
 The hard case, constructed:
 
 `ClearingReplyConstructor.validate_json('{"error": "stale"}')` is a `ClearingRefusal` whose `reason` is `RefusalReason.STALE`.

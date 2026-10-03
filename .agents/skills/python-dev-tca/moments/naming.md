@@ -12,7 +12,7 @@ class ParsedFillData(BaseModel): ...
 class PersistResult(BaseModel): ...
 ```
 
-Declare each class under the trader's noun for the thing, with the row's `is` sentence as its docstring:
+Declare each class under the trader's noun for the thing, with one sentence a trader would accept as its docstring:
 
 ```python
 class Fill(BaseModel):
@@ -108,13 +108,6 @@ domain/venue/bids.py                  Bids, BestBid, NoBids, TopBid
 domain/venue/api.py                   FillBooked, FillDeclined, FillReply
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| Fill | An execution of part of an order at a price and quantity. | OrderId, AccountId, InstrumentId, Side, Price, Quantity | concept model |
-| RecordedPosition | A position the clearing house recorded, with the sequence it assigned. | ClearingSequence, Position | concept model |
-
 The hard case, constructed:
 
 `Fill.model_validate_json('{"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "sell", "price": "101.5", "quantity": "3"}')` is a `Fill` whose `side` is `Side.SELL`.
@@ -127,7 +120,7 @@ The hard case, constructed:
 
 In the file:
 
-- Every class name is a `name` in the noun table, and its docstring is that row's `is`.
+- Every class's docstring is one sentence a trader would accept as what the thing is.
 - Every domain class name is a noun a trader says: `Fill`, `Position`, `FlatPosition`, `Bids`.
 - The refusal, the flat position, and the empty book each have a class of their own: `RefusedPosition`, `FlatPosition`, `NoBids`.
 - One `Fill` class serves both sides, and `Fill.side` holds which.

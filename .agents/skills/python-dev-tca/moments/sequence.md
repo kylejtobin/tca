@@ -97,14 +97,6 @@ def receive_fill(message: FillRoute) -> FillReplyRoute:
     )
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| Position | One account's holding in one instrument, the fold of its fills. | PositionState, Fill | concept model, state-transition shape |
-| PersistPosition | The intended recording of a position in the clearing house. | Position | action |
-| RecordedPosition | A position the clearing house recorded, with the sequence it assigned. | ClearingSequence, Position | concept model |
-
 The hard case, constructed:
 
 `PositionStateConstructor.validate_json('{"prior": {"account": "A1", "instrument": "ESZ6"}, "fill": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}')` is the `Position` after an account's first fill. Its `prior` is a `FlatPosition` and its `fill` is a `Fill`, both constructed by the one call.

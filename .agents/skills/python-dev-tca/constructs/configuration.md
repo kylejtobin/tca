@@ -108,7 +108,7 @@ The serializer for each output, called in a route or an interpreter:
 
 In the file:
 
-- Every class has its row's settings, written out on the class, in this order.
+- Every class has the settings of its line in the table above, written out on the class, in this order.
 - Every class body is a docstring, `model_config`, fields, and `@property` derivations. A route also has `receive` or `emit`; an interpreter also has `execute`.
 - Every field's type is frozen or a `tuple`, so the value is immutable at every level.
 - Every value enters through a constructor in the table above.

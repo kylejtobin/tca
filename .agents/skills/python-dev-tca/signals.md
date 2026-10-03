@@ -9,7 +9,7 @@ Each row is the signal that one "In the file" line of a moment page is false. Ro
 
 | Moment | The signal |
 |---|---|
-| [naming](moments/naming.md) | a class with no row; a row with no class; a docstring that is not the `is` sentence |
+| [naming](moments/naming.md) | a class with no docstring; a docstring that says what the code does |
 | [naming](moments/naming.md) | a name for what the program did: `Parsed`, `Gathered`, `Published`, `Consulted`; a name that is or ends in `Record`, `Item`, `Data`, `Payload`, `Result`, `Entry`, `Info`, `Handler`, `Manager`, `Processor`, `Event`; a name beginning `Incoming`, `Outgoing`, `Processed`, `Enriched` |
 | [naming](moments/naming.md) | an outcome family beside an action: `Persist`, `Persisted`, `PersistFailed` |
 | [naming](moments/naming.md) | two classes differing by the path that produced them: `BuyFill`, `SellFill` |
@@ -70,7 +70,7 @@ Each row is the signal that one "In the file" line of a moment page is false. Ro
 | [missing-thing](moments/missing-thing.md) | a `def` at module level other than `receive_fill`; `lambda`, a private helper, a callback passed in |
 | [missing-thing](moments/missing-thing.md) | a method with parameters beyond `self`; a `staticmethod` |
 | [missing-thing](moments/missing-thing.md) | a second module-level `def`, in any file |
-| [missing-thing](moments/missing-thing.md) | more declarations than rows; a wrapper class that only calls a constructor |
+| [missing-thing](moments/missing-thing.md) | a wrapper class that only calls a constructor; a class no trader would name |
 | [missing-thing](moments/missing-thing.md) | escaped: a meaning that lives only in a comment, a primitive, an ordering, or a convention; duplicated: two classes for one meaning; vacuous: a class with no meaning of its own; fused: one class holding two meanings that vary independently |
 | [missing-thing](moments/missing-thing.md) | a check after construction in place of a reported construction gap |
 | [missing-thing](moments/missing-thing.md) | a class whose shape matches no form in `constructs/` |

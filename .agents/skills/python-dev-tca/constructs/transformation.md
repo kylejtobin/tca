@@ -76,7 +76,7 @@ class Bids(RootModel[tuple[Bid, ...]]):
         return Depth(sum((bid.quantity.root for bid in self.root), Decimal(0)))
 ```
 
-The closed algebra: the rows a returned expression is built from:
+The closed algebra: what a returned expression is built from:
 
 | The expression | In the venue |
 |---|---|

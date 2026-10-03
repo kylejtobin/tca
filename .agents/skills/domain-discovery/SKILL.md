@@ -5,7 +5,7 @@ description: Decides what a domain contains from evidence before any construct i
 
 # Domain Discovery
 
-Output of every step: written answers. No step passes on judgment. Every answer is decided, not deferred. One question per turn, in chat, in the form asked, no prose; the operator advances the step. Why each question exists: [`wiki/discovery/`](../../../wiki/discovery/index.md).
+Output of every step: written answers. No step passes on judgment. Every answer is decided, not deferred. One question per turn, in chat, in the form asked, no prose; the operator advances the step.
 
 ## 1. Evidence
 

@@ -1,6 +1,6 @@
 ---
 type: Moment
-description: "What to do when no form fits: a thing is missing from the noun table; name it and find the construct that produces its facts."
+description: "What to do when no form fits: a thing has not been named; name it and find the construct that produces its facts."
 ---
 
 # Missing thing
@@ -82,12 +82,6 @@ What a derivation's one returned expression may be:
 | a union given a thing | `PositionOutcomeConstructor.validate_python(self, from_attributes=True)` |
 | an ordered union whose only refusal is the fallback | `TopBidConstructor.validate_python(self, from_attributes=True)` |
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| PositionSubmission | A position sent to the clearing house, with the house's reply to it. | Position, ClearingReply | transformation |
-
 The hard case, constructed:
 
 `PositionSubmission.model_validate_json('{"position": {"prior": {"account": "A1", "instrument": "ESZ6"}, "fill": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}, "reply": {"sequence": 7}}').outcome` is a `RecordedPosition` whose `sequence` is `ClearingSequence(7)`.
@@ -101,7 +95,7 @@ In the file:
 - Each thing a function would have computed is a class holding the function's parameters as fields: `PositionSubmission.position`, `PositionSubmission.reply`.
 - The function's return value is a `@property` on that class, taking `self`, with one `return`: `PositionSubmission.outcome`.
 - The one `def` at module level is `receive_fill` in `main.py`.
-- Every class is a row in the noun table, and every row is a class or an alias.
-- Every meaning the program has is one row, and every row is one meaning.
-- Each returned expression is built from the rows of the table above.
-- The new row's `kind` is one of the forms in `constructs/`: `PositionSubmission` is a transformation.
+- Every class is a thing a trader would name.
+- Every meaning the program has is one class, and every class is one meaning.
+- Each returned expression is built from the expressions in the table above.
+- The new class's shape is one of the kinds in `SKILL.md`: `PositionSubmission` is a transformation.

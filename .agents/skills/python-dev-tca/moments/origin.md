@@ -123,14 +123,6 @@ class ReadPositionInterpreter(BaseModel):
         )
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| OrderId | The identity of an order. | a str | semantic scalar |
-| ClearingSequence | The number the clearing house assigns to a record. | an int | semantic scalar |
-| ClearingAcknowledgement | The clearing house's reply accepting a record, with the sequence it assigned. | ClearingSequence | foreign model |
-
 The hard case, constructed:
 
 `PositionSubmission.model_validate_json('{"position": {"prior": {"account": "A1", "instrument": "ESZ6"}, "fill": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}, "reply": {"sequence": 7}}').outcome.sequence` is `ClearingSequence(7)`: the number the clearing house sent.

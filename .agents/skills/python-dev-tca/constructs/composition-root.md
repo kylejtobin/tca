@@ -61,5 +61,5 @@ In the file:
 
 - Module scope binds two names, once: `config` and `client`. The client lives as long as its own documentation says.
 - The callback returns the route itself.
-- `main.py` is a site: `config`, `client`, and `receive_fill` have no rows in the noun table.
+- `main.py` is a site: it binds `config` and `client` and holds `receive_fill`, and declares no class.
 - Placement: `main.py`.

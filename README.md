@@ -59,7 +59,7 @@ It is one-to-one, so it fails in exactly four ways:
 - **Vacuous.** A structure with no meaning: a type minted to save repetition, a name that says nothing real.
 - **Fused.** A structure with more than one meaning: several domain axes in one field, so the type tells none of them cleanly.
 
-There is no fifth. Every forbidden pattern is one of these four, and every approved structure holds one meaning, once, proven by construction. The full statement is [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md).
+There is no fifth. Every forbidden pattern is one of these four, and every approved structure holds one meaning, once, proven by construction.
 
 ---
 
@@ -69,53 +69,60 @@ You build your whole domain from thirteen declaration forms, one named shape, an
 
 | Construct | What it means | What it replaces |
 |---|---|---|
-| [Semantic scalar](wiki/constructs/semantic-scalar.md) | One atomic meaning over a primitive or closed value space | The bare primitive |
-| [Value object](wiki/constructs/value-object.md) | A frozen identityless product exhausted by field equality | The tuple or dict of parts |
-| [Concept model](wiki/constructs/concept-model.md) | A complete domain thing, durable fact, or refinement; the class is the kind | The `kind` field and the registry |
-| [Union](wiki/constructs/union.md) | A closed sum on one semantic axis, each variant carrying its own facts | The `if/elif` ladder and the `bool` decision |
-| [Ordered union](wiki/constructs/ordered-union.md) | Attempt-order construction where the strong variant's sole failure means the fallback | The `try/except` and the `.get()` returning `None` |
-| [Collection](wiki/constructs/collection.md) | A frozen typed sequence with meaning of its own | The mutable list and the dict used as a namespace |
-| [Transformation](wiki/constructs/transformation.md) | A pure implication from proven inputs to a constructed output, one expression from a closed algebra | The helper function and the service method |
-| [Foreign model](wiki/constructs/foreign-model.md) | Another system's shape lifted whole into a frozen model | The mapper, the adapter, the DTO |
-| [Contract model](wiki/constructs/contract-model.md) | This program's published request or reply, exactly the decided wire facts | The hand-built response dict |
-| [Config](wiki/constructs/config.md) | Environment input constructed once into a frozen settings model | The scattered `os.environ` read |
-| [Route](wiki/constructs/route.md) | One transport crossing, constructing ingress and projecting egress | The handler that parses by hand |
-| [Effect interpreter](wiki/constructs/effect-interpreter.md) | Execution of one action through one capability, constructing the observed outcome | The client call inside domain code |
-| [Action](wiki/constructs/action.md) | An intended external effect as a frozen value | The side effect performed in place |
-| [State transition](wiki/constructs/state-transition.md) | The concept-model shape whose self-typed `prior` represents succession | The mutable aggregate and the re-pointed field |
-| [Composition root](wiki/constructs/composition-root.md) | The site where a framework callback evaluates the per-input terminal expression | The runner, the loop, the current-state local |
+| [Semantic scalar](.agents/skills/python-dev-tca/constructs/semantic-scalar.md) | One atomic meaning over a primitive or closed value space | The bare primitive |
+| [Value object](.agents/skills/python-dev-tca/constructs/value-object.md) | A frozen identityless product exhausted by field equality | The tuple or dict of parts |
+| [Concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) | A complete domain thing, durable fact, or refinement; the class is the kind | The `kind` field and the registry |
+| [Union](.agents/skills/python-dev-tca/constructs/union.md) | A closed sum on one semantic axis, each variant carrying its own facts | The `if/elif` ladder and the `bool` decision |
+| [Ordered union](.agents/skills/python-dev-tca/constructs/ordered-union.md) | Attempt-order construction where the strong variant's sole failure means the fallback | The `try/except` and the `.get()` returning `None` |
+| [Collection](.agents/skills/python-dev-tca/constructs/collection.md) | A frozen typed sequence with meaning of its own | The mutable list and the dict used as a namespace |
+| [Transformation](.agents/skills/python-dev-tca/constructs/transformation.md) | A pure implication from proven inputs to a constructed output, one expression from a closed algebra | The helper function and the service method |
+| [Foreign model](.agents/skills/python-dev-tca/constructs/foreign-model.md) | Another system's shape lifted whole into a frozen model | The mapper, the adapter, the DTO |
+| [Contract model](.agents/skills/python-dev-tca/constructs/contract-model.md) | This program's published request or reply, exactly the decided wire facts | The hand-built response dict |
+| [Config](.agents/skills/python-dev-tca/constructs/config.md) | Environment input constructed once into a frozen settings model | The scattered `os.environ` read |
+| [Route](.agents/skills/python-dev-tca/constructs/route.md) | One transport crossing, constructing ingress and projecting egress | The handler that parses by hand |
+| [Effect interpreter](.agents/skills/python-dev-tca/constructs/effect-interpreter.md) | Execution of one action through one capability, constructing the observed outcome | The client call inside domain code |
+| [Action](.agents/skills/python-dev-tca/constructs/action.md) | An intended external effect as a frozen value | The side effect performed in place |
+| [State transition](.agents/skills/python-dev-tca/constructs/concept-model.md) | The concept-model shape whose self-typed `prior` represents succession | The mutable aggregate and the re-pointed field |
+| [Composition root](.agents/skills/python-dev-tca/constructs/composition-root.md) | The site where a framework callback evaluates the per-input terminal expression | The runner, the loop, the current-state local |
 
-Each construct has one page: definition, required form, the rules that follow from the principle, and what it forbids. Every example shares one domain, venue fills, positions, and orders, and is correct to copy verbatim. The set is [`wiki/constructs/`](wiki/constructs/index.md).
+Each construct has one page in the skill: the class shape, its exact configuration, and what is visible in a finished file. Every example shares one world: a trading venue's fills, the positions they fold into, and a clearing house that records, refuses, and answers empty. That world is [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md).
 
 ---
 
-## Two Readers, Two Documents
+## How an Agent Builds With It
 
-The doctrine is written twice, once for each reader, and the two are kept in agreement.
+The standard is a skill an agent reads just before it writes Python, not a document it is asked to remember.
 
-**For people:** [`wiki/`](wiki/index.md), an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle. One concept per page, an index at every level, plain markdown that renders where it sits.
+[`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) meets the agent at the moment a procedural step comes to mind and hands it the classes that declare that step as a thing.
 
-| Directory | Question it answers |
-|-----------|---------------------|
-| [`doctrine/`](wiki/doctrine/index.md) | What the test is, and why it binds now |
-| [`constructs/`](wiki/constructs/index.md) | What the thirteen legal shapes, the succession shape, and the composition site are |
-| [`topology/`](wiki/topology/index.md) | Where each shape lives, and which way dependencies flow |
-| [`discovery/`](wiki/discovery/index.md) | How you find out what the world contains before you build it |
-| [`practice/`](wiki/practice/index.md) | How to design from a proof obligation and read a construction graph |
+| The agent is about to… | It declares |
+|---|---|
+| do this, then that | a later fact holding the earlier fact as a field |
+| check whether | a union; construction picks the variant |
+| handle it failing | a refusal variant in the reply and in the outcome |
+| handle there being none | a named thing for the empty case |
+| handle several | a tuple held whole, or one construction for each arrival |
+| read what another system sent | a route or foreign model given the raw input |
+| ask another system for something | an action, one interpreter, and the raw reply given to a union |
+| keep something between arrivals | a prior read on each arrival, and a successor constructed from it |
 
-**For the agent:** two skills under [`.agents/skills/`](.agents/skills/). [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build, one question per turn, each step gated by a schema. [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) loads when a model is about to write Python. It routes each step the model is about to write to the classes that declare it, and holds the same thirteen constructs and the required form of each. [`AGENTS.md`](AGENTS.md) is the one-line law that binds an agent to them.
+Around it:
+
+- [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) runs before any type is written: from evidence, to decided things, to the exact constructs to build.
+- [`smell-check`](.agents/skills/smell-check/SKILL.md) scans the result for the procedural patterns a model writes by habit. A build is not complete until it exits 0.
+- [`code-review-tca`](.agents/agents/code-review-tca.md) is the review agent. It reads the work as written by someone looking for a way around the standard.
+- [`AGENTS.md`](AGENTS.md) binds an agent to all of it.
 
 ---
 
 ## Almost None of This Is New, and That Is the Point
 
-It is the good half of typed functional programming, domain-driven design, and a few older schools, pulled together and made to hold under one test. Two camps spent decades saying the domain's structure should come first. They were right, and ignored, because the systems that ran the work never read what they wrote. A model reads it now, and the gap they were marginalized for is the gap that costs you on every run. The schools, and what TCA keeps and refuses from each, are in [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md#lineage).
+It is the good half of typed functional programming, domain-driven design, and a few older schools, pulled together and made to hold under one test. Two camps spent decades saying the domain's structure should come first. They were right, and ignored, because the systems that ran the work never read what they wrote. A model reads it now, and the gap they were marginalized for is the gap that costs you on every run.
 
 ---
 
 ## Start Here
 
-- **The whole idea**, the one rule and the four ways it breaks: [`wiki/doctrine/definition.md`](wiki/doctrine/definition.md)
-- **Why the domain belongs in the running code now**: [`wiki/doctrine/programs-are-ontologies.md`](wiki/doctrine/programs-are-ontologies.md)
-- **How the wiki fits together, and what to read first**: [`wiki/practice/learning-path.md`](wiki/practice/learning-path.md)
-- **The thirteen constructs**: [`wiki/constructs/`](wiki/constructs/index.md)
+- **The skill's entry point**, every moment and every construct: [`python-dev-tca/SKILL.md`](.agents/skills/python-dev-tca/SKILL.md)
+- **The example world** every page is written in: [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md)
+- **The signals** that a step was written where a thing belonged: [`signals.md`](.agents/skills/python-dev-tca/signals.md)

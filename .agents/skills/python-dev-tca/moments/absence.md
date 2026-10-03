@@ -89,15 +89,6 @@ class Bids(RootModel[tuple[Bid, ...]]):
         return Depth(sum((bid.quantity.root for bid in self.root), Decimal(0)))
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| FlatPosition | The holding of an account with no fills in an instrument. | AccountId, InstrumentId | concept model |
-| NoBids | The book has no resting bids. | nothing | concept model |
-| BestBid | The first of the bids. | Bid | concept model |
-| TopBid | The top of the bids. | BestBid, NoBids | ordered union |
-
 The hard case, constructed:
 
 `PositionStateConstructor.validate_json('{"account": "A1", "instrument": "ESZ6"}')` is a `FlatPosition`: the clearing house's answer for an account with no fills. Its `net_quantity` is `NetQuantity(Decimal(0))`.

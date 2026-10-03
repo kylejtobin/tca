@@ -7,25 +7,16 @@ description: "Type Construction Architecture for Python. A program is declared a
 
 A program is a set of Pydantic types, and constructing them is the only operation. Each step you picture the program taking is a thing you declare: what exists after the step, holding what existed before it.
 
-## Before any class
+## Every class
 
-Write the noun table. One row for each thing.
+- Its name is the practitioner's noun.
+- Its docstring is one sentence a domain expert accepts.
+- Its fields are the things it holds.
+- Its shape is one of the kinds below.
 
-| name | is | holds | kind |
-|---|---|---|---|
-| Fill | An execution of part of an order at a price and quantity. | OrderId, AccountId, InstrumentId, Side, Price, Quantity | concept model |
-| Position | One account's holding in one instrument, the fold of its fills. | PositionState, Fill | concept model, state-transition shape |
-| PersistPosition | The intended recording of a position in the clearing house. | Position | action |
-| RecordedPosition | A position the clearing house recorded, with the sequence it assigned. | ClearingSequence, Position | concept model |
+Every meaning the program has is one class, and every class is one meaning.
 
-- `name`: the practitioner's noun. It becomes the class name.
-- `is`: one sentence a domain expert accepts. It becomes the docstring.
-- `holds`: other rows. They become the fields.
-- `kind`: one of the forms under "For each row's kind". It gives the class shape.
-
-Every meaning the program has is one row, and every row is one meaning.
-
-The whole table for the example world, with its unions and derivations: [world/venue.md](world/venue.md).
+The example world, with its unions and derivations: [world/venue.md](world/venue.md).
 
 ## At each moment
 
@@ -43,11 +34,11 @@ Read the page, then write the classes it shows.
 | ask another system for something | [moments/effect.md](moments/effect.md) | an action, one interpreter, and the raw reply given to a union |
 | get an id, a time, a random value | [moments/origin.md](moments/origin.md) | a field carried by what another system sent, or a derivation |
 | keep something between arrivals | [moments/arrival.md](moments/arrival.md) | a prior read on each arrival, and a successor constructed from it |
-| do what no form covers | [moments/missing-thing.md](moments/missing-thing.md) | the noun missing from the table |
+| do what no form covers | [moments/missing-thing.md](moments/missing-thing.md) | the thing not yet named |
 
-## For each row's kind
+## For each kind
 
-| kind | The row is | Class shape |
+| kind | The thing is | Class shape |
 |---|---|---|
 | semantic scalar | one atomic meaning over a primitive or a closed vocabulary | [constructs/semantic-scalar.md](constructs/semantic-scalar.md) |
 | value object | a product with no identity, equal when its fields are equal | [constructs/value-object.md](constructs/value-object.md) |
@@ -72,6 +63,5 @@ Read the page, then write the classes it shows.
 
 ## Before reporting done
 
-- Every row of the noun table has a declaration, and every declaration has a row.
 - Every "In the file" line of every moment page you read is true of the file. [signals.md](signals.md) gives, for each line, the signal that it is false.
 - The `smell-check` skill exits 0.

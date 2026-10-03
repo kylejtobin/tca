@@ -79,13 +79,6 @@ Callback:            receive_fill
 Output serializer:   FillReplyRoute.emit
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| ReadPosition | The intended reading of one account's position in one instrument from the clearing house. | AccountId, InstrumentId | action |
-| ReadPositionInterpreter | The one place the clearing house is asked for a position. | ReadPosition, PositionClient | effect interpreter |
-
 The hard case, constructed:
 
 On an account's first fill, `client.load` returns `'{"account": "A1", "instrument": "ESZ6"}'` and `client.save` returns `'{"sequence": 7}'`. `receive_fill(FillRoute.receive('{"data": {"payload": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}}')).emit()` is `'{"sequence":7,"net_quantity":"3"}'`, and the `Position` it recorded holds a `FlatPosition` as `prior`.

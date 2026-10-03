@@ -88,15 +88,6 @@ config = VenueConfig()
 client = PositionClient(config.url.root, config.token.get_secret_value())
 ```
 
-Add the rows:
-
-| name | is | holds | kind |
-|---|---|---|---|
-| PersistPosition | The intended recording of a position in the clearing house. | Position | action |
-| ReadPosition | The intended reading of one account's position in one instrument from the clearing house. | AccountId, InstrumentId | action |
-| PersistPositionInterpreter | The one place a position is sent to the clearing house. | PersistPosition, PositionClient | effect interpreter |
-| ReadPositionInterpreter | The one place the clearing house is asked for a position. | ReadPosition, PositionClient | effect interpreter |
-
 The hard case, constructed:
 
 `PositionStateConstructor.validate_json('{"prior": {"account": "A1", "instrument": "ESZ6"}, "fill": {"order_id": "O1", "account": "A1", "instrument": "ESZ6", "side": "buy", "price": "101.5", "quantity": "3"}}').persistence` is a `PersistPosition` holding that `Position`. The client has not been called.
