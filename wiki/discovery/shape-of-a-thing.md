@@ -21,7 +21,7 @@ Every file reads as a description of the thing it names. There is nothing in any
 
 ## Why fast building produces obstacles
 
-The model generates left to right. A construct is a graph decision: its correctness depends on relations to things not yet written. Writing a type well requires the whole shape decided first. When the shape is not decided and a token has to land, what lands is whatever answers the local question in front of the generator. The local question at the keyboard is never "what is a balance"; it is "this key is null, what do I do." So the type that lands is the shape of that question.
+The model generates left to right. A construct is a graph decision: its correctness depends on relations to things not yet written. Writing a type well requires the whole shape decided first. When the shape is not decided and a token has to land, what lands is whatever answers the local question in front of the generator. The local question at the keyboard is never "what is a balance"; it is "this key is null, what do I do." So the type that lands is the shape of that question. When the generator is simulating the system running instead of reading a wire, the type that lands is a step of the run; see [the run as nouns](./run-as-nouns.md).
 
 This is why discovery separates [things](./things.md) from [constructs](./constructs.md), and why neither is code. By the time a construct is chosen, the thing, its parts, its constraints, and its name are already written down, and the construct has nothing left to invent. The obstacles still exist. They are met at the crossing, in the [foreign model](../constructs/foreign-model.md), where the answer to "this key is null" is an alias and a union already decided from the world, not a new noun.
 

@@ -29,7 +29,7 @@ Model the independent facts and derive their consequences. A bid and a nonnegati
 
 - `model_construct`, `PrivateAttr`, undeclared instance state, `object.__setattr__`, or overriding any inherited semantic declaration
 - `model_copy(update=...)`
-- `Any`, `SkipValidation`, untyped dictionaries, or mutable containers on semantic edges
+- `Any`, `JsonValue`, `Json`, `SkipValidation`, untyped dictionaries, or mutable containers on semantic edges
 - checking an invariant again after its type constructed
 - storing raw, partial, failed, or foreign input past its boundary
 - constructing a constituent in a separate structure when the outer annotation owns that edge

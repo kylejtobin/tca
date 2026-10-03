@@ -60,8 +60,8 @@ class PersistPositionInterpreter(BaseModel):
 - The external call happens only in `execute`, evaluated at the [composition-root site](./composition-root.md).
 - `prior` constructs from the read reply on each input: an existing fact has a source, not merely a type. That read nests in the terminal expression, never a cached current-state slot.
 - The action's semantic values serialize at the client call.
-- A differing SDK reply constructs as a foreign model, then the returned concept-model or union outcome.
-- Every documented nonfatal capability failure becomes a constructed outcome variant. `CancelledError`, `KeyboardInterrupt`, and `SystemExit` propagate to the invoking runtime. Programming defects stay uncaught.
+- Every reply the capability can send, success, refusal, and empty, is one union of foreign models. The raw reply goes to that union's constructor and construction picks the variant; a refusal is a variant of the reply, never an exception path. The returned concept-model or union outcome constructs from the action and the constructed reply.
+- Nothing is caught. A failure the capability reports is a variant of the reply union; a failure it raises propagates. One `execute` is one request and one raw reply. `CancelledError`, `KeyboardInterrupt`, and `SystemExit` propagate to the invoking runtime. Programming defects stay uncaught.
 - One interpreter type per action meaning.
 
 ## Forbidden
@@ -69,6 +69,8 @@ class PersistPositionInterpreter(BaseModel):
 - a domain decision, a successor constructed from prior state and new input, or a receive loop; reconstructing an observed stored state is a read outcome, not a transition
 - mutation of the action or any domain value
 - success invented before the capability reports it
-- broad exceptions caught, flags returned, or failure collapsed into absence
+- an exception caught to produce an outcome, flags returned, or failure collapsed into absence
+- a client helper that parses, retries, counts, or raises on the reply's content; it decides what the reply meant before the model can
+- several replies counted, collected, or waited for in `execute`
 - retries whose repetition semantics the action does not declare
 - raw replies retained after the outcome constructs

@@ -8,3 +8,4 @@ How to read the graph and use the wiki.
 - [proofs-and-graph](./proofs-and-graph.md): How to design from a proof obligation and recover a construction graph from existing code.
 - [construct-graphs](./construct-graphs.md): How declared facts come into existence as a construction graph.
 - [semantic-index-types](./semantic-index-types.md): Why names are instructions when a language model reads a type.
+- [smell-check](./smell-check.md): The scan that finds the five procedural patterns LLMs write instead of modeling, required to pass before any TCA Python build is reported complete.

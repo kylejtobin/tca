@@ -9,5 +9,6 @@ How you find out what the world contains before you build it. Discovery starts f
 - [deciding](./deciding.md): Every answer is decided, not deferred; a conflict between two models means the thing has not yet been seen, and no vendor, checker, register, or operator rules in its place.
 - [constructs](./constructs.md): From decided things to the exact whitelist constructs to build, their holders, their placement, and a written pass for the four breaks.
 - [shape-of-a-thing](./shape-of-a-thing.md): A good construct is the shape of something in the world; a bad one is the shape of an obstacle the modeler hit while typing.
+- [run-as-nouns](./run-as-nouns.md): The run wearing nouns; a model that simulates the system running and labels each step with a construct name produces types that are the run and never the world, and the noun table is where that is caught.
 - [substitutions](./substitutions.md): The seven things a model puts in place of a decision it has not made, what each looks like, and the move that replaces it.
 - [worked-example](./worked-example.md): One complete discovery run, from a rendered Plaid identity reply to the exact construct set, taken from a real session.
