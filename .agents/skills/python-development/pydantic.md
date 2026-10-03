@@ -54,6 +54,6 @@ The constructor graph is eager: required constituents construct before the outer
 
 ## Forbidden Substrate Paths
 
-`model_construct`, unchecked model copying, assignment mutation, `PrivateAttr`, undeclared instance state, `Any`, `SkipValidation`, mutable nested values, and unvalidated defaults cannot create or alter a semantic value. Report `ValidationError` as construction refusal, never as a domain witness.
+`model_construct`, unchecked model copying, assignment mutation, `PrivateAttr`, undeclared instance state, `Any`, `JsonValue`, `Json`, `SkipValidation`, mutable nested values, and unvalidated defaults cannot create or alter a semantic value. Report `ValidationError` as construction refusal, never as a domain witness.
 
 No program-owned custom validator, constructor override, `model_post_init`, or schema hook supplies domain meaning. Pydantic's built-in construction constraints remain the substrate; handwritten validation is not another construct.

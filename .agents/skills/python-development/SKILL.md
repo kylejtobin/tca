@@ -5,6 +5,8 @@ description: The Type Construction Architecture standard for building Python pro
 
 # Python Development
 
+Before any class, write the noun table: one row per thing, with `name` in the practitioner's word, `is` in one sentence a domain expert accepts, `holds` as other rows, and `kind` from [construct-selection.md](construct-selection.md). Consult the thirteen forms only for rows in that table. A step you are about to write is a noun you have not named; name what exists after it.
+
 - [tca.md](tca.md): The executable-ontology principle, one-to-one correspondence, and four TCA breaks. Read before applying the construct whitelist.
 - [construction.md](construction.md): How construction proves admitted meanings and preserves completed facts. Read when defining construction, refusal, immutability, or successor semantics.
 - [pydantic.md](pydantic.md): How Pydantic executes TCA construction graphs as the runtime construction substrate. Read before implementing or interpreting any whitelisted construct.
@@ -25,3 +27,5 @@ description: The Type Construction Architecture standard for building Python pro
 - [constructs/effect-interpreter.md](constructs/effect-interpreter.md): How typed actions are executed through concrete external capabilities and observed outcomes are constructed. Read when binding effects to clients, storage, subprocesses, or transports.
 - [constructs/state-transition.md](constructs/state-transition.md): How a concept model's prior field represents immutable succession. Read when using the state-transition shape without mutation or procedural state management.
 - [constructs/action.md](constructs/action.md): How a frozen typed value describes one intended external effect without executing it. Read when an effect request must be inspected, routed, persisted, retried, or interpreted.
+
+Before reporting any build complete, run the `smell-check` skill. A nonzero exit is not complete.

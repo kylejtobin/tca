@@ -11,7 +11,7 @@ Meaning lives in program structure; construction is its proof. The program is an
 
 Use the thirteen declaration forms in [construct selection](construct-selection.md). Do not count categories twice: state transition is a concept model with a self-typed `prior`, and composition root names where an expression is evaluated, not another declaration. Add no wrapper to preserve a fictitious extra form, generic helper layer, or procedural substitute.
 
-Decide the world before selecting a construct. Before typing a class, say what thing it is in the domain expert's words. A sentence about what the program does with data has not decided a thing; do not pick a Pydantic feature, build its smallest demo, and give it a noun.
+Decide the world before selecting a construct. Before typing a class, say what thing it is in the domain expert's words. The noun table in [construct selection](construct-selection.md) is that decision written down; write it before any class. A sentence about what the program does with data has not decided a thing; do not pick a Pydantic feature, build its smallest demo, and give it a noun.
 
 These examples inhabit a venue: an account trades instruments; its orders instruct side and quantity, with a price for limit orders. A fill executes part of an order at a price and quantity, and its report carries account and instrument. A position is one account's holding in one instrument, the fold of its fills, identified by both. The book holds resting bids and asks per instrument. The ledger records positions and acknowledges each record with a sequence.
 

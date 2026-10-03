@@ -58,11 +58,12 @@ class PersistPositionInterpreter(BaseModel):
 - Keep `PositionStateConstructor` beside the state alias. Evaluate the read and write at the [composition-root site](composition-root.md).
 - Admit the `Interpreter` edge suffix for the capability crossing, not for a new domain meaning.
 - Put the action and concrete capability in declared fields.
-- Perform the external call only in `execute`.
+- Perform the external call only in `execute`. One `execute` is one request and one raw reply.
 - Construct `prior` from the read reply on each input: an existing fact has a source, not merely a type. Nest that read in the terminal expression; do not replace it with an unexplained value or cached current-state slot.
 - Serialize the action's semantic values at the client call.
-- Construct a differing SDK reply as a foreign model, then construct the returned concept-model or union outcome.
-- Translate every documented nonfatal capability failure into a constructed outcome variant.
+- Declare every reply the capability can send, success, refusal, and empty, as one union of foreign models. Hand the raw reply to that union's constructor; construction picks the variant. A refusal is a variant of the reply, never an exception path.
+- Construct the returned concept-model or union outcome from the action and the constructed reply.
+- Catch nothing. A failure the capability reports is a variant of the reply union; a failure it raises propagates.
 - Propagate `CancelledError`, `KeyboardInterrupt`, and `SystemExit` to the invoking runtime.
 - Leave programming defects uncaught.
 - Use one interpreter type per action meaning.
@@ -72,6 +73,8 @@ class PersistPositionInterpreter(BaseModel):
 - decide domain policy, construct a successor from prior state and a new input, or become a receive/transition loop; reconstructing an observed stored state is a read outcome, not a transition
 - mutate the action or any domain value
 - invent success before the external capability reports it
-- catch broad exceptions, return flags, or collapse failure into absence
+- catch an exception to produce an outcome, return flags, or collapse failure into absence
+- call a client helper that parses, retries, counts, or raises on the reply's content; it decides what the reply meant before the model can
+- count, collect, or wait for several replies in `execute`
 - hide retries whose repetition semantics are not declared by the action
 - retain raw replies after the outcome constructs
