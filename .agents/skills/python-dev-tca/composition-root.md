@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "Where config and clients are bound once and one callback is the whole program for one message. Holds no class. Lives in main.py."
+description: "The config, the clients, and the one callback whose returned expression is the whole program for one message. Holds no class. Lives in main.py."
 ---
 
 ```python

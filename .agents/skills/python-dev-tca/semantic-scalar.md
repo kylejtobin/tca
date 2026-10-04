@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "One atomic meaning over a primitive or a closed vocabulary. Holds a primitive. Lives in domain/<context>/type.py."
+description: "One atomic meaning over a primitive or a closed vocabulary, constrained so an invalid value cannot be constructed. Holds a primitive. Lives in domain/<context>/type.py."
 ---
 
 ```python

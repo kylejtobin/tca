@@ -5,6 +5,26 @@ description: "Type Construction Architecture for Python. A program is declared a
 
 # Python Dev TCA
 
+Whenever you do development, always ask these three questions:
+
+1. Remove every body. Do the types alone still specify the domain? If what remains is a pipeline, there is no model.
+2. Which types are named for a stage of the run? Each is workflow inhabiting a class, and the domain thing under it has no type. Delete it.
+3. Are the inhabitants of the types in bijection with the states of the domain? If not, the model is wrong. Remodel from the domain; do not patch the type.
+
+Every type you write sits on one of these levels, and its fields hold only types from the levels above it; a type you cannot place by its fields is procedure.
+
+```text
+Scalar
+↓
+Value
+↓
+Thing
+↓
+Alternative
+↓
+Crossing
+```
+
 Every class you write is a `BaseModel`, a `RootModel` or a `StrEnum`. Every field is typed as one of your own classes, a union of them, or a tuple of them; a primitive appears only as the root of a `RootModel`. There is no `dict`, `list`, `set`, `Any`, `None` or `Optional` anywhere: not in a field, a root, an argument or an expression. The only functions are one `execute` on each interpreter and the callback in `main.py`, each a single returned expression; anything else a class knows is a property with a single returned expression. An interpreter also holds its client, and config is a `BaseSettings`; nothing else is held that is not one of your classes. Construction is the only operation: a step you are about to write is a class you have not named.
 
 ## A whole program
@@ -119,10 +139,9 @@ Every box is a class in the page its group names.
 A solid arrow is a field: the head holds the tail.
 A dotted arrow is construction by shared names: the head is constructed from the tail.
 A thick arrow is an effect: the interpreter's `execute` returns the head.
-A step you are about to write is a class you have not named.
 What differs between the variants of a union is one derivation, under one name, on each variant.
 
-## Its files, in the order they are written
+## Its files, in dependency order
 
 ```text
  1  domain/<context>/type.py               semantic-scalar.md  ordered-union.md  collection.md
@@ -137,4 +156,4 @@ What differs between the variants of a union is one derivation, under one name, 
 10  main.py                                composition-root.md
 ```
 
-A file imports only files written before it. The page beside a file is read immediately before that file is written.
+A file imports only the files above it. Its constructs are on the pages beside it.

@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "Another system's thing, under its names, as it sends it or accepts it. Holds semantic scalars and other foreign models. Lives in integration/<system>/model.py."
+description: "Another system's thing, under its names, parsed from what it sends, serialized to what it accepts. Holds semantic scalars and other foreign models. Lives in integration/<system>/model.py."
 ---
 
 ```python

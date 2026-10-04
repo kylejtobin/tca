@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "The one place an action's external call is made. Holds an action and the client. Lives in integration/<system>/interpreter.py."
+description: "The one place an action's external effect exists; what it returns is the next fact. Holds an action and the client. Lives in integration/<system>/interpreter.py."
 ---
 
 ```python

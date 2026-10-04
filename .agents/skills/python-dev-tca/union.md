@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "Closed alternatives on one axis, each a class holding its own facts. Holds its variants. Lives beside them."
+description: "A sum: closed alternatives on one axis, each a class holding its own facts. Holds its variants. Lives beside them."
 ---
 
 ```python
