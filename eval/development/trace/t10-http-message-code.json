@@ -1,6 +1,6 @@
 {
-  "id": "t10-http-message-spec",
-  "input": "Specify the HTTP message model.",
+  "id": "t10-http-message-code",
+  "input": "Write the HTTP message model.",
   "target": "FieldName that constructs from header names as the transport delivers them",
   "hard_type": "an HTTP header field name"
 }

@@ -1,5 +1,5 @@
 {
-  "id": "t12-dictionary-source",
+  "id": "t11-dictionary-source",
   "input": "Show the dictionary crossing for the promotions system's discount.",
   "target": "DiscountOffer constructed by model_validate from the dictionary a real library documents as its output",
   "hard_type": "a dictionary source for the discount"

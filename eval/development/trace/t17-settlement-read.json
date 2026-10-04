@@ -1,5 +1,5 @@
 {
-  "id": "t18-settlement-read",
+  "id": "t17-settlement-read",
   "input": "Add the action and interpreter that read a paid order's settlement.",
   "target": "the settlement API's request type and the authorizing fact's action, declared from the agreed design",
   "hard_type": "the settlement API"

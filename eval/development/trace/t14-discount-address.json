@@ -1,5 +1,5 @@
 {
-  "id": "t15-discount-address",
+  "id": "t14-discount-address",
   "input": "Model the promotions address so the interpreter passes no raw identifier.",
   "target": "DiscountAddress(customer: CustomerId), constructed from the order, on a client whose base address is a CollectionUrl",
   "hard_type": "one customer's discount address"

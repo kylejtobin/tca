@@ -1,5 +1,5 @@
 {
-  "id": "t16-parser-plan",
+  "id": "t15-parser-plan",
   "input": "Plan how the skill teaches and models the parser crossing.",
   "target": "FixedWidth, a custom type whose core schema parses the report, so that Settlement.model_validate(text) is the whole crossing",
   "hard_type": "the provider's fixed-width settlement report"
