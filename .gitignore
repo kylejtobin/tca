@@ -1,13 +1,1 @@
-# Environment variables
-.env
-.env.*
-
-# Local agent settings (machine paths, never committed)
-.claude/settings.local.json
-
-# IDE
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+__pycache__/
