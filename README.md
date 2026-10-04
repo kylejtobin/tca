@@ -86,11 +86,11 @@ def receive_fill(message: FillRoute) -> FillReplyRoute:
                         instrument=message.fill.instrument,
                     ),
                     client=client,
-                ).execute(),
+                ).interpret(),
                 fill=message.fill,
             ).persistence,
             client=client,
-        ).execute(),
+        ).interpret(),
     )
 ```
 
@@ -155,21 +155,21 @@ A whole program is built from thirteen declaration forms. Each one replaces a ha
 
 | Construct | What it is | What it replaces |
 |---|---|---|
-| [Semantic scalar](.agents/skills/python-dev-tca/constructs/semantic-scalar.md) | One atomic meaning over a primitive or a closed vocabulary | The bare `str` and `Decimal` |
-| [Value object](.agents/skills/python-dev-tca/constructs/value-object.md) | A frozen product with no identity, equal when its fields are equal | The tuple or dict of parts |
-| [Concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) | A full domain thing or durable fact; the class is the kind | The `kind` field and the registry |
-| [Union](.agents/skills/python-dev-tca/constructs/union.md) | Closed alternatives, each holding its own facts | The `if/elif` ladder and the `bool` |
-| [Ordered union](.agents/skills/python-dev-tca/constructs/ordered-union.md) | A strong alternative whose only failure means the fallback | `try/except` and `.get()` returning `None` |
-| [Collection](.agents/skills/python-dev-tca/constructs/collection.md) | Several with a meaning of their own, as a frozen tuple | The mutable list |
-| [Transformation](.agents/skills/python-dev-tca/constructs/transformation.md) | A derivation of one returned expression on the thing that holds its inputs | The helper function and the service method |
-| [Foreign model](.agents/skills/python-dev-tca/constructs/foreign-model.md) | Another system's thing, lifted whole by aliases | The mapper, the adapter, the DTO |
-| [Contract model](.agents/skills/python-dev-tca/constructs/contract-model.md) | This program's published request or reply | The hand-built response dict |
-| [Config](.agents/skills/python-dev-tca/constructs/config.md) | Deployment input constructed once | The scattered `os.environ` read |
-| [Route](.agents/skills/python-dev-tca/constructs/route.md) | One transport crossing, in or out | The handler that parses by hand |
-| [Action](.agents/skills/python-dev-tca/constructs/action.md) | One intended external effect, as a value that performs nothing | The side effect performed in place |
-| [Effect interpreter](.agents/skills/python-dev-tca/constructs/effect-interpreter.md) | The one place an action's external call is made | The client call inside domain code |
+| [Semantic scalar](.agents/skills/python-dev-tca/semantic-scalar.md) | One atomic meaning over a primitive or a closed vocabulary | The bare `str` and `Decimal` |
+| [Value object](.agents/skills/python-dev-tca/value-object.md) | A frozen product with no identity, equal when its fields are equal | The tuple or dict of parts |
+| [Concept model](.agents/skills/python-dev-tca/concept-model.md) | A full domain thing or durable fact; the class is the kind | The `kind` field and the registry |
+| [Union](.agents/skills/python-dev-tca/union.md) | Closed alternatives, each holding its own facts | The `if/elif` ladder and the `bool` |
+| [Ordered union](.agents/skills/python-dev-tca/ordered-union.md) | A strong alternative whose only failure means the fallback | `try/except` and `.get()` returning `None` |
+| [Collection](.agents/skills/python-dev-tca/collection.md) | Several with a meaning of their own, as a frozen tuple | The mutable list |
+| [Transformation](.agents/skills/python-dev-tca/transformation.md) | A derivation of one returned expression on the thing that holds its inputs | The helper function and the service method |
+| [Foreign model](.agents/skills/python-dev-tca/foreign-model.md) | Another system's thing, lifted whole by aliases | The mapper, the adapter, the DTO |
+| [Contract model](.agents/skills/python-dev-tca/contract-model.md) | This program's published request or reply | The hand-built response dict |
+| [Config](.agents/skills/python-dev-tca/config.md) | Deployment input constructed once | The scattered `os.environ` read |
+| [Route](.agents/skills/python-dev-tca/route.md) | One transport crossing, in or out | The handler that parses by hand |
+| [Action](.agents/skills/python-dev-tca/action.md) | One intended external effect, as a value that performs nothing | The side effect performed in place |
+| [Effect interpreter](.agents/skills/python-dev-tca/effect-interpreter.md) | The one place an action's external call is made | The client call inside domain code |
 
-Succession is a [concept model](.agents/skills/python-dev-tca/constructs/concept-model.md) with a self-typed `prior`. The program's one function lives at the [composition root](.agents/skills/python-dev-tca/constructs/composition-root.md).
+Succession is a [concept model](.agents/skills/python-dev-tca/concept-model.md) with a self-typed `prior`. The program's one function lives at the [composition root](.agents/skills/python-dev-tca/composition-root.md).
 
 ## Built for the agent that writes your code
 
@@ -206,7 +206,7 @@ A coding agent can recite all of the above and will still write the procedural v
        - id: smell-check
    ```
 
-The example world every page of the skill is written in, with every union and derivation: [`world/venue.md`](.agents/skills/python-dev-tca/world/venue.md).
+The example world every page of the skill is written in, with every union and derivation: [A whole program](.agents/skills/python-dev-tca/SKILL.md#a-whole-program).
 
 ## Why this, why now
 

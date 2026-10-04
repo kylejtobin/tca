@@ -41,7 +41,7 @@ flowchart LR
         DeclineReasons["<b>DeclineReasons</b>"]
     end
 
-    subgraph g2["3 foreign model"]
+    subgraph g2["2 foreign model"]
         DiscountAddress["<b>DiscountAddress</b><br/>customer"]
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
         CardCharge["<b>CardCharge</b><br/>amt · cur · src · ref"]
@@ -51,7 +51,7 @@ flowchart LR
         ChargeReply["<b>ChargeReply</b>"]
     end
 
-    subgraph g3["4 value object · collection"]
+    subgraph g3["3 value object · collection"]
         Line["<b>Line</b><br/>sku · unit_price · quantity"]
         Lines["<b>Lines</b>"]
         Discount["<b>Discount</b><br/>percent"]
@@ -60,24 +60,24 @@ flowchart LR
         Failure["<b>Failure</b><br/>error"]
     end
 
-    subgraph g4["5 concept model"]
+    subgraph g4["4 concept model"]
         Order["<b>Order</b><br/>id · customer · card · currency · lines"]
         PricedOrder["<b>PricedOrder</b><br/>order · discount"]
     end
 
-    subgraph g4u["5 union"]
+    subgraph g4u["4 union"]
         PaidOrder["<b>PaidOrder</b><br/>order · payment"]
         DeclinedOrder["<b>DeclinedOrder</b><br/>order · payment"]
         UnsettledOrder["<b>UnsettledOrder</b><br/>order · payment"]
         OrderOutcome["<b>OrderOutcome</b>"]
     end
 
-    subgraph g4a["5 action"]
+    subgraph g4a["4 action"]
         ReadDiscount["<b>ReadDiscount</b><br/>order"]
         Charge["<b>Charge</b><br/>order"]
     end
 
-    subgraph g5["6 contract model"]
+    subgraph g5["5 contract model"]
         PublishedOrder["<b>PublishedOrder</b><br/>id · amount · currency · discount"]
         OrderConfirmed["<b>OrderConfirmed</b><br/>order · payment"]
         OrderRejected["<b>OrderRejected</b><br/>order · payment"]
@@ -85,16 +85,16 @@ flowchart LR
         OrderReply["<b>OrderReply</b>"]
     end
 
-    subgraph g7["8 transformation"]
+    subgraph g7["7 transformation"]
         ChargeAttempt["<b>ChargeAttempt</b><br/>order · reply"]
     end
 
-    subgraph g8["9 effect interpreter"]
+    subgraph g8["8 effect interpreter"]
         ReadDiscountInterpreter["<b>ReadDiscountInterpreter</b><br/>action · client"]
         ChargeInterpreter["<b>ChargeInterpreter</b><br/>action · client"]
     end
 
-    subgraph g9["10 route"]
+    subgraph g9["9 route"]
         CheckoutRoute["<b>CheckoutRoute</b><br/>order"]
         ReplyRoute["<b>ReplyRoute</b><br/>outcome"]
     end
@@ -148,16 +148,15 @@ What differs between the variants of a union is one derivation, under one name, 
 
 ```text
  1  domain/<context>/type.py               semantic-scalar.md  ordered-union.md  collection.md
- 2  parser/<format>.py                     parser.md
- 3  integration/<system>/model.py          foreign-model.md
- 4  domain/<context>/value.py              value-object.md  collection.md
- 5  domain/<context>/<concept>.py          union.md  concept-model.md  action.md
- 6  domain/<context>/api.py                contract-model.md
- 7  config.py                              config.md
- 8  integration/<system>/<meaning>.py      transformation.md
- 9  integration/<system>/interpreter.py    effect-interpreter.md
-10  api/<context>.py                       route.md
-11  main.py                                composition-root.md
+ 2  integration/<system>/model.py          foreign-model.md
+ 3  domain/<context>/value.py              value-object.md  collection.md
+ 4  domain/<context>/<concept>.py          union.md  concept-model.md  action.md
+ 5  domain/<context>/api.py                contract-model.md
+ 6  config.py                              config.md
+ 7  integration/<system>/<meaning>.py      transformation.md
+ 8  integration/<system>/interpreter.py    effect-interpreter.md
+ 9  api/<context>.py                       route.md
+10  main.py                                composition-root.md
 ```
 
 A file imports only the files above it. Its constructs are on the pages beside it.

@@ -8,7 +8,7 @@ In place and agreed:
 
 - `SKILL.md` names the reading and writing of a format in `parser/` as the only functions besides `interpret` and the `main.py` callback.
 - `SKILL.md` states the crossing rule: a dictionary or JSON constructs a model; a format that is neither is read by a maintained library that yields one; only a format no library yields one from is read by a format type in `parser/`.
-- The file table has row 2, `parser/<format>.py` with `parser.md`. The page does not exist yet.
+- The file table has no `parser/` row; it gets one with `parser.md` when the page exists.
 - smell-check does not scan `parser/`, and fails `PARSER-IMPORT` on any import of `parser` outside `integration/<system>/model.py`.
 
 ## What to build
