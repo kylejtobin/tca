@@ -8,8 +8,9 @@ description: "The one place an action's external call is made. Holds an action a
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from domain.shop.discount import DiscountStateConstructor
-from domain.shop.order import PricedOrder, ReadDiscount
+from domain.shop.order import ReadDiscount
+from integration.promotions.model import DiscountOffer, DiscountRequest
+from integration.promotions.reading import DiscountReading
 
 
 class ReadDiscountInterpreter(BaseModel):
@@ -23,11 +24,17 @@ class ReadDiscountInterpreter(BaseModel):
     action: ReadDiscount
     client: httpx.AsyncClient = Field(exclude=True, repr=False)
 
-    async def execute(self) -> PricedOrder:
-        return PricedOrder(
+    async def execute(self) -> DiscountReading:
+        return DiscountReading(
             order=self.action.order,
-            discount=DiscountStateConstructor.validate_json(
-                (await self.client.get(f"/discounts/{self.action.order.customer.root}")).text
+            discount=DiscountOffer.model_validate_json(
+                (
+                    await self.client.get(
+                        DiscountRequest.model_validate(
+                            self.action.order, from_attributes=True
+                        ).path.root
+                    )
+                ).text
             ),
         )
 ```
@@ -39,7 +46,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from domain.shop.order import Charge
 from integration.payments.attempt import ChargeAttempt
-from integration.payments.model import ChargeReplyConstructor, ChargeRequest
+from integration.payments.model import ChargeReply, ChargeRequest
 
 
 class ChargeInterpreter(BaseModel):
@@ -56,7 +63,7 @@ class ChargeInterpreter(BaseModel):
     async def execute(self) -> ChargeAttempt:
         return ChargeAttempt(
             order=self.action.order,
-            payment=ChargeReplyConstructor.validate_json(
+            reply=ChargeReply.model_validate_json(
                 (
                     await self.client.post(
                         "/charges",

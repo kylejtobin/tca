@@ -70,6 +70,26 @@ class ProviderUrl(RootModel[str]):
     root: str = Field(min_length=1)
 
 
+class ProviderPath(RootModel[str]):
+    """The place, within another system's address, of one thing it holds."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
+class ProviderKey(RootModel[str]):
+    """The key another system knows this program by."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
 class UnitPrice(RootModel[int]):
     """The price of one unit, in minor units of the currency, above zero."""
 

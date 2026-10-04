@@ -28,6 +28,7 @@ Every hit is a violation. There is no severity, no "edge work", no "serializatio
 | CATCH | `try`, `except`, `finally`, `raise`, `raise_for_status` | a failure handled by procedure. Nothing is caught and the program raises nothing; a refusal is a variant of the reply. |
 | NONE | `\| None`, `Optional[...]` | an absence with no name. The empty case is a class. |
 | LAMBDA | `lambda`, `*args`, `**kwargs` | a function with no name, or an untyped parameter list. |
+| LIST, SET, ANY, TYPEADAPTER | `list`, `[...]`, `set`, `frozenset`, `Any`, `TypeAdapter` | a shape that is not one of your classes. A many is a `RootModel` over a tuple; a union is a `RootModel` over its variants. |
 | JSON | `json.loads(`, `json.dumps(` | parsing or building by hand. Raw text goes to a constructor; a model serialises itself. |
 | BYPASS | `model_construct`, `model_copy(`, `PrivateAttr`, `cached_property`, `lru_cache`, `object.__setattr__`, `model_post_init`, `def __init__(`, `SkipValidation`, `global`, `nonlocal` | construction skipped or mutated, or state kept outside a value. |
 
@@ -35,10 +36,8 @@ Every hit is a violation. There is no severity, no "edge work", no "serializatio
 
 Do not patch the line. The line is the symptom. The hit means a thing was never modeled, so go back to what the thing is and construct it. The fix for a loop is the collection and its fold. The fix for a conditional is the union. The fix for a dict is the model. The fix for a parse method is construction through annotations and aliases. The fix for a free function is the type that owns the meaning.
 
-If the construct you need is not on the whitelist, that is a reported construction gap. Say so. It is never permission for free code.
+If the construct you need is not a page of python-dev-tca, that is a reported construction gap. Say so. It is never permission for free code.
 
 ## DICT hits
 
 Every DICT hit is a violation. Fix the model.
-
-The one exception is a case table: a dict literal whose keys are every member of one `StrEnum` or `Literal`, indexed directly. The script recognizes that shape, a literal whose every key is `Enum.MEMBER` followed by `[`, and prints it as `CASE-TABLE` without failing. Whether every member is present is not visible on the line; that is the judge's question. Any other dict is `DICT` and a violation.

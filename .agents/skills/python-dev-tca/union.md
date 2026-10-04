@@ -4,40 +4,6 @@ description: "Closed alternatives on one axis, each a class holding its own fact
 ---
 
 ```python
-# domain/shop/discount.py
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-
-from domain.shop.type import Percent
-
-
-class LoyaltyDiscount(BaseModel):
-    """The share of the total the promotions system takes off for a customer."""
-
-    model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
-    )
-    percent: Percent
-
-
-class NoDiscount(BaseModel):
-    """The promotions system holds no discount for a customer."""
-
-    model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
-    )
-
-    @property
-    def percent(self) -> Percent:
-        return Percent(0)
-
-
-DiscountState = LoyaltyDiscount | NoDiscount
-DiscountStateConstructor: TypeAdapter[DiscountState] = TypeAdapter(DiscountState)
-```
-
-```python
 # domain/shop/order.py
 class PaidOrder(BaseModel):
     """A priced order the payment provider charged."""
@@ -72,6 +38,19 @@ class UnsettledOrder(BaseModel):
     payment: Failure
 
 
-OrderOutcome = PaidOrder | DeclinedOrder | UnsettledOrder
-OrderOutcomeConstructor: TypeAdapter[OrderOutcome] = TypeAdapter(OrderOutcome)
+class OrderOutcome(RootModel[PaidOrder | DeclinedOrder | UnsettledOrder]):
+    """What became of a priced order at the payment provider."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+
+    @property
+    def order(self) -> PricedOrder:
+        return self.root.order
+
+    @property
+    def payment(self) -> Approval | Decline | Failure:
+        return self.root.payment
 ```

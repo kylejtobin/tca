@@ -8,7 +8,7 @@ description: "A frozen product with no identity, equal when its fields are equal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import (
-    Amount, ChargeId, DeclineReasons, ProviderError, Quantity, Sku, UnitPrice,
+    Amount, ChargeId, DeclineReasons, Percent, ProviderError, Quantity, Sku, UnitPrice,
 )
 
 
@@ -26,6 +26,16 @@ class Line(BaseModel):
     @property
     def amount(self) -> Amount:
         return Amount(self.unit_price.root * self.quantity.root)
+
+
+class Discount(BaseModel):
+    """The share of an order's total taken off for its customer."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    percent: Percent
 
 
 class Approval(BaseModel):

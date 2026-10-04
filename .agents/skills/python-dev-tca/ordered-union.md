@@ -18,8 +18,13 @@ class UnlistedReason(RootModel[str]):
     root: str = Field(min_length=1)
 
 
-StatedReason = Annotated[
-    DeclineReason | UnlistedReason,
-    Field(union_mode="left_to_right"),
-]
+class StatedReason(
+    RootModel[Annotated[DeclineReason | UnlistedReason, Field(union_mode="left_to_right")]]
+):
+    """A reason the payment provider gave for declining a charge."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
 ```

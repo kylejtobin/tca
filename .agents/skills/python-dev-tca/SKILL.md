@@ -5,24 +5,31 @@ description: "Type Construction Architecture for Python. A program is declared a
 
 # Python Dev TCA
 
+Every class you write is a `BaseModel`, a `RootModel` or a `StrEnum`. Every field is typed as one of your own classes, a union of them, or a tuple of them; a primitive appears only as the root of a `RootModel`. There is no `dict`, `list`, `set`, `Any`, `None` or `Optional` anywhere: not in a field, a root, an argument or an expression. The only functions are one `execute` on each interpreter and the callback in `main.py`, each a single returned expression; anything else a class knows is a property with a single returned expression. An interpreter also holds its client, and config is a `BaseSettings`; nothing else is held that is not one of your classes. Construction is the only operation: a step you are about to write is a class you have not named.
+
 ## A whole program
 
 ```mermaid
 flowchart LR
     subgraph g1["1 ordered union · collection"]
-        DeclineReasons["<b>DeclineReasons</b><br/>DeclineReason, else UnlistedReason"]
+        StatedReason["<b>StatedReason</b><br/>DeclineReason, else UnlistedReason"]
+        DeclineReasons["<b>DeclineReasons</b>"]
     end
 
     subgraph g2["2 foreign model"]
+        DiscountRequest["<b>DiscountRequest</b><br/>customer"]
+        DiscountOffer["<b>DiscountOffer</b><br/>percent"]
         ChargeRequest["<b>ChargeRequest</b><br/>amt · cur · src · ref"]
         ChargeApproved["<b>ChargeApproved</b><br/>id"]
         ChargeDeclined["<b>ChargeDeclined</b><br/>decline_codes"]
         ChargeFailed["<b>ChargeFailed</b><br/>error"]
+        ChargeReply["<b>ChargeReply</b>"]
     end
 
     subgraph g3["3 value object · collection"]
         Line["<b>Line</b><br/>sku · unit_price · quantity"]
         Lines["<b>Lines</b>"]
+        Discount["<b>Discount</b><br/>percent"]
         Approval["<b>Approval</b><br/>charge"]
         Decline["<b>Decline</b><br/>reasons"]
         Failure["<b>Failure</b><br/>error"]
@@ -34,11 +41,10 @@ flowchart LR
     end
 
     subgraph g4u["4 union"]
-        LoyaltyDiscount["<b>LoyaltyDiscount</b><br/>percent"]
-        NoDiscount["<b>NoDiscount</b>"]
         PaidOrder["<b>PaidOrder</b><br/>order · payment"]
         DeclinedOrder["<b>DeclinedOrder</b><br/>order · payment"]
         UnsettledOrder["<b>UnsettledOrder</b><br/>order · payment"]
+        OrderOutcome["<b>OrderOutcome</b>"]
     end
 
     subgraph g4a["4 action"]
@@ -51,10 +57,12 @@ flowchart LR
         OrderConfirmed["<b>OrderConfirmed</b><br/>order · payment"]
         OrderRejected["<b>OrderRejected</b><br/>order · payment"]
         OrderUnsettled["<b>OrderUnsettled</b><br/>order · payment"]
+        OrderReply["<b>OrderReply</b>"]
     end
 
     subgraph g7["7 transformation"]
-        ChargeAttempt["<b>ChargeAttempt</b><br/>order · payment"]
+        DiscountReading["<b>DiscountReading</b><br/>order · discount"]
+        ChargeAttempt["<b>ChargeAttempt</b><br/>order · reply"]
     end
 
     subgraph g8["8 effect interpreter"]
@@ -67,28 +75,44 @@ flowchart LR
         ReplyRoute["<b>ReplyRoute</b><br/>outcome"]
     end
 
+    StatedReason --> DeclineReasons
     Line --> Lines --> Order --> CheckoutRoute
-    Order --> ReadDiscount --> ReadDiscountInterpreter ==> PricedOrder
+    Order --> ReadDiscount --> ReadDiscountInterpreter ==> DiscountReading
+    Order -.-> DiscountRequest
+    Order --> DiscountReading
+    DiscountOffer --> DiscountReading
+    DiscountReading -.-> PricedOrder
+    DiscountOffer -.-> Discount
     Order --> PricedOrder
-    LoyaltyDiscount --> PricedOrder
-    NoDiscount --> PricedOrder
+    Discount --> PricedOrder
     PricedOrder --> Charge --> ChargeInterpreter ==> ChargeAttempt
     PricedOrder -.-> ChargeRequest
     PricedOrder --> ChargeAttempt
-    ChargeApproved --> ChargeAttempt
-    ChargeDeclined --> ChargeAttempt
-    ChargeFailed --> ChargeAttempt
+    ChargeApproved --> ChargeReply
+    ChargeDeclined --> ChargeReply
+    ChargeFailed --> ChargeReply
+    ChargeReply --> ChargeAttempt
     DeclineReasons --> ChargeDeclined
     DeclineReasons --> Decline
-    ChargeAttempt -.-> PaidOrder -.-> OrderConfirmed --> ReplyRoute
-    ChargeAttempt -.-> DeclinedOrder -.-> OrderRejected --> ReplyRoute
-    ChargeAttempt -.-> UnsettledOrder -.-> OrderUnsettled --> ReplyRoute
+    ChargeAttempt -.-> OrderOutcome
+    PaidOrder --> OrderOutcome
+    DeclinedOrder --> OrderOutcome
+    UnsettledOrder --> OrderOutcome
     Approval --> PaidOrder
     Decline --> DeclinedOrder
     Failure --> UnsettledOrder
-    PricedOrder -.-> PublishedOrder --> OrderConfirmed
+    PaidOrder -.-> OrderConfirmed
+    DeclinedOrder -.-> OrderRejected
+    UnsettledOrder -.-> OrderUnsettled
+    PricedOrder -.-> PublishedOrder
+    Discount --> PublishedOrder
+    PublishedOrder --> OrderConfirmed
     PublishedOrder --> OrderRejected
     PublishedOrder --> OrderUnsettled
+    OrderConfirmed --> OrderReply
+    OrderRejected --> OrderReply
+    OrderUnsettled --> OrderReply
+    OrderOutcome -.-> OrderReply --> ReplyRoute
 ```
 
 Every box is a class in the page its group names.
@@ -97,7 +121,6 @@ A dotted arrow is construction by shared names: the head is constructed from the
 A thick arrow is an effect: the interpreter's `execute` returns the head.
 A step you are about to write is a class you have not named.
 What differs between the variants of a union is one derivation, under one name, on each variant.
-The text at every edge of this program is in [program.md](program.md).
 
 ## Its files, in the order they are written
 

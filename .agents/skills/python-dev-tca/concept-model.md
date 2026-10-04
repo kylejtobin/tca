@@ -5,11 +5,10 @@ description: "A full domain thing or durable fact, including the one that holds 
 
 ```python
 # domain/shop/order.py
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, RootModel
 
-from domain.shop.discount import DiscountState
 from domain.shop.type import Amount, CardToken, Currency, CustomerId, OrderId
-from domain.shop.value import Approval, Decline, Failure, Lines
+from domain.shop.value import Approval, Decline, Discount, Failure, Lines
 
 
 class Order(BaseModel):
@@ -38,7 +37,7 @@ class PricedOrder(BaseModel):
         validate_default=True, revalidate_instances="never",
     )
     order: Order
-    discount: DiscountState
+    discount: Discount
 
     @property
     def id(self) -> OrderId:

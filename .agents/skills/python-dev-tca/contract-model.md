@@ -5,11 +5,10 @@ description: "What this program publishes: its request or its reply. Holds seman
 
 ```python
 # domain/shop/api.py
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, RootModel
 
-from domain.shop.discount import DiscountState
 from domain.shop.type import Amount, Currency, OrderId
-from domain.shop.value import Approval, Decline, Failure
+from domain.shop.value import Approval, Decline, Discount, Failure
 
 
 class PublishedOrder(BaseModel):
@@ -22,7 +21,7 @@ class PublishedOrder(BaseModel):
     id: OrderId
     amount: Amount
     currency: Currency
-    discount: DiscountState
+    discount: Discount
 
 
 class OrderConfirmed(BaseModel):
@@ -58,5 +57,11 @@ class OrderUnsettled(BaseModel):
     payment: Failure
 
 
-OrderReply = OrderConfirmed | OrderRejected | OrderUnsettled
+class OrderReply(RootModel[OrderConfirmed | OrderRejected | OrderUnsettled]):
+    """This program's reply to a checkout."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
 ```

@@ -33,7 +33,7 @@ Output: the filled schema. No construct types.
 
 ## 3. Constructs
 
-1. Construct per entry, both lists: the whitelist construct, its fields with their types, and for a full thing what two equal on.
+1. Construct per entry, both lists: the construct, its fields with their types, and for a full thing what two equal on.
 2. Holders of changed things: one line per holder, per changed thing: what the field becomes.
 3. Placement: one line per construct: context, file.
 4. Breaks: one line per entry, per break: escaped, duplicated, vacuous, fused. State why it does not break. A pass is written or it is not a pass.
@@ -42,7 +42,7 @@ Output: the filled schema. No construct types.
 
 ```json
 {
-  "constructs": [{"name": "", "construct": "whitelist construct", "file": "domain/<context>/<file>.py", "fields": {"field": "Type"}, "equals": ["fields two equal on, full things only"]}],
+  "constructs": [{"name": "", "construct": "python-dev-tca construct", "file": "domain/<context>/<file>.py", "fields": {"field": "Type"}, "equals": ["fields two equal on, full things only"]}],
   "holders": [{"file": "domain/<context>/<file>.py", "type": "existing type", "field": "existing field", "becomes": "Type"}],
   "removed": ["types and files that no longer exist"]
 }
@@ -56,8 +56,8 @@ Output: the filled schema. Discovery ends here. Build makes exactly this set.
 |-------|---------|
 | The vendor already has a vocabulary. | That is the source's account. Decide ours from the thing and what the program does with it; alias theirs. |
 | This needs the operator's ruling. | Nothing is the operator's to rule on. A conflict means the thing is not yet seen. Look harder. |
-| The checker refuses the whitelist form. | The form is the standard. Name the checker's blindness where it bites. Never edit the whitelist. |
-| This primitive is not on the list. | The whitelist is the pattern, not the primitive. Pick the value space where the wrong value cannot be built. |
+| The checker refuses the construct's form. | The form is the standard. Name the checker's blindness where it bites. Never edit the construct. |
+| This primitive is not on the list. | The construct is the pattern, not the primitive. Pick the value space where the wrong value cannot be built. |
 | Describing the process is doing it. | A procedure is what gets written when a decision has not been made. Answer the question. |
 | A name unlike the vendor's is better. | Best name is the expert's word. Matching is fine. Differing to differ is the wrong reason. |
 | I read the whole set; it passes. | A pass is one written line per entry per break. Unwritten is unchecked. |

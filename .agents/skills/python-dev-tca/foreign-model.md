@@ -5,7 +5,7 @@ description: "Another system's thing, under its names, as it sends it or accepts
 
 ```python
 # integration/payments/model.py
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import (
     Amount, CardToken, ChargeId, Currency, DeclineReasons, OrderId, ProviderError,
@@ -55,6 +55,42 @@ class ChargeFailed(BaseModel):
     error: ProviderError
 
 
-ChargeReply = ChargeApproved | ChargeDeclined | ChargeFailed
-ChargeReplyConstructor: TypeAdapter[ChargeReply] = TypeAdapter(ChargeReply)
+class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
+    """The payment provider's reply to a charge."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+```
+
+```python
+# integration/promotions/model.py
+from pydantic import BaseModel, ConfigDict
+
+from domain.shop.type import CustomerId, Percent, ProviderPath
+
+
+class DiscountRequest(BaseModel):
+    """The promotions system's question for a customer's discount."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    customer: CustomerId
+
+    @property
+    def path(self) -> ProviderPath:
+        return ProviderPath(f"/discounts/{self.customer.root}")
+
+
+class DiscountOffer(BaseModel):
+    """The share of the total the promotions system takes off for a customer, none when it states none."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    percent: Percent = Percent(0)
 ```

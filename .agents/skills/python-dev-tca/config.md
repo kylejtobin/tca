@@ -1,14 +1,13 @@
 ---
 type: Construct
-description: "Deployment input, constructed once. Holds semantic scalars and secrets. Lives in config.py."
+description: "Deployment input, constructed once. Holds semantic scalars. Lives in config.py."
 ---
 
 ```python
 # config.py
-from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from domain.shop.type import ProviderUrl
+from domain.shop.type import ProviderKey, ProviderUrl
 
 
 class ShopConfig(BaseSettings):
@@ -21,5 +20,5 @@ class ShopConfig(BaseSettings):
     )
     promotions_url: ProviderUrl
     payments_url: ProviderUrl
-    payments_key: SecretStr
+    payments_key: ProviderKey
 ```

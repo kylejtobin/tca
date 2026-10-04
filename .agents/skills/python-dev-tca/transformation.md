@@ -4,11 +4,34 @@ description: "A fact its owner's fields determine, read as one returned expressi
 ---
 
 ```python
+# integration/promotions/reading.py
+from pydantic import BaseModel, ConfigDict
+
+from domain.shop.order import Order, PricedOrder
+from integration.promotions.model import DiscountOffer
+
+
+class DiscountReading(BaseModel):
+    """An order, with the promotions system's offer for its customer."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    order: Order
+    discount: DiscountOffer
+
+    @property
+    def priced(self) -> PricedOrder:
+        return PricedOrder.model_validate(self, from_attributes=True)
+```
+
+```python
 # integration/payments/attempt.py
 from pydantic import BaseModel, ConfigDict
 
-from domain.shop.order import OrderOutcome, OrderOutcomeConstructor, PricedOrder
-from integration.payments.model import ChargeReply
+from domain.shop.order import OrderOutcome, PricedOrder
+from integration.payments.model import ChargeApproved, ChargeDeclined, ChargeFailed, ChargeReply
 
 
 class ChargeAttempt(BaseModel):
@@ -19,9 +42,13 @@ class ChargeAttempt(BaseModel):
         validate_default=True, revalidate_instances="never",
     )
     order: PricedOrder
-    payment: ChargeReply
+    reply: ChargeReply
+
+    @property
+    def payment(self) -> ChargeApproved | ChargeDeclined | ChargeFailed:
+        return self.reply.root
 
     @property
     def outcome(self) -> OrderOutcome:
-        return OrderOutcomeConstructor.validate_python(self, from_attributes=True)
+        return OrderOutcome.model_validate(self, from_attributes=True)
 ```
