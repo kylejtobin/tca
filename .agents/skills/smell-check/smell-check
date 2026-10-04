@@ -46,7 +46,7 @@ scan 'CONDITIONAL   ' '^\s*(if|elif)\b|^\s*else\s*:|^\s*match\b.*:\s*$|^\s*case\
 # member of the enum is not visible on the line and is the judge's question, not this script's.
 case_table='\{\s*([A-Z]\w*\.[A-Z_][A-Z0-9_]*\s*:\s*[^,{}\n]+\s*,?\s*)+\}\['
 case_lines="$(rg -nU --no-heading --color never -g '*.py' -e "$case_table" -- "${PATHS[@]}" 2>/dev/null | sed -E 's/^([^:]+:[0-9]+):.*/\1/')"
-dict_out="$(rg -n --no-heading --color never -g '*.py' -e '\bdict\[|\bdict\(|[=:(,]\s*\{|\breturn\s+\{|\bJsonValue\b|\bJson\[' -- "${PATHS[@]}" 2>/dev/null)"
+dict_out="$(rg -n --no-heading --color never -g '*.py' -e '\bdict\[|\bdict\(|[=:(,]\s*\{|\breturn\s+\{|\bJsonValue\b|\bJson\[|\bMapping\b|\bMutableMapping\b|\bOrderedDict\b|\bdefaultdict\b|\bTypedDict\b|\bChainMap\b' -- "${PATHS[@]}" 2>/dev/null)"
 while IFS= read -r line; do
   [ -z "$line" ] && continue
   key="$(printf '%s' "$line" | sed -E 's/^([^:]+:[0-9]+):.*/\1/')"
@@ -60,5 +60,20 @@ done <<< "$dict_out"
 
 # 6. PARSE METHOD: procedure hung on a model. A derivation takes only self and returns one expression.
 scan 'PARSE-METHOD  ' 'def \w+\(\s*self\s*,|@staticmethod|validator|\bstr\('
+
+# 7. CATCH: nothing is caught and the program raises nothing.
+scan 'CATCH         ' '^\s*try\s*:|^\s*except\b|^\s*finally\s*:|^\s*raise\b|\braise_for_status\b'
+
+# 8. NONE: absence is a named class.
+scan 'NONE          ' '\|\s*None\b|\bNone\s*\||\bOptional\['
+
+# 9. LAMBDA: a function with no name, or an untyped parameter list.
+scan 'LAMBDA        ' '\blambda\b[^:\n]*:|\*args\b|\*\*kwargs\b'
+
+# 10. JSON: raw text goes to a constructor; a model serialises itself.
+scan 'JSON          ' '\bjson\.(loads|dumps)\('
+
+# 11. BYPASS: construction skipped, mutated, or state kept outside a value.
+scan 'BYPASS        ' '\bmodel_construct\b|\bmodel_copy\(|\bPrivateAttr\b|\bcached_property\b|\blru_cache\b|object\.__setattr__|\bmodel_post_init\b|def __init__\(|\bSkipValidation\b|^\s*(global|nonlocal)\s'
 
 exit "$found"

@@ -23,8 +23,13 @@ Every hit is a violation. There is no severity, no "edge work", no "serializatio
 | ISINSTANCE | `isinstance(x, T)` | a question the value already answered by existing as its variant. Behavior that differs by variant is a same-named property on each variant. |
 | LOOP | `for` or `while` | a fold whose result has no name. A fold is a comprehension inside the one returned expression of a derivation, with no `if`. |
 | CONDITIONAL | `if`, `elif`, `else`, `match`, `case`, ternary | a branch. The only branch in TCA is Pydantic construction choosing a union variant. Zero conditionals in a domain package, not "fewer". |
-| DICT | `dict[...]`, `dict(...)`, `{...}`, `JsonValue`, `Json[...]` | a shape nobody proved. A violation. See DICT hits. |
+| DICT | `dict[...]`, `dict(...)`, `{...}`, `JsonValue`, `Json[...]`, `Mapping`, `MutableMapping`, `OrderedDict`, `defaultdict`, `TypedDict`, `ChainMap` | a shape nobody proved. A violation. See DICT hits. |
 | PARSE-METHOD | a method with parameters beyond `self`, a `staticmethod`, a validator, a `str()` call | procedure hung on a model. A derivation takes only `self` and its body is exactly one returned expression. A parameterized question is a frozen model holding its inputs. A validator is a procedure where a representation belongs. |
+| CATCH | `try`, `except`, `finally`, `raise`, `raise_for_status` | a failure handled by procedure. Nothing is caught and the program raises nothing; a refusal is a variant of the reply. |
+| NONE | `\| None`, `Optional[...]` | an absence with no name. The empty case is a class. |
+| LAMBDA | `lambda`, `*args`, `**kwargs` | a function with no name, or an untyped parameter list. |
+| JSON | `json.loads(`, `json.dumps(` | parsing or building by hand. Raw text goes to a constructor; a model serialises itself. |
+| BYPASS | `model_construct`, `model_copy(`, `PrivateAttr`, `cached_property`, `lru_cache`, `object.__setattr__`, `model_post_init`, `def __init__(`, `SkipValidation`, `global`, `nonlocal` | construction skipped or mutated, or state kept outside a value. |
 
 ## What to do with a hit
 
