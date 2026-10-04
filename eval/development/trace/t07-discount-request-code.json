@@ -1,0 +1,6 @@
+{
+  "id": "t07-discount-request-code",
+  "input": "Write the promotions foreign model code for one customer's discount request.",
+  "target": "DiscountAddress(customer: CustomerId), constructed from the order, on a client whose base address is a CollectionUrl",
+  "hard_type": "one customer's discount address"
+}

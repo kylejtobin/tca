@@ -21,6 +21,7 @@ promotions = httpx.AsyncClient(base_url=config.promotions_url.root)
 payments = httpx.AsyncClient(
     base_url=config.payments_url.root,
     auth=(config.payments_key.root, ""),
+    headers=(("Content-Type", "application/json"),),
 )
 
 
@@ -30,7 +31,7 @@ async def checkout(request: Request) -> Response:
             await ChargeInterpreter(
                 action=(
                     await ReadDiscountInterpreter(
-                        action=CheckoutRoute.model_validate(await request.json()).order.pricing,
+                        action=CheckoutRoute.model_validate_json(await request.body()).order.pricing,
                         client=promotions,
                     ).interpret()
                 ).charge,

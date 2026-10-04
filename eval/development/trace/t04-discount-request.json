@@ -1,0 +1,6 @@
+{
+  "id": "t04-discount-request",
+  "input": "Build the promotions request for one customer's discount.",
+  "target": "DiscountAddress(customer: CustomerId), constructed from the order, on a client whose base address is a CollectionUrl",
+  "hard_type": "one customer's discount address"
+}

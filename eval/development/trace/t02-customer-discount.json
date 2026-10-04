@@ -1,0 +1,6 @@
+{
+  "id": "t02-customer-discount",
+  "input": "Declare the discount the promotions system holds for a customer, including a customer for whom it states none.",
+  "target": "DiscountOffer(percent: Percent = Percent(0))",
+  "hard_type": "a customer's discount when the promotions system states none"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "t08-discount-crossing",
+  "input": "Write the promotions crossing that reads one customer's discount.",
+  "target": "DiscountAddress(customer: CustomerId), constructed from the order, on a client whose base address is a CollectionUrl",
+  "hard_type": "the address of one customer's discount as handed to the client"
+}

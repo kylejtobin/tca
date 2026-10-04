@@ -27,9 +27,9 @@ Crossing
 
 Every class you write is a `BaseModel`, a `RootModel` or a `StrEnum`. Every field is typed as one of your own classes, a union of them, or a tuple of them; a primitive appears only as the root of a `RootModel`. There is no `dict`, `list`, `set`, `Any`, `None` or `Optional` anywhere: not in a field, a root, an argument or an expression. The only functions are one `interpret` on each interpreter and the callback in `main.py`, each a single returned expression, and the reading and writing of a format in `parser/`; anything else a class knows is a property with a single returned expression. An interpreter also holds its client, and config is a `BaseSettings`; nothing else is held that is not one of your classes. Construction is the only operation: a step you are about to write is a class you have not named.
 
-What arrives is a dictionary or JSON and constructs a model by `model_validate` or `model_validate_json`; what leaves is `model_dump` or `model_dump_json`.
-A format that is neither is read by a maintained library that yields a dictionary or JSON, and is then the line above.
-Only a format no library yields a dictionary or JSON from is read by a format type in `parser/`, and nothing outside `parser/` reads a format.
+Only an interpreter's `interpret` and the callback in `main.py` read or write JSON: what arrives constructs a model by `model_validate_json`, and what leaves is `model_dump_json`. Everywhere else a model is constructed from a model already held, by `model_validate` with `from_attributes=True`; nothing else is ever passed to `model_validate`.
+A format that is not JSON is read by a maintained library that yields JSON, and is then the line above.
+Only a format no library yields JSON from is read by a format type in `parser/`, and nothing outside `parser/` reads a format.
 
 ## A whole program
 
@@ -42,8 +42,7 @@ flowchart LR
     end
 
     subgraph g2["3 foreign model"]
-        DiscountAddress["<b>DiscountAddress</b>"]
-        CustomerDiscount["<b>CustomerDiscount</b><br/>customer"]
+        DiscountAddress["<b>DiscountAddress</b><br/>customer"]
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
         CardCharge["<b>CardCharge</b><br/>amt · cur · src · ref"]
         ChargeApproved["<b>ChargeApproved</b><br/>id"]
@@ -103,8 +102,7 @@ flowchart LR
     StatedReason --> DeclineReasons
     Line --> Lines --> Order --> CheckoutRoute
     Order --> ReadDiscount --> ReadDiscountInterpreter ==> PricedOrder
-    Order -.-> CustomerDiscount
-    CustomerDiscount -.-> DiscountAddress
+    Order -.-> DiscountAddress
     DiscountOffer -.-> Discount
     Order --> PricedOrder
     Discount --> PricedOrder
@@ -142,7 +140,7 @@ flowchart LR
 
 Every box is a class in the page its group names.
 A solid arrow is a field: the head holds the tail.
-A dotted arrow is construction by shared names: the head is constructed from the tail.
+A dotted arrow is construction by shared names: the head is constructed from the tail by `model_validate`.
 A thick arrow is an effect: the interpreter's `interpret` returns the head.
 What differs between the variants of a union is one derivation, under one name, on each variant.
 

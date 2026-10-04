@@ -1,0 +1,6 @@
+{
+  "id": "t03-priced-order",
+  "input": "Specify how the promotions system's discount reply becomes the priced order.",
+  "target": "PricedOrder(order: Order, discount: Discount), with Discount constructed from DiscountOffer by shared names",
+  "hard_type": "the priced order built from the discount reply"
+}

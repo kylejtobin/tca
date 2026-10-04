@@ -1,0 +1,6 @@
+{
+  "id": "t05-charge-reply",
+  "input": "Model the payment provider's reply to a charge, received as JSON text.",
+  "target": "ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]), constructed by ChargeReply.model_validate_json at the crossing",
+  "hard_type": "the payment provider's JSON reply"
+}

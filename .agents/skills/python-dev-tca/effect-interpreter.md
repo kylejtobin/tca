@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from domain.shop.order import PricedOrder, ReadDiscount
 from domain.shop.value import Discount
-from integration.promotions.model import CustomerDiscount, DiscountOffer
+from integration.promotions.model import DiscountAddress, DiscountOffer
 
 
 class ReadDiscountInterpreter(BaseModel):
@@ -31,7 +31,7 @@ class ReadDiscountInterpreter(BaseModel):
                 DiscountOffer.model_validate_json(
                     (
                         await self.client.get(
-                            CustomerDiscount.model_validate(self.action.order).address.root
+                            DiscountAddress.model_validate(self.action.order).customer.root
                         )
                     ).content
                 )
@@ -67,7 +67,7 @@ class ChargeInterpreter(BaseModel):
                 (
                     await self.client.post(
                         PaymentsResource.CHARGES,
-                        json=CardCharge.model_validate(self.action.order).model_dump(),
+                        content=CardCharge.model_validate(self.action.order).model_dump_json(),
                     )
                 ).content
             ),

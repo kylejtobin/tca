@@ -1,0 +1,6 @@
+{
+  "id": "t13-percent-rest",
+  "input": "Model the share of an order's total that the customer keeps after the discount.",
+  "target": "Percent with a rest property returning Percent(100 - self.root)",
+  "hard_type": "the share of a percent that remains"
+}
