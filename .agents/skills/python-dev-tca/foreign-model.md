@@ -75,9 +75,19 @@ class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
 
 ```python
 # integration/promotions/model.py
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import CustomerId, Percent
+
+
+class DiscountAddress(RootModel[str]):
+    """The place of one customer's discount within the promotions system's discounts."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
 
 
 class CustomerDiscount(BaseModel):
@@ -89,6 +99,10 @@ class CustomerDiscount(BaseModel):
         from_attributes=True,
     )
     customer: CustomerId
+
+    @property
+    def address(self) -> DiscountAddress:
+        return DiscountAddress(self.customer.root)
 
 
 class DiscountOffer(BaseModel):

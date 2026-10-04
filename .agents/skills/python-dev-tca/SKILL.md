@@ -42,6 +42,7 @@ flowchart LR
     end
 
     subgraph g2["3 foreign model"]
+        DiscountAddress["<b>DiscountAddress</b>"]
         CustomerDiscount["<b>CustomerDiscount</b><br/>customer"]
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
         CardCharge["<b>CardCharge</b><br/>amt · cur · src · ref"]
@@ -103,6 +104,7 @@ flowchart LR
     Line --> Lines --> Order --> CheckoutRoute
     Order --> ReadDiscount --> ReadDiscountInterpreter ==> PricedOrder
     Order -.-> CustomerDiscount
+    CustomerDiscount -.-> DiscountAddress
     DiscountOffer -.-> Discount
     Order --> PricedOrder
     Discount --> PricedOrder

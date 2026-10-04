@@ -31,7 +31,7 @@ class ReadDiscountInterpreter(BaseModel):
                 DiscountOffer.model_validate_json(
                     (
                         await self.client.get(
-                            CustomerDiscount.model_validate(self.action.order).customer.root
+                            CustomerDiscount.model_validate(self.action.order).address.root
                         )
                     ).content
                 )
