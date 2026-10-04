@@ -14,8 +14,8 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 | t02 | `DiscountAbsent` and `NoDiscount` are left undeclared ("Open"). |
 | t03 | `DiscountReading`, a class named for a stage of the run, is added between the discount reply and the priced order. |
 | t04 | An f-string assembles the discount path in `DiscountRequest.path` where an address type belongs. |
-| t05 | `ChargeAnswered.reply` parses its own text with `ChargeReply.model_validate_json(self.text.root)`, a parse call made by a class other than the type parsed. |
-| t06 | `ChargeAnswered.reply` parses its own text with `ChargeReply.model_validate_json(self.text.root)`, a parse call made by a class other than the type parsed. |
+| t05 | `ChargeAnswered.reply` parses its own text with `ChargeReply.model_validate_json(self.text.root)`, a JSON parse made anywhere but an interpreter's `interpret` or the callback in `main.py`. |
+| t06 | `ChargeAnswered.reply` parses its own text with `ChargeReply.model_validate_json(self.text.root)`, a JSON parse made anywhere but an interpreter's `interpret` or the callback in `main.py`. |
 | t07 | An f-string assembles the discount path where an address type belongs. |
 | t08 | The raw `customer.root` string is passed to the client where an address type belongs. |
 | t09 | `NoPassword` is declared to fill an argument of `httpx.BasicAuth`, not to name a thing in the provider's domain. |
@@ -32,7 +32,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 ## Failure Modes
 
 ### Step in place of a type
-- **Definition:** at a hard type, a value is produced by something other than constructing a declared type: an `execute` that forwards to another object's `execute`, string formatting, a parse call made by a class other than the type parsed, or the root of one type passed where another type's value is meant. A hard type is a type that no construct already declared and no library in the stack produces, or whose input strict validation rejects.
+- **Definition:** at a hard type, a value is produced by something other than constructing a declared type: a method that dispatches to a variant instead of a union whose construction picks it, string formatting, a JSON parse made anywhere but an interpreter's `interpret` or the callback in `main.py`, or a value handed to a library that was not read from a constructed instance of the type the argument means. A hard type is a type that no construct already declared and no library in the stack produces, or whose input strict validation rejects.
 - **Pass/fail criterion:** fail when the delivery produces a value at a hard type without constructing a declared type for it.
 - **Fail example:** t04, `return ProviderPath(f"/discounts/{self.customer.root}")`.
 - **Pass example:** t15, `CollectionUrl` declared with `root: str = Field(pattern=r"^https?://[^/]+/(.+/)?$")` for a provider address.

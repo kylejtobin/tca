@@ -34,18 +34,8 @@ class CollectionUrl(RootModel[str]):
     root: str = Field(pattern=r"^https?://[^/]+/(.+/)?$")
 
 
-class DiscountAddress(RootModel[str]):
-    """The place of one customer's discount within the promotions system's discounts."""
-
-    model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class CustomerDiscount(BaseModel):
-    """The discount the promotions system holds for one customer, named in its collection by that customer."""
+class DiscountAddress(BaseModel):
+    """The place of one customer's discount within the promotions system's discounts, named there by that customer."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
@@ -53,10 +43,6 @@ class CustomerDiscount(BaseModel):
         from_attributes=True,
     )
     customer: CustomerId
-
-    @property
-    def address(self) -> DiscountAddress:
-        return DiscountAddress(self.customer.root)
 
 
 class ShopConfig(BaseSettings):
@@ -78,6 +64,6 @@ promotions = httpx.AsyncClient(base_url=config.promotions_url.root)
 
 ```python
 await self.client.get(
-    CustomerDiscount.model_validate(self.action.order).address.root
+    DiscountAddress.model_validate(self.action.order).customer.root
 )
 ```

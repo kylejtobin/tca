@@ -1,6 +1,6 @@
 {
   "id": "t01-settlement-outcome",
   "input": "Specify the settlement of an order outcome: a paid order ships; a declined or unsettled order is cancelled.",
-  "target": "Settlement(RootModel[Shipment | Cancellation]), with Shipment(order: PaidOrder) and Cancellation(order: DeclinedOrder | UnsettledOrder)",
+  "target": "Settlement(RootModel[Shipment | Cancellation]), with Shipment(order: PricedOrder, payment: Approval) and Cancellation(order: PricedOrder, payment: Decline | Failure), constructed from the OrderOutcome by Settlement.model_validate",
   "hard_type": "the settlement of an order outcome"
 }

@@ -13,6 +13,7 @@ from starlette.routing import Route
 
 from api.shop import CheckoutRoute, ReplyRoute
 from config import ShopConfig
+from domain.shop.type import BlankPassword, FieldName, MediaType
 from integration.payments.interpreter import ChargeInterpreter
 from integration.promotions.interpreter import ReadDiscountInterpreter
 
@@ -20,8 +21,8 @@ config = ShopConfig()
 promotions = httpx.AsyncClient(base_url=config.promotions_url.root)
 payments = httpx.AsyncClient(
     base_url=config.payments_url.root,
-    auth=(config.payments_key.root, ""),
-    headers=(("Content-Type", "application/json"),),
+    auth=(config.payments_key.root, BlankPassword().root),
+    headers=((FieldName.CONTENT_TYPE, MediaType.JSON),),
 )
 
 
@@ -38,7 +39,7 @@ async def checkout(request: Request) -> Response:
                 client=payments,
             ).interpret()
         ).model_dump_json(),
-        media_type="application/json",
+        media_type=MediaType.JSON,
     )
 
 

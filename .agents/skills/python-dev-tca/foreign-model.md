@@ -71,6 +71,10 @@ class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
         frozen=True, strict=True,
         validate_default=True, revalidate_instances="never",
     )
+
+    @property
+    def payment(self) -> ChargeApproved | ChargeDeclined | ChargeFailed:
+        return self.root
 ```
 
 ```python

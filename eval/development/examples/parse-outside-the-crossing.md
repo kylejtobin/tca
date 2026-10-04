@@ -1,6 +1,6 @@
-# Parse by another class
+# Parse outside the crossing
 
-- **Step kind:** a parse call made by a class other than the type being parsed.
+- **Step kind:** a JSON parse made anywhere but an interpreter's `interpret` or the callback in `main.py`.
 - **Hard type:** the payment provider's JSON reply.
 - **Source:** `effect-interpreter.md`.
 
@@ -43,7 +43,7 @@ class ChargeInterpreter(BaseModel):
                 (
                     await self.client.post(
                         PaymentsResource.CHARGES,
-                        json=CardCharge.model_validate(self.action.order).model_dump(),
+                        content=CardCharge.model_validate(self.action.order).model_dump_json(),
                     )
                 ).content
             ),

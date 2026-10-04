@@ -149,4 +149,26 @@ class ProviderError(StrEnum):
 
     RATE_LIMITED = "rate_limited"
     UNAVAILABLE = "unavailable"
+
+
+class MediaType(StrEnum):
+    """The form of a message body that crosses between this program and another system."""
+
+    JSON = "application/json"
+
+
+class FieldName(StrEnum):
+    """The name of a header this program sends to another system."""
+
+    CONTENT_TYPE = "Content-Type"
+
+
+class BlankPassword(RootModel[str]):
+    """The password the payment provider's scheme leaves blank, because the key alone names this program."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    root: str = Field(default="", max_length=0)
 ```

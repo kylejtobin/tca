@@ -1,6 +1,6 @@
-# Forwarding `execute`
+# Dispatch in place of a union
 
-- **Step kind:** an `execute` that forwards to another object's `execute`.
+- **Step kind:** a method that dispatches to a variant instead of a union whose construction picks it.
 - **Hard type:** the settlement of an order outcome: a paid order ships; a declined or unsettled order is cancelled.
 - **Source:** the pattern of `OrderOutcome` in `union.md`, applied as a new class.
 
@@ -23,25 +23,27 @@ class SettlementInterpreter(RootModel[ShipInterpreter | CancelInterpreter]):
 
 ```python
 class Shipment(BaseModel):
-    """A paid order released to ship."""
+    """A priced order the payment provider charged, released to ship."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
         from_attributes=True,
     )
-    order: PaidOrder
+    order: PricedOrder
+    payment: Approval
 
 
 class Cancellation(BaseModel):
-    """An order the payment provider did not charge, released to cancel."""
+    """A priced order the payment provider did not charge, released to cancel."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
         from_attributes=True,
     )
-    order: DeclinedOrder | UnsettledOrder
+    order: PricedOrder
+    payment: Decline | Failure
 
 
 class Settlement(RootModel[Shipment | Cancellation]):
@@ -54,6 +56,10 @@ class Settlement(RootModel[Shipment | Cancellation]):
     )
 
     @property
-    def order(self) -> PaidOrder | DeclinedOrder | UnsettledOrder:
+    def order(self) -> PricedOrder:
         return self.root.order
+```
+
+```python
+Settlement.model_validate(outcome)
 ```

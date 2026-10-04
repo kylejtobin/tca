@@ -23,7 +23,7 @@ class ChargeAttempt(BaseModel):
 
     @property
     def payment(self) -> ChargeApproved | ChargeDeclined | ChargeFailed:
-        return self.reply.root
+        return self.reply.payment
 
     @property
     def outcome(self) -> OrderOutcome:
