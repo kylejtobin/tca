@@ -30,7 +30,10 @@ Every hit is a violation. There is no severity, no "edge work", no "serializatio
 | LAMBDA | `lambda`, `*args`, `**kwargs` | a function with no name, or an untyped parameter list. |
 | LIST, SET, ANY, TYPEADAPTER | `list`, `[...]`, `set`, `frozenset`, `Any`, `TypeAdapter` | a shape that is not one of your classes. A many is a `RootModel` over a tuple; a union is a `RootModel` over its variants. |
 | JSON | `json.loads(`, `json.dumps(` | parsing or building by hand. Raw text goes to a constructor; a model serialises itself. |
+| PARSER-IMPORT | `from parser…` outside `integration/<system>/model.py` | a format read where no format belongs. Only a foreign model annotates its records with a format type. |
 | BYPASS | `model_construct`, `model_copy(`, `PrivateAttr`, `cached_property`, `lru_cache`, `object.__setattr__`, `model_post_init`, `def __init__(`, `SkipValidation`, `global`, `nonlocal` | construction skipped or mutated, or state kept outside a value. |
+
+Files under `parser/` are not scanned. Only a format type lives there.
 
 ## What to do with a hit
 

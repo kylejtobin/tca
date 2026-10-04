@@ -17,6 +17,7 @@ class PublishedOrder(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     id: OrderId
     amount: Amount
@@ -30,6 +31,7 @@ class OrderConfirmed(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PublishedOrder
     payment: Approval
@@ -41,6 +43,7 @@ class OrderRejected(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PublishedOrder
     payment: Decline
@@ -52,6 +55,7 @@ class OrderUnsettled(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PublishedOrder
     payment: Failure
@@ -63,5 +67,6 @@ class OrderReply(RootModel[OrderConfirmed | OrderRejected | OrderUnsettled]):
     model_config = ConfigDict(
         frozen=True, strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
 ```

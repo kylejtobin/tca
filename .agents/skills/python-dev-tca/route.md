@@ -27,6 +27,7 @@ class ReplyRoute(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     outcome: OrderReply
 ```

@@ -30,13 +30,12 @@ async def checkout(request: Request) -> Response:
             await ChargeInterpreter(
                 action=(
                     await ReadDiscountInterpreter(
-                        action=CheckoutRoute.model_validate_json(await request.body()).order.pricing,
+                        action=CheckoutRoute.model_validate(await request.json()).order.pricing,
                         client=promotions,
-                    ).execute()
-                ).priced.charge,
+                    ).interpret()
+                ).charge,
                 client=payments,
-            ).execute(),
-            from_attributes=True,
+            ).interpret()
         ).model_dump_json(),
         media_type="application/json",
     )

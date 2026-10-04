@@ -12,7 +12,7 @@ found=0
 scan() {
   local label="$1" pattern="$2"; shift 2
   local out
-  out="$(rg -n --no-heading --color never -g '*.py' "$@" -e "$pattern" -- "${PATHS[@]}" 2>/dev/null)"
+  out="$(rg -n --no-heading --color never -g '*.py' -g '!**/parser/**' "$@" -e "$pattern" -- "${PATHS[@]}" 2>/dev/null)"
   if [ -n "$out" ]; then
     found=1
     printf '%s\n' "$out" | sed "s/^/${label}  /"
@@ -66,5 +66,8 @@ scan 'JSON          ' '\bjson\.(loads|dumps)\('
 
 # 11. BYPASS: construction skipped, mutated, or state kept outside a value.
 scan 'BYPASS        ' '\bmodel_construct\b|\bmodel_copy\(|\bPrivateAttr\b|\bcached_property\b|\blru_cache\b|object\.__setattr__|\bmodel_post_init\b|def __init__\(|\bSkipValidation\b|^\s*(global|nonlocal)\s'
+
+# 12. PARSER-IMPORT: a format is read only by a foreign model. Files under parser/ are not scanned.
+scan 'PARSER-IMPORT ' '^\s*(from|import)\s+parser\b' -g '!**/integration/*/model.py'
 
 exit "$found"

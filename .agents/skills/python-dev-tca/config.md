@@ -7,7 +7,7 @@ description: "Deployment input, constructed once. Holds semantic scalars. Lives 
 # config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from domain.shop.type import ProviderKey, ProviderUrl
+from domain.shop.type import CollectionUrl, ProviderKey, ProviderUrl
 
 
 class ShopConfig(BaseSettings):
@@ -18,7 +18,7 @@ class ShopConfig(BaseSettings):
         validate_default=True, revalidate_instances="never",
         env_prefix="SHOP_",
     )
-    promotions_url: ProviderUrl
+    promotions_url: CollectionUrl
     payments_url: ProviderUrl
     payments_key: ProviderKey
 ```

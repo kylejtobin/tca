@@ -70,24 +70,24 @@ class ProviderUrl(RootModel[str]):
     root: str = Field(min_length=1)
 
 
-class ProviderPath(RootModel[str]):
-    """The place, within another system's address, of one thing it holds."""
+class CollectionUrl(RootModel[str]):
+    """The address of a collection another system holds; each thing in it is named relative to it."""
 
     model_config = ConfigDict(
         frozen=True, strict=True,
         validate_default=True, revalidate_instances="never",
     )
-    root: str = Field(min_length=1)
+    root: str = Field(pattern=r"^https?://[^/]+/(.+/)?$")
 
 
 class ProviderKey(RootModel[str]):
-    """The key another system knows this program by."""
+    """The key another system knows this program by; never shown, never published."""
 
     model_config = ConfigDict(
         frozen=True, strict=True,
         validate_default=True, revalidate_instances="never",
     )
-    root: str = Field(min_length=1)
+    root: str = Field(min_length=1, repr=False, exclude=True)
 
 
 class UnitPrice(RootModel[int]):

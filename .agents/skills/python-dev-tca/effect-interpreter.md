@@ -8,9 +8,9 @@ description: "The one place an action's external effect exists; what it returns 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from domain.shop.order import ReadDiscount
-from integration.promotions.model import DiscountOffer, DiscountRequest
-from integration.promotions.reading import DiscountReading
+from domain.shop.order import PricedOrder, ReadDiscount
+from domain.shop.value import Discount
+from integration.promotions.model import CustomerDiscount, DiscountOffer
 
 
 class ReadDiscountInterpreter(BaseModel):
@@ -24,17 +24,17 @@ class ReadDiscountInterpreter(BaseModel):
     action: ReadDiscount
     client: httpx.AsyncClient = Field(exclude=True, repr=False)
 
-    async def execute(self) -> DiscountReading:
-        return DiscountReading(
+    async def interpret(self) -> PricedOrder:
+        return PricedOrder(
             order=self.action.order,
-            discount=DiscountOffer.model_validate_json(
-                (
-                    await self.client.get(
-                        DiscountRequest.model_validate(
-                            self.action.order, from_attributes=True
-                        ).path.root
-                    )
-                ).text
+            discount=Discount.model_validate(
+                DiscountOffer.model_validate_json(
+                    (
+                        await self.client.get(
+                            CustomerDiscount.model_validate(self.action.order).customer.root
+                        )
+                    ).content
+                )
             ),
         )
 ```
@@ -46,7 +46,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from domain.shop.order import Charge
 from integration.payments.attempt import ChargeAttempt
-from integration.payments.model import ChargeReply, ChargeRequest
+from integration.payments.model import CardCharge, ChargeReply, PaymentsResource
 
 
 class ChargeInterpreter(BaseModel):
@@ -60,18 +60,16 @@ class ChargeInterpreter(BaseModel):
     action: Charge
     client: httpx.AsyncClient = Field(exclude=True, repr=False)
 
-    async def execute(self) -> ChargeAttempt:
+    async def interpret(self) -> ChargeAttempt:
         return ChargeAttempt(
             order=self.action.order,
             reply=ChargeReply.model_validate_json(
                 (
                     await self.client.post(
-                        "/charges",
-                        content=ChargeRequest.model_validate(
-                            self.action.order, from_attributes=True
-                        ).model_dump_json(by_alias=True),
+                        PaymentsResource.CHARGES,
+                        json=CardCharge.model_validate(self.action.order).model_dump(),
                     )
-                ).text
+                ).content
             ),
         )
 ```

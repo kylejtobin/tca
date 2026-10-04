@@ -5,19 +5,28 @@ description: "Another system's thing, under its names, parsed from what it sends
 
 ```python
 # integration/payments/model.py
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import (
-    Amount, CardToken, ChargeId, Currency, DeclineReasons, OrderId, ProviderError,
+    Amount, CardToken, ChargeId, Currency, DeclineReasons, OrderId, StatedError,
 )
 
 
-class ChargeRequest(BaseModel):
-    """The charge the payment provider accepts."""
+class PaymentsResource(StrEnum):
+    """What the payment provider holds, relative to its address."""
+
+    CHARGES = "/charges"
+
+
+class CardCharge(BaseModel):
+    """A charge of an amount in a currency to a card, under the payment provider's reference."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True, serialize_by_alias=True,
     )
     amount: Amount = Field(serialization_alias="amt")
     currency: Currency = Field(serialization_alias="cur")
@@ -26,7 +35,7 @@ class ChargeRequest(BaseModel):
 
 
 class ChargeApproved(BaseModel):
-    """The payment provider's reply that it made the charge."""
+    """A charge the payment provider made."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
@@ -36,7 +45,7 @@ class ChargeApproved(BaseModel):
 
 
 class ChargeDeclined(BaseModel):
-    """The payment provider's reply that it declined the charge."""
+    """A charge the payment provider refused, and why."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
@@ -46,17 +55,17 @@ class ChargeDeclined(BaseModel):
 
 
 class ChargeFailed(BaseModel):
-    """The payment provider's reply that it could not attempt the charge."""
+    """A charge the payment provider could not attempt, and why."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
     )
-    error: ProviderError
+    error: StatedError
 
 
 class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
-    """The payment provider's reply to a charge."""
+    """What the payment provider says of a charge."""
 
     model_config = ConfigDict(
         frozen=True, strict=True,
@@ -68,25 +77,22 @@ class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
 # integration/promotions/model.py
 from pydantic import BaseModel, ConfigDict
 
-from domain.shop.type import CustomerId, Percent, ProviderPath
+from domain.shop.type import CustomerId, Percent
 
 
-class DiscountRequest(BaseModel):
-    """The promotions system's question for a customer's discount."""
+class CustomerDiscount(BaseModel):
+    """The discount the promotions system holds for one customer, named in its collection by that customer."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     customer: CustomerId
 
-    @property
-    def path(self) -> ProviderPath:
-        return ProviderPath(f"/discounts/{self.customer.root}")
-
 
 class DiscountOffer(BaseModel):
-    """The share of the total the promotions system takes off for a customer, none when it states none."""
+    """The share the promotions system takes off for a customer; none when it states none."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,

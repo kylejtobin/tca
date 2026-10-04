@@ -11,6 +11,7 @@ class PaidOrder(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PricedOrder
     payment: Approval
@@ -22,6 +23,7 @@ class DeclinedOrder(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PricedOrder
     payment: Decline
@@ -33,6 +35,7 @@ class UnsettledOrder(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     order: PricedOrder
     payment: Failure
@@ -44,6 +47,7 @@ class OrderOutcome(RootModel[PaidOrder | DeclinedOrder | UnsettledOrder]):
     model_config = ConfigDict(
         frozen=True, strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
 
     @property

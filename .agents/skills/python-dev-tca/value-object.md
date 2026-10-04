@@ -8,7 +8,7 @@ description: "A frozen product with no identity, equal when its fields are equal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import (
-    Amount, ChargeId, DeclineReasons, Percent, ProviderError, Quantity, Sku, UnitPrice,
+    Amount, ChargeId, DeclineReasons, Percent, Quantity, Sku, StatedError, UnitPrice,
 )
 
 
@@ -34,6 +34,7 @@ class Discount(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     percent: Percent
 
@@ -44,6 +45,7 @@ class Approval(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     charge: ChargeId
 
@@ -54,6 +56,7 @@ class Decline(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
     reasons: DeclineReasons
 
@@ -64,6 +67,7 @@ class Failure(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", strict=True,
         validate_default=True, revalidate_instances="never",
+        from_attributes=True,
     )
-    error: ProviderError
+    error: StatedError
 ```
