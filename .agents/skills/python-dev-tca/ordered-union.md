@@ -1,0 +1,25 @@
+---
+type: Construct
+description: "A strong alternative whose only failure to construct means the fallback. Holds its variants. Lives beside them."
+---
+
+```python
+# domain/shop/type.py
+from typing import Annotated
+
+
+class UnlistedReason(RootModel[str]):
+    """A decline reason the payment provider gave that this program has no word for."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True,
+        validate_default=True, revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
+StatedReason = Annotated[
+    DeclineReason | UnlistedReason,
+    Field(union_mode="left_to_right"),
+]
+```
