@@ -1,5 +1,7 @@
 # TCA agent
 
+The build starts once a domain is articulated. It runs unattended until that domain has been built correctly.
+
 ## Why this build fails
 
 Usually agents fail at this kind of build because their context is a plan of the run, so the types they write are the stages of that run. We made the model keep a complete list of the domain's nouns and rethink that list before every write. That succeeded because the only thing in front of it was the domain, and a gap came back as a missing noun instead of a next step.
@@ -10,23 +12,21 @@ A System One model is valuable because it returns a calibrated probability over 
 
 ## The worklist
 
-The machine is a worklist. At go, the articulation is frozen as a domain record: the things, the states of those things, and the crossings. Code then repeats a round. An LLM proposes types only for states that are still uninhabited, and it may name only types already admitted. Code places each proposal by its fields and rejects anything it cannot place or that refers forward. Jev rules on what a parser will bless. Admitted types are rendered into files by code. A round that admits nothing halts with the states still open. Done is every state inhabited and every crossing admitted.
+At go, the articulation is frozen into a domain record: the things, the states of those things, and the crossings. That record is what correct is checked against. Each round, an LLM proposes types only for states that still have no inhabitant, and a proposal may name only types already admitted. Code places each proposal by its fields. The fields must be types from a level above. A proposal that refers to a type not yet admitted, or that cannot be placed, is not admitted. Jev then judges each placed proposal on what a parser cannot see: whether its name is a stage of a run, whether it names a thing of its own, whether it inhabits the state it claims, and whether that thing is in the articulation. A low-confidence answer halts the build and leaves the open states open. Code renders every admitted type into its file. The model never writes the file. A round that admits nothing halts the same way. The build is done when every state is inhabited and every crossing is admitted.
 
 ## Flow
 
 ```mermaid
 flowchart TD
-  A[Articulation] --> B[Freeze the domain record]
-  B --> C{Any state still uninhabited?}
+  A[Articulation] --> B[Freeze things, states, and crossings]
+  B --> C{Any state uninhabited?}
   C -->|no| Z[Done]
-  C -->|yes| D[Propose inhabitants for the open states]
+  C -->|yes| D[Propose types for the open states]
   D --> E[Code places each by its fields]
-  E -->|cannot place, or refers forward| D
-  E --> F[Jev: stage, own thing, claimed state, in the articulation]
-  F -->|reject| D
+  E --> F[Jev judges each placed type]
   F -->|low confidence| H[Halt with the open states]
-  F -->|admit| I[Commit and render the file]
-  I --> J{This round admitted nothing?}
-  J -->|yes| H
-  J -->|no| C
+  F --> G{Any type admitted this round?}
+  G -->|no| H
+  G -->|yes| I[Code renders the admitted types]
+  I --> C
 ```
