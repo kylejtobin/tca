@@ -36,7 +36,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t04, `return ProviderPath(f"/discounts/{self.customer.root}")`.
 - **Pass example:** t14, `CollectionUrl` declared with `root: str = Field(pattern=r"^https?://[^/]+/(.+/)?$")` for a provider address.
 - **Frequency:** 9 of 17 (t01, t04, t05, t06, t07, t08, t14, t16, t17).
-- **Evaluator:** an LLM judge applying the criterion, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a judge applying the criterion, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ### Misreport of the delivery
 - **Definition:** the delivering message contains a claim phrase while the delivery fails "Step in place of a type". The claim phrases are exactly these five: "built", "in place", "modeled", "no longer pulled raw", "Nothing dispatches".
@@ -44,7 +44,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t14, "The id is no longer pulled raw out of the action." while the client receives `customer.root`.
 - **Pass example:** t05, a delivery that fails "Step in place of a type" and whose message contains none of the five claim phrases.
 - **Frequency:** 5 of 17 (t01, t04, t14, t16, t17).
-- **Evaluator:** a code check for the five claim phrases combined with the "Step in place of a type" label, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a code check for the five claim phrases combined with the "Step in place of a type" verdict, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ### Construction fails on real input
 - **Definition:** a declared type cannot construct from the input the crossing actually receives.
@@ -52,7 +52,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t13, `CheckoutRoute.model_validate(await request.json())`, where strict validation rejects the string `"usd"` for `Currency` and the list for `Lines`.
 - **Pass example:** t14, `CollectionUrl`, which accepts the provider address it receives.
 - **Frequency:** 3 of 17 (t09, t10, t13).
-- **Evaluator:** a code check that constructs each declared type from a recorded real input, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a code check that constructs each declared type from a recorded real input, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ### Type without a thing
 - **Definition:** a declared type that no thing in the domain inhabits: a type whose fields hold only the types it lies between and add no meaning of its own, or a scalar whose inhabitants are a literal value and not a thing.
@@ -60,7 +60,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t03, `DiscountReading` declared between `DiscountOffer` and `PricedOrder`.
 - **Pass example:** t14, `CollectionUrl` declared as "The address of a collection another system holds" for a provider address.
 - **Frequency:** 2 of 17 (t03, t12).
-- **Evaluator:** an LLM judge applying the criterion, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a judge applying the criterion, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ### Thing without a type
 - **Definition:** a thing in the domain that the delivery names inhabits no declared type: a state, a variant or a rule of the domain has no inhabitant in any type the delivery declares, so the declared types have fewer inhabitants than the domain has states.
@@ -68,7 +68,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t02, `DiscountAbsent` and `NoDiscount` left undeclared ("Open").
 - **Pass example:** t05, `ChargeReply` declared with `ChargeApproved | ChargeDeclined | ChargeFailed` for each reply the payment provider gives.
 - **Frequency:** 2 of 17 (t02, t15).
-- **Evaluator:** an LLM judge applying the criterion, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a judge applying the criterion, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ### Invented input
 - **Definition:** the delivery depends on a library, API or source that does not exist or was never agreed.
@@ -76,7 +76,7 @@ This session's transcript. The sample is the deliveries matched by one rule, not
 - **Fail example:** t11, "The promotions SDK is a stand-in, invented for the demo".
 - **Pass example:** t13, the checkout read through Starlette's documented `request.json()`.
 - **Frequency:** 2 of 17 (t11, t17).
-- **Evaluator:** a code check that every import resolves in the dependency set, plus a human check of described APIs against the agreed design, validated against human labels on at least 50 deliveries, with a true-positive rate and a true-negative rate of at least 0.9 each.
+- **Evaluator:** a code check that every import resolves in the dependency set, plus a judge of described APIs against the agreed design, validated against reference verdicts on at least 50 traces, with a true-positive rate and a true-negative rate of at least 0.9 each and calibrated confidence.
 
 ## Priority
 Impact is the share of a mode's traces whose failure reached a commit of the skill. Priority is frequency × impact.

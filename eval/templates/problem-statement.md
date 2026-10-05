@@ -20,7 +20,7 @@
 - **Fail example:** <a trace that shows the mode>.
 - **Pass example:** <a similar trace that does not>.
 - **Frequency:** <the count and share of sampled traces that show the mode>.
-- **Evaluator:** <a code-based check or an LLM judge, validated against human labels>.
+- **Evaluator:** <a code check or a judge, validated against reference verdicts>.
 
 ## Priority
 <the order in which modes are addressed, by frequency and impact>
