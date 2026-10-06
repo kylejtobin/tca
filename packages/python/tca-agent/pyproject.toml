@@ -1,0 +1,33 @@
+[project]
+name = "tca-agent"
+version = "0.0.0"
+description = "The TCA agent: builds a domain's types layer by layer, asking after every file which nouns are missing."
+requires-python = ">=3.14"
+license = "LicenseRef-TCA-BSL-1.1"
+license-files = ["LICENSE"]
+authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
+keywords = ["tca", "type-construction-architecture", "pydantic", "agents"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = ["pydantic>=2.9,<3"]
+import-names = ["tca.agent"]
+import-namespaces = ["tca"]
+
+[project.urls]
+Homepage = "https://github.com/kylejtobin/tca"
+Repository = "https://github.com/kylejtobin/tca"
+Issues = "https://github.com/kylejtobin/tca/issues"
+
+[build-system]
+requires = ["uv_build>=0.12.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "tca.agent"
+source-include = ["tests/**"]

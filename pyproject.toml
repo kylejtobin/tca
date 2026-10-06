@@ -1,0 +1,64 @@
+[project]
+name = "tca-workspace"
+version = "0.0.0"
+description = "Workspace for the Type Construction Architecture packages."
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/python/*"]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "basedpyright",
+    "import-linter",
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.6.2",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "semgrep>=1.179.0",
+]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["packages/python"]
+asyncio_mode = "strict"
+strict_config = true
+strict_markers = true
+xfail_strict = true
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["packages/python"]
+
+[tool.ruff.lint]
+select = ["E","W","F","I","N","UP","B","A","C4","PIE","RET","SIM","ARG","PTH","ERA","PL","TRY","RUF","ANN","S","FBT","TC","EM"]
+ignore = ["ANN401","TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S106", "ARG001", "PLR2004"]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel","pydantic.RootModel"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tca"]
+
+[tool.basedpyright]
+include = ["packages/python"]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+
+[tool.bandit]
+targets = ["."]
+exclude_dirs = [".venv", "venv", "tests", "build", "dist", "htmlcov", ".git"]
+confidence = "LOW"
+severity = "LOW"
