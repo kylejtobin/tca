@@ -12,7 +12,11 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ripgrep
+      - run: uv lock --check
       - run: uv sync --all-packages
       - run: uv run ruff check packages
       - run: uv run ruff format --check packages
       - run: uv run basedpyright
+      - run: .agents/skills/smell-check/smell-check packages/python/*/src
+      - run: uv run pytest
