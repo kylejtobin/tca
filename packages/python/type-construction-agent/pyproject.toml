@@ -1,10 +1,11 @@
 [project]
 name = "type-construction-agent"
 version = "0.0.0"
-description = "The TCA agent: builds a domain's types layer by layer, asking after every file which nouns are missing."
+description = "Type Construction Architecture's agent: a Pydantic AI agent that models a domain as types."
 requires-python = ">=3.14"
 license = "LicenseRef-TCA-BSL-1.1"
 license-files = ["LICENSE"]
+readme = "README.md"
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
 keywords = ["tca", "type-construction-architecture", "pydantic", "agents"]
 classifiers = [
@@ -15,7 +16,13 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["pydantic>=2.9,<3"]
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.6,<3",
+    "pydantic-ai-slim[openai,anthropic,bedrock,spec]>=2.54,<3",
+    "pydantic-ai-harness[skills]>=0.54",
+    "pyyaml>=6,<7",
+]
 import-names = ["type_construction.agent"]
 import-namespaces = ["type_construction"]
 
