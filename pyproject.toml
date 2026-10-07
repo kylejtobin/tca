@@ -50,7 +50,7 @@ ignore = ["ANN401","TRY003"]
 runtime-evaluated-base-classes = ["pydantic.BaseModel","pydantic.RootModel"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["tca"]
+known-first-party = ["type_construction"]
 
 [tool.basedpyright]
 include = ["packages/python"]

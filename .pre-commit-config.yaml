@@ -23,8 +23,8 @@ repos:
         pass_filenames: false
         types: [python]
         args:
-          - packages/python/tca-agent/src
-          - packages/python/tca-eval/src
+          - packages/python/type-construction-agent/src
+          - packages/python/type-construction-eval/src
 
   - repo: local
     hooks:

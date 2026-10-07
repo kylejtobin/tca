@@ -4,9 +4,9 @@ requires-python = ">=3.14"
 
 [manifest]
 members = [
-    "tca-agent",
-    "tca-eval",
     "tca-workspace",
+    "type-construction-agent",
+    "type-construction-eval",
 ]
 
 [[package]]
@@ -1521,28 +1521,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tca-agent"
-version = "0.0.0"
-source = { editable = "packages/python/tca-agent" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.9,<3" }]
-
-[[package]]
-name = "tca-eval"
-version = "0.0.0"
-source = { editable = "packages/python/tca-eval" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.9,<3" }]
-
-[[package]]
 name = "tca-workspace"
 version = "0.0.0"
 source = { virtual = "." }
@@ -1610,6 +1588,28 @@ sdist = { url = "https://files.pythonhosted.org/packages/19/75/241269d1da26b624c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl", hash = "sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90", size = 6675, upload-time = "2025-01-15T12:07:22.074Z" },
 ]
+
+[[package]]
+name = "type-construction-agent"
+version = "0.0.0"
+source = { editable = "packages/python/type-construction-agent" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.9,<3" }]
+
+[[package]]
+name = "type-construction-eval"
+version = "0.0.0"
+source = { editable = "packages/python/type-construction-eval" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.9,<3" }]
 
 [[package]]
 name = "typing-extensions"

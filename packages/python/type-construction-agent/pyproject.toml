@@ -1,12 +1,12 @@
 [project]
-name = "tca-eval"
+name = "type-construction-agent"
 version = "0.0.0"
-description = "Automated evaluation of TCA development, modeled as TCA types."
+description = "The TCA agent: builds a domain's types layer by layer, asking after every file which nouns are missing."
 requires-python = ">=3.14"
 license = "LicenseRef-TCA-BSL-1.1"
 license-files = ["LICENSE"]
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
-keywords = ["tca", "type-construction-architecture", "pydantic", "evaluation"]
+keywords = ["tca", "type-construction-architecture", "pydantic", "agents"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3",
@@ -16,8 +16,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = ["pydantic>=2.9,<3"]
-import-names = ["tca.eval"]
-import-namespaces = ["tca"]
+import-names = ["type_construction.agent"]
+import-namespaces = ["type_construction"]
 
 [project.urls]
 Homepage = "https://github.com/kylejtobin/tca"
@@ -29,5 +29,5 @@ requires = ["uv_build>=0.12.12,<0.13"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "tca.eval"
+module-name = "type_construction.agent"
 source-include = ["tests/**"]
