@@ -93,3 +93,21 @@ class Failure(BaseModel):
     )
     error: StatedError
 ```
+
+```python
+# domain/shop/value.py
+class Match(BaseModel):
+    """A product the catalog found close to an order, in its aisle, and how alike it is."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    sku: Sku
+    category: Category
+    similarity: Similarity
+```

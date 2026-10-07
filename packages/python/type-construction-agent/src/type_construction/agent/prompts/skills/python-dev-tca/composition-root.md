@@ -59,10 +59,18 @@ from pydantic_ai.capabilities import LocalWorkspace
 from pydantic_ai_harness import FileSystem, Skills
 
 from config import ShopConfig
-from domain.shop.order import DeclinedOrder, NotifiedOrder, Order, OrderOutcome
+from domain.shop.order import (
+    DeclinedOrder,
+    NotifiedOrder,
+    Order,
+    OrderOutcome,
+    PaidOrder,
+    RecommendedOrder,
+)
 from domain.shop.type import SkillLibrary, SkillLocation
 from domain.shop.value import DeclineNoticeValues
 from integration.agent_skills.model import SkillDocument
+from integration.catalog_index.interpreter import FindRelatedInterpreter
 from integration.model_provider.interpreter import WriteNoticeInterpreter
 from integration.model_provider.model import NoticeReply
 from integration.payments.interpreter import ChargeInterpreter
@@ -111,4 +119,19 @@ async def notify(order: DeclinedOrder) -> NotifiedOrder:
 
 def notify_sync(order: DeclinedOrder) -> NotifiedOrder:
     return asyncio.run(notify(order))
+```
+
+```python
+# shop/__init__.py
+async def recommend(order: PaidOrder) -> RecommendedOrder:
+    return (
+        await FindRelatedInterpreter(
+            action=order.related,
+            client=ShopConfig().catalog.client,
+        ).interpret()
+    ).recommended
+
+
+def recommend_sync(order: PaidOrder) -> RecommendedOrder:
+    return asyncio.run(recommend(order))
 ```

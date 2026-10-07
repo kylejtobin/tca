@@ -58,6 +58,10 @@ class PricedOrder(BaseModel):
         return self.order.currency
 
     @property
+    def lines(self) -> Lines:
+        return self.order.lines
+
+    @property
     def amount(self) -> Amount:
         return Amount(self.order.lines.amount.root * (100 - self.discount.percent.root) // 100)
 
@@ -80,4 +84,21 @@ class NotifiedOrder(BaseModel):
     )
     order: DeclinedOrder
     notice: NoticeText
+```
+
+```python
+# domain/shop/order.py
+class RecommendedOrder(BaseModel):
+    """A paid order, with what the catalog suggests beside it."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    order: PaidOrder
+    recommendation: Recommendation
 ```

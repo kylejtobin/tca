@@ -31,6 +31,8 @@ Only an interpreter's `interpret` and a composition root's callback read or writ
 A format that is not JSON is read by a maintained library that yields JSON, and is then the line above.
 Only a format no library yields JSON from is read by a format type in `parser/`, and nothing outside `parser/` reads a format.
 
+An action carries every rule its effect must follow; the system it calls enforces them, and its reply is read once into the domain's outcome.
+
 An agent's own words live in `prompts/agents/<agent>/SKILL.md` and the skills it may load in `prompts/skills/<skill>/`; neither is ever a string in code. A template's slots are exactly the fields of its value object, and that value object is the agent's deps.
 
 ## A whole program
@@ -48,6 +50,16 @@ flowchart LR
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
         SkillDocument["<b>SkillDocument</b><br/>name · description · body"]
         NoticeReply["<b>NoticeReply</b><br/>text"]
+        CatalogPoint["<b>CatalogPoint</b><br/>sku"]
+        IndexQuery["<b>IndexQuery</b><br/>query · filter · score_threshold · group_size · limit"]
+        PointHit["<b>PointHit</b><br/>id · score · payload"]
+        Hits["<b>Hits</b>"]
+        PointGroup["<b>PointGroup</b><br/>hits · id"]
+        PointGroups["<b>PointGroups</b>"]
+        GroupResult["<b>GroupResult</b><br/>groups"]
+        IndexGroups["<b>IndexGroups</b><br/>result · status · time"]
+        IndexFailure["<b>IndexFailure</b><br/>status · time"]
+        IndexReply["<b>IndexReply</b>"]
         CardCharge["<b>CardCharge</b><br/>amt · cur · src · ref"]
         ChargeApproved["<b>ChargeApproved</b><br/>id"]
         ChargeDeclined["<b>ChargeDeclined</b><br/>decline_codes"]
@@ -63,12 +75,16 @@ flowchart LR
         Decline["<b>Decline</b><br/>reasons"]
         Failure["<b>Failure</b><br/>error"]
         DeclineNoticeValues["<b>DeclineNoticeValues</b><br/>customer · id · reasons"]
+        Match["<b>Match</b><br/>sku · category · similarity"]
+        RelatedMatches["<b>RelatedMatches</b><br/>one or more"]
+        NoMatches["<b>NoMatches</b><br/>none"]
     end
 
     subgraph g4["4 concept model"]
         Order["<b>Order</b><br/>id · customer · card · currency · lines"]
         PricedOrder["<b>PricedOrder</b><br/>order · discount"]
         NotifiedOrder["<b>NotifiedOrder</b><br/>order · notice"]
+        RecommendedOrder["<b>RecommendedOrder</b><br/>order · recommendation"]
     end
 
     subgraph g4u["4 union"]
@@ -76,12 +92,17 @@ flowchart LR
         DeclinedOrder["<b>DeclinedOrder</b><br/>order · payment"]
         UnsettledOrder["<b>UnsettledOrder</b><br/>order · payment"]
         OrderOutcome["<b>OrderOutcome</b>"]
+        Recommended["<b>Recommended</b><br/>matches"]
+        NothingRelated["<b>NothingRelated</b><br/>matches"]
+        Unavailable["<b>Unavailable</b><br/>reason"]
+        Recommendation["<b>Recommendation</b>"]
     end
 
     subgraph g4a["4 action"]
         ReadDiscount["<b>ReadDiscount</b><br/>order"]
         Charge["<b>Charge</b><br/>order"]
         WriteNotice["<b>WriteNotice</b><br/>order"]
+        FindRelated["<b>FindRelated</b><br/>order · closeness · per_aisle · limit"]
     end
 
     subgraph g5["5 contract model"]
@@ -94,12 +115,15 @@ flowchart LR
 
     subgraph g7["7 transformation"]
         ChargeAttempt["<b>ChargeAttempt</b><br/>order · reply"]
+        RelatedQuery["<b>RelatedQuery</b><br/>action"]
+        RelatedSearch["<b>RelatedSearch</b><br/>order · reply"]
     end
 
     subgraph g8["8 effect interpreter"]
         ReadDiscountInterpreter["<b>ReadDiscountInterpreter</b><br/>action · client"]
         ChargeInterpreter["<b>ChargeInterpreter</b><br/>action · client"]
         WriteNoticeInterpreter["<b>WriteNoticeInterpreter</b><br/>action · client"]
+        FindRelatedInterpreter["<b>FindRelatedInterpreter</b><br/>action · client"]
     end
 
     subgraph g9["9 route"]
@@ -147,6 +171,27 @@ flowchart LR
     DeclinedOrder --> WriteNotice --> WriteNoticeInterpreter ==> NotifiedOrder
     DeclinedOrder --> NotifiedOrder
     DeclinedOrder -.-> DeclineNoticeValues
+    PaidOrder --> FindRelated --> FindRelatedInterpreter ==> RelatedSearch
+    FindRelated --> RelatedQuery -.-> IndexQuery
+    Line -.-> CatalogPoint
+    PointHit --> Hits --> PointGroup --> PointGroups --> GroupResult --> IndexGroups --> IndexReply
+    IndexFailure --> IndexReply
+    PaidOrder --> RelatedSearch
+    IndexReply --> RelatedSearch
+    PointHit -.-> Match
+    Match --> RelatedMatches
+    Match --> NoMatches
+    IndexGroups -.-> Recommended
+    IndexGroups -.-> NothingRelated
+    IndexFailure -.-> Unavailable
+    RelatedMatches --> Recommended
+    NoMatches --> NothingRelated
+    Recommended --> Recommendation
+    NothingRelated --> Recommendation
+    Unavailable --> Recommendation
+    RelatedSearch -.-> RecommendedOrder
+    PaidOrder --> RecommendedOrder
+    Recommendation --> RecommendedOrder
 ```
 
 Every box is a class in the page its group names.
