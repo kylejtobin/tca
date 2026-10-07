@@ -1,0 +1,26 @@
+---
+type: Construct
+description: "Every variable the environment may give at run time, by name, empty where it is a secret. Holds names and the settings that are not secret. Lives in .env.example."
+---
+
+```sh
+# .env.example
+# The provider and model the TCA agent speaks to.
+# TCA_AGENT_PROVIDER is one of: openai, anthropic, azure, aws, cloudflare.
+TCA_AGENT_PROVIDER=cloudflare
+TCA_AGENT_MODEL=@cf/zai-org/glm-5.3-flash
+
+# The named provider's credentials, under that provider's own names.
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+AZURE_OPENAI_ENDPOINT=
+OPENAI_API_VERSION=
+AZURE_OPENAI_API_KEY=
+AWS_DEFAULT_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_SESSION_TOKEN=
+AWS_BEARER_TOKEN_BEDROCK=
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+```
