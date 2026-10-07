@@ -38,7 +38,9 @@ from domain.shop.type import (
     BlankPassword,
     CardProviderName,
     CollectionUrl,
+    FieldName,
     InvoiceProviderName,
+    MediaType,
     ModelName,
     ProviderKey,
     ProviderUrl,
@@ -124,6 +126,27 @@ class Notices(BaseModel):
         )
 
 
+class CatalogIndex(BaseModel):
+    """The catalog's collection in the index, at its address."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    index_collection_url: CollectionUrl
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=self.index_collection_url.root,
+            headers=((FieldName.CONTENT_TYPE, MediaType.JSON),),
+        )
+
+
 class ShopConfig(BaseSettings):
     """The deployment's addresses, its payment provider, its notice model, and their credentials."""
 
@@ -141,6 +164,7 @@ class ShopConfig(BaseSettings):
     payments_key: ProviderKey | Unset = Unset()
     notices_model: ModelName
     notices_key: ProviderKey
+    index_collection_url: CollectionUrl
 
     @property
     def payments(self) -> Payments:
@@ -149,4 +173,8 @@ class ShopConfig(BaseSettings):
     @property
     def notices(self) -> Notices:
         return Notices.model_validate(self)
+
+    @property
+    def catalog(self) -> CatalogIndex:
+        return CatalogIndex.model_validate(self)
 ```

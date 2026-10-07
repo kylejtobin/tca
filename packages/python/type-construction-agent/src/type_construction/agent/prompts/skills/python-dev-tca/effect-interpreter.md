@@ -112,3 +112,44 @@ class WriteNoticeInterpreter(BaseModel):
             ).output.text,
         )
 ```
+
+```python
+# integration/catalog_index/interpreter.py
+import httpx
+from pydantic import BaseModel, ConfigDict, Field
+
+from domain.shop.order import FindRelated
+from integration.catalog_index.model import IndexQuery, IndexReply, IndexResource
+from integration.catalog_index.query import RelatedQuery
+from integration.catalog_index.search import RelatedSearch
+
+
+class FindRelatedInterpreter(BaseModel):
+    """The one place the catalog index is asked for products close to the ones an order bought."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        arbitrary_types_allowed=True,
+    )
+    action: FindRelated
+    client: httpx.AsyncClient = Field(exclude=True, repr=False)
+
+    async def interpret(self) -> RelatedSearch:
+        return RelatedSearch(
+            order=self.action.order,
+            reply=IndexReply.model_validate_json(
+                (
+                    await self.client.post(
+                        IndexResource.GROUPED_QUERY,
+                        content=IndexQuery.model_validate(
+                            RelatedQuery(action=self.action)
+                        ).model_dump_json(),
+                    )
+                ).content
+            ),
+        )
+```

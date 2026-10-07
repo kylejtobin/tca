@@ -83,7 +83,7 @@ class ProviderUrl(RootModel[str]):
 
 
 class CollectionUrl(RootModel[str]):
-    """The address of a collection another system holds; each thing in it is named relative to it."""
+    """The address of a collection another system holds; what it holds is named relative to it."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -295,4 +295,140 @@ class SkillLibrary(StrEnum):
     """Where the skills an agent may load are kept, within the package."""
 
     SKILLS = "prompts/skills"
+```
+
+```python
+# domain/shop/type.py
+class Category(RootModel[str]):
+    """The aisle of the catalog a product belongs to."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(pattern=r"^[a-z]+(-[a-z]+)*$")
+
+
+class Similarity(RootModel[float]):
+    """How alike two products are, as the catalog index scores them."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: float = Field(ge=-1, le=1)
+
+
+class Closeness(RootModel[float]):
+    """How alike a product must be to one an order bought to be recommended beside it."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: float = Field(default=0.8, ge=-1, le=1)
+
+
+class MatchLimit(RootModel[int]):
+    """How many aisles a recommendation draws from."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: int = Field(default=4, ge=1)
+
+
+class GroupSize(RootModel[int]):
+    """How many products a recommendation takes from each aisle."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: int = Field(default=1, ge=1)
+
+
+class PointId(RootModel[UUID]):
+    """The catalog index's name for a product."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: UUID
+
+
+class PointNamespace(RootModel[UUID]):
+    """The namespace the catalog index's product names are made in."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: UUID = UUID("6f1c2b8e-3a0d-4c1e-9f57-2d4b8a6e1c33")
+
+
+class PointVersion(RootModel[int]):
+    """The catalog index's revision of a product."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: int = Field(ge=0)
+
+
+class QueryTime(RootModel[float]):
+    """How long the catalog index took to answer, in seconds."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: float = Field(ge=0)
+
+
+class IndexFault(RootModel[str]):
+    """Why the catalog index could not answer."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
+class IndexStatus(StrEnum):
+    """The catalog index's word for an answer it could give."""
+
+    OK = "ok"
+
+
+class PayloadKey(StrEnum):
+    """A field the catalog index keeps beside each product."""
+
+    SKU = "sku"
+    CATEGORY = "category"
+    CURRENCIES = "currencies"
 ```

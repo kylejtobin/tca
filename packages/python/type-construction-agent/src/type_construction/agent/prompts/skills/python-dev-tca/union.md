@@ -19,6 +19,20 @@ class PaidOrder(BaseModel):
     order: PricedOrder
     payment: Approval
 
+    @property
+    def currency(self) -> Currency:
+        return self.order.currency
+
+    @property
+    def lines(self) -> Lines:
+        return self.order.lines
+
+    @property
+    def related(self) -> FindRelated:
+        return FindRelated(
+            order=self, closeness=Closeness(), per_aisle=GroupSize(), limit=MatchLimit()
+        )
+
 
 class DeclinedOrder(BaseModel):
     """A priced order the payment provider declined to charge."""
@@ -84,4 +98,60 @@ class OrderOutcome(RootModel[PaidOrder | DeclinedOrder | UnsettledOrder]):
     @property
     def payment(self) -> Approval | Decline | Failure:
         return self.root.payment
+```
+
+```python
+# domain/shop/order.py
+class Recommended(BaseModel):
+    """Products close enough to an order to recommend beside it."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    matches: RelatedMatches
+
+
+class NothingRelated(BaseModel):
+    """No product in the catalog close enough to an order to recommend."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    matches: NoMatches
+
+
+class Unavailable(BaseModel):
+    """A recommendation the catalog index could not give, and why."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    reason: IndexFault
+
+
+class Recommendation(RootModel[Recommended | NothingRelated | Unavailable]):
+    """What the catalog suggests beside an order."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
 ```

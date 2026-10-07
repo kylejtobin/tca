@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "One intended external effect, as a value that performs nothing. Holds semantic scalars, value objects, and concept models. Lives in domain/<context>/<concept>.py, beside the fact that authorizes it."
+description: "One intended external effect, as a value that performs nothing, carrying every rule its effect must follow. Holds semantic scalars, value objects, and concept models. Lives in domain/<context>/<concept>.py, beside the fact that authorizes it."
 ---
 
 ```python
@@ -44,4 +44,22 @@ class WriteNotice(BaseModel):
         revalidate_instances="never",
     )
     order: DeclinedOrder
+```
+
+```python
+# domain/shop/order.py
+class FindRelated(BaseModel):
+    """The intended search of the catalog for products close to the ones a paid order bought."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    order: PaidOrder
+    closeness: Closeness
+    per_aisle: GroupSize
+    limit: MatchLimit
 ```
