@@ -2,7 +2,7 @@
 <p align="center"><img src="img/hero.png" alt="Type Construction Architecture: each fact holds the one before it" width="100%"></p>
 
 <p align="center">
-<a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=0d1117" alt="Python 3.12+"></a>
+<a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=0d1117" alt="Python 3.14+"></a>
 <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white&labelColor=0d1117" alt="Pydantic v2"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSL 1.1"></a>
 </p>
@@ -149,34 +149,36 @@ Every meaning has exactly one structural home, and every structure carries exact
 
 There is no fifth. Every design argument reduces to which of the four it is.
 
-## Thirteen shapes, no fourteenth
+## Fifteen shapes, no sixteenth
 
-A whole program is built from thirteen declaration forms. Each one replaces a habit.
+A whole program is built from fifteen declaration forms. Each one replaces a habit.
 
 | Construct | What it is | What it replaces |
 |---|---|---|
-| [Semantic scalar](.agents/skills/python-dev-tca/semantic-scalar.md) | One atomic meaning over a primitive or a closed vocabulary | The bare `str` and `Decimal` |
-| [Value object](.agents/skills/python-dev-tca/value-object.md) | A frozen product with no identity, equal when its fields are equal | The tuple or dict of parts |
-| [Concept model](.agents/skills/python-dev-tca/concept-model.md) | A full domain thing or durable fact; the class is the kind | The `kind` field and the registry |
-| [Union](.agents/skills/python-dev-tca/union.md) | Closed alternatives, each holding its own facts | The `if/elif` ladder and the `bool` |
-| [Ordered union](.agents/skills/python-dev-tca/ordered-union.md) | A strong alternative whose only failure means the fallback | `try/except` and `.get()` returning `None` |
-| [Collection](.agents/skills/python-dev-tca/collection.md) | Several with a meaning of their own, as a frozen tuple | The mutable list |
-| [Transformation](.agents/skills/python-dev-tca/transformation.md) | A derivation of one returned expression on the thing that holds its inputs | The helper function and the service method |
-| [Foreign model](.agents/skills/python-dev-tca/foreign-model.md) | Another system's thing, lifted whole by aliases | The mapper, the adapter, the DTO |
-| [Contract model](.agents/skills/python-dev-tca/contract-model.md) | This program's published request or reply | The hand-built response dict |
-| [Config](.agents/skills/python-dev-tca/config.md) | Deployment input constructed once | The scattered `os.environ` read |
-| [Route](.agents/skills/python-dev-tca/route.md) | One transport crossing, in or out | The handler that parses by hand |
-| [Action](.agents/skills/python-dev-tca/action.md) | One intended external effect, as a value that performs nothing | The side effect performed in place |
-| [Effect interpreter](.agents/skills/python-dev-tca/effect-interpreter.md) | The one place an action's external call is made | The client call inside domain code |
+| [Semantic scalar](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/semantic-scalar.md) | One atomic meaning over a primitive or a closed vocabulary | The bare `str` and `Decimal` |
+| [Value object](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/value-object.md) | A frozen product with no identity, equal when its fields are equal | The tuple or dict of parts |
+| [Concept model](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/concept-model.md) | A full domain thing or durable fact; the class is the kind | The `kind` field and the registry |
+| [Union](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/union.md) | Closed alternatives, each holding its own facts | The `if/elif` ladder and the `bool` |
+| [Ordered union](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/ordered-union.md) | A strong alternative whose only failure means the fallback | `try/except` and `.get()` returning `None` |
+| [Collection](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/collection.md) | Several with a meaning of their own, as a frozen tuple | The mutable list |
+| [Transformation](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/transformation.md) | A derivation of one returned expression on the thing that holds its inputs | The helper function and the service method |
+| [Foreign model](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/foreign-model.md) | Another system's thing, lifted whole by aliases | The mapper, the adapter, the DTO |
+| [Contract model](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/contract-model.md) | This program's published request or reply | The hand-built response dict |
+| [Config](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/config.md) | Deployment input constructed once | The scattered `os.environ` read |
+| [Route](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/route.md) | One transport crossing, in or out | The handler that parses by hand |
+| [Action](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/action.md) | One intended external effect, as a value that performs nothing | The side effect performed in place |
+| [Effect interpreter](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/effect-interpreter.md) | The one place an action's external call is made | The client call inside domain code |
+| [Prompt template](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/prompt-template.md) | An agent's own words, its slots exactly the fields of the value object that fills them | The prompt string built in code |
+| [Skill](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/skill.md) | Instructions an agent loads when a task needs them, routing to their pages | The everything-prompt |
 
-Succession is a [concept model](.agents/skills/python-dev-tca/concept-model.md) with a self-typed `prior`. The program's one function lives at the [composition root](.agents/skills/python-dev-tca/composition-root.md).
+Succession is a [concept model](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/concept-model.md) with a self-typed `prior`. The program's only functions, one callback per message or public call, live at the [composition root](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/composition-root.md).
 
 ## Built for the agent that writes your code
 
 A coding agent can recite all of the above and will still write the procedural version, because reciting is recall and writing code is habit. TCA is delivered as a system that works against that, not as a document to be remembered.
 
-- **The skill meets the agent at the moment.** [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) is read just before the agent writes Python. Each page starts from the two procedural lines the agent was about to type and hands it the classes that replace them, including the case that fails, is empty, or is several.
-- **The smell check does not negotiate.** [`smell-check`](.agents/skills/smell-check/SKILL.md) scans for the free function, `isinstance`, the loop, the conditional, the dict, and the parse method. Every hit is a violation. A build is complete when it exits 0.
+- **The skill meets the agent at the moment.** [`python-dev-tca`](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/SKILL.md) is read just before the agent writes Python. Each page starts from the two procedural lines the agent was about to type and hands it the classes that replace them, including the case that fails, is empty, or is several.
+- **The smell check does not negotiate.** [`smell-check`](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/smell-check/SKILL.md) scans for the free function, `isinstance`, the loop, the conditional, the dict, and the parse method. Every hit is a violation. A build is complete when it exits 0.
 
   ```text
   CONDITIONAL   src/venue/position.py:12:    if position is None:
@@ -185,11 +187,10 @@ A coding agent can recite all of the above and will still write the procedural v
   ```
 
 - **The reviewer assumes bad faith.** [`code-review-tca`](.agents/agents/code-review-tca.md) reads the work as written by someone looking for a way around the standard: tests that pass by construction, exceptions used as the normal path, compliance with a rule's wording that defeats its purpose.
-- **Discovery comes first.** [`domain-discovery`](.agents/skills/domain-discovery/SKILL.md) decides what the world contains from evidence before any type is written.
 
 ## Adopt it
 
-1. Copy [`.agents/skills/`](.agents/skills/) and [`.agents/agents/`](.agents/agents/) into your repository.
+1. Copy the skill directories in [`packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/`](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/) into your repository's `.agents/skills/`, and [`.agents/agents/`](.agents/agents/) into its `.agents/agents/`.
 2. Bind your agent to it, in `AGENTS.md`:
 
    ```text
@@ -206,7 +207,32 @@ A coding agent can recite all of the above and will still write the procedural v
        - id: smell-check
    ```
 
-The example world every page of the skill is written in, with every union and derivation: [A whole program](.agents/skills/python-dev-tca/SKILL.md#a-whole-program).
+The example world every page of the skill is written in, with every union and derivation: [A whole program](packages/python/type-construction-agent/src/type_construction/agent/prompts/skills/python-dev-tca/SKILL.md#a-whole-program).
+
+## The TCA agent
+
+The agent is built in TCA and carries `python-dev-tca`, `docker-infra-tca` and `smell-check` as skills it loads when a task needs them. Install it from this repository:
+
+```sh
+pip install "git+https://github.com/kylejtobin/tca.git#subdirectory=packages/python/type-construction-agent"
+```
+
+```python
+from type_construction.agent import Prompt, run_sync
+
+answer = run_sync(Prompt(text="Model a checkout domain."))
+print(answer.text.root)
+```
+
+It reads its provider, model and credentials from the environment, listed in [`.env.example`](.env.example) and in [its README](packages/python/type-construction-agent/README.md).
+
+To work on this repository, install Docker and [just](https://github.com/casey/just), copy `.env.example` to `.env`, and run:
+
+```sh
+just build                  # the development image, with the locked dependencies
+just check                  # lint, type-check, smell check, tests
+just ask "Model a checkout domain."
+```
 
 ## Why this, why now
 
