@@ -1,0 +1,15 @@
+services:
+  dev:
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PYDANTIC_AI_NO_BANNER: "1"
+    volumes:
+      - .:/workspace
+    init: true
