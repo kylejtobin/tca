@@ -9,8 +9,10 @@ class DeclineReasons(RootModel[tuple[StatedReason, ...]]):
     """Every reason the payment provider gave for declining one charge."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
 ```
 
@@ -20,8 +22,10 @@ class Lines(RootModel[tuple[Line, ...]]):
     """The lines of one order, as the customer sent them."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     root: tuple[Line, ...] = Field(min_length=1)
 

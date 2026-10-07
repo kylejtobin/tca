@@ -15,8 +15,11 @@ class Order(BaseModel):
     """A customer's request to buy some lines in one currency, paid with one card."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     id: OrderId
     customer: CustomerId
@@ -33,8 +36,11 @@ class PricedOrder(BaseModel):
     """An order with the discount the promotions system gave its customer."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     order: Order
     discount: Discount
@@ -58,4 +64,20 @@ class PricedOrder(BaseModel):
     @property
     def charge(self) -> "Charge":
         return Charge(order=self)
+```
+
+```python
+# domain/shop/order.py
+class NotifiedOrder(BaseModel):
+    """A declined order, with the notice written to its customer."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    order: DeclinedOrder
+    notice: NoticeText
 ```

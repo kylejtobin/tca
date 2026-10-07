@@ -15,8 +15,11 @@ class ChargeAttempt(BaseModel):
     """A priced order's charge, with what the payment provider said of it."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     order: PricedOrder
     reply: ChargeReply

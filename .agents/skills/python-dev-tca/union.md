@@ -9,8 +9,11 @@ class PaidOrder(BaseModel):
     """A priced order the payment provider charged."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
     order: PricedOrder
@@ -21,20 +24,42 @@ class DeclinedOrder(BaseModel):
     """A priced order the payment provider declined to charge."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
     order: PricedOrder
     payment: Decline
+
+    @property
+    def customer(self) -> CustomerId:
+        return self.order.order.customer
+
+    @property
+    def id(self) -> OrderId:
+        return self.order.id
+
+    @property
+    def reasons(self) -> DeclineReasons:
+        return self.payment.reasons
+
+    @property
+    def notice(self) -> "WriteNotice":
+        return WriteNotice(order=self)
 
 
 class UnsettledOrder(BaseModel):
     """A priced order the payment provider could not attempt to charge."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
     order: PricedOrder
@@ -45,8 +70,10 @@ class OrderOutcome(RootModel[PaidOrder | DeclinedOrder | UnsettledOrder]):
     """What became of a priced order at the payment provider."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
 

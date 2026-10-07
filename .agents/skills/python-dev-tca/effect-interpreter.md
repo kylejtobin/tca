@@ -17,8 +17,11 @@ class ReadDiscountInterpreter(BaseModel):
     """The one place the promotions system is asked for a customer's discount."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         arbitrary_types_allowed=True,
     )
     action: ReadDiscount
@@ -53,8 +56,11 @@ class ChargeInterpreter(BaseModel):
     """The one place a priced order is charged at the payment provider."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         arbitrary_types_allowed=True,
     )
     action: Charge
@@ -71,5 +77,38 @@ class ChargeInterpreter(BaseModel):
                     )
                 ).content
             ),
+        )
+```
+
+```python
+# integration/model_provider/interpreter.py
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.agent import AbstractAgent
+
+from domain.shop.order import NotifiedOrder, WriteNotice
+from domain.shop.value import DeclineNoticeValues
+from integration.model_provider.model import NoticeReply
+
+
+class WriteNoticeInterpreter(BaseModel):
+    """The one place a declined order's notice is written by the model the shop names."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        arbitrary_types_allowed=True,
+    )
+    action: WriteNotice
+    client: AbstractAgent[DeclineNoticeValues, NoticeReply] = Field(exclude=True, repr=False)
+
+    async def interpret(self) -> NotifiedOrder:
+        return NotifiedOrder(
+            order=self.action.order,
+            notice=(
+                await self.client.run(deps=DeclineNoticeValues.model_validate(self.action.order))
+            ).output.text,
         )
 ```

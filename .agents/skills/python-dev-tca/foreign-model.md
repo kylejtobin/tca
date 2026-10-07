@@ -10,7 +10,13 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from domain.shop.type import (
-    Amount, CardToken, ChargeId, Currency, DeclineReasons, OrderId, StatedError,
+    Amount,
+    CardToken,
+    ChargeId,
+    Currency,
+    DeclineReasons,
+    OrderId,
+    StatedError,
 )
 
 
@@ -24,9 +30,13 @@ class CardCharge(BaseModel):
     """A charge of an amount in a currency to a card, under the payment provider's reference."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
-        from_attributes=True, serialize_by_alias=True,
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+        serialize_by_alias=True,
     )
     amount: Amount = Field(serialization_alias="amt")
     currency: Currency = Field(serialization_alias="cur")
@@ -38,8 +48,11 @@ class ChargeApproved(BaseModel):
     """A charge the payment provider made."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     charge: ChargeId = Field(alias="id")
 
@@ -48,8 +61,11 @@ class ChargeDeclined(BaseModel):
     """A charge the payment provider refused, and why."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     reasons: DeclineReasons = Field(alias="decline_codes")
 
@@ -58,8 +74,11 @@ class ChargeFailed(BaseModel):
     """A charge the payment provider could not attempt, and why."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     error: StatedError
 
@@ -68,8 +87,10 @@ class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
     """What the payment provider says of a charge."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
 
     @property
@@ -88,8 +109,11 @@ class DiscountAddress(BaseModel):
     """The place of one customer's discount within the promotions system's discounts, named there by that customer."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
     customer: CustomerId
@@ -99,8 +123,53 @@ class DiscountOffer(BaseModel):
     """The share the promotions system takes off for a customer; none when it states none."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     percent: Percent = Percent(0)
+```
+
+```python
+# integration/agent_skills/model.py
+from pydantic import BaseModel, ConfigDict
+
+from domain.shop.type import SkillBody, SkillDescription, SkillName
+
+
+class SkillDocument(BaseModel):
+    """An agent's words in the Agent Skills format: their name, what they are for, and the words."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    name: SkillName
+    description: SkillDescription
+    body: SkillBody
+```
+
+```python
+# integration/model_provider/model.py
+from pydantic import BaseModel, ConfigDict
+
+from domain.shop.type import NoticeText
+
+
+class NoticeReply(BaseModel):
+    """What the model provider sends back for a notice: its words."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    text: NoticeText
 ```

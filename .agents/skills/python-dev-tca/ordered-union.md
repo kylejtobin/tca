@@ -12,8 +12,10 @@ class UnlistedReason(RootModel[str]):
     """A decline reason the payment provider gave that this program has no word for."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     root: str = Field(min_length=1)
 
@@ -24,8 +26,10 @@ class StatedReason(
     """A reason the payment provider gave for declining a charge."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
 
 
@@ -33,8 +37,10 @@ class UnlistedError(RootModel[str]):
     """An error the payment provider gave that this program has no word for."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     root: str = Field(min_length=1)
 
@@ -45,7 +51,9 @@ class StatedError(
     """An error the payment provider gave for not attempting a charge."""
 
     model_config = ConfigDict(
-        frozen=True, strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
 ```

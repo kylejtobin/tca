@@ -15,8 +15,11 @@ class CheckoutRoute(BaseModel):
     """The crossing where a customer's checkout arrives."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
     )
     order: Order
 
@@ -25,8 +28,11 @@ class ReplyRoute(BaseModel):
     """The crossing where this program's reply to a checkout leaves."""
 
     model_config = ConfigDict(
-        frozen=True, extra="forbid", strict=True,
-        validate_default=True, revalidate_instances="never",
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
         from_attributes=True,
     )
     outcome: OrderReply

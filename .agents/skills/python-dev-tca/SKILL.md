@@ -25,11 +25,13 @@ Alternative
 Crossing
 ```
 
-Every class you write is a `BaseModel`, a `RootModel` or a `StrEnum`. Every field is typed as one of your own classes, a union of them, or a tuple of them; a primitive appears only as the root of a `RootModel`; a root is read only by its own type, by a property that constructs a new scalar from it, or where it leaves to a library in `interpret` or `main.py`. There is no `dict`, `list`, `set`, `Any`, `None` or `Optional` anywhere: not in a field, a root, an argument or an expression. The only functions are one `interpret` on each interpreter and the callback in `main.py`, each a single returned expression, and the reading and writing of a format in `parser/`; anything else a class knows is a property with a single returned expression. An interpreter also holds its client, and config is a `BaseSettings`; nothing else is held that is not one of your classes. Construction is the only operation: a step you are about to write is a class you have not named.
+Every class you write is a `BaseModel`, a `RootModel` or a `StrEnum`. Every field is typed as one of your own classes, a union of them, or a tuple of them; a primitive appears only as the root of a `RootModel`; a root is read only by its own type, by a property that constructs a new scalar from it, or where it leaves to a library in `interpret`, a composition root's callback, or the client of a config part. There is no `dict`, `list`, `set`, `Any`, `None` or `Optional` anywhere: not in a field, a root, an argument or an expression. The only functions are one `interpret` on each interpreter and the callbacks of the composition root, each a single returned expression, and the reading and writing of a format in `parser/`; anything else a class knows is a property with a single returned expression. An interpreter also holds its client, and config is a `BaseSettings`; nothing else is held that is not one of your classes. Construction is the only operation: a step you are about to write is a class you have not named.
 
-Only an interpreter's `interpret` and the callback in `main.py` read or write JSON: what arrives constructs a model by `model_validate_json`, and what leaves is `model_dump_json`. Everywhere else a model is constructed from a model already held, by `model_validate` with `from_attributes=True`; nothing else is ever passed to `model_validate`.
+Only an interpreter's `interpret` and a composition root's callback read or write JSON: what arrives constructs a model by `model_validate_json`, and what leaves is `model_dump_json`. Everywhere else a model is constructed from a model already held, by `model_validate` with `from_attributes=True`; nothing else is ever passed to `model_validate`.
 A format that is not JSON is read by a maintained library that yields JSON, and is then the line above.
 Only a format no library yields JSON from is read by a format type in `parser/`, and nothing outside `parser/` reads a format.
+
+An agent's own words live in `prompts/agents/<agent>/SKILL.md` and the skills it may load in `prompts/skills/<skill>/`; neither is ever a string in code. A template's slots are exactly the fields of its value object, and that value object is the agent's deps.
 
 ## A whole program
 
@@ -44,6 +46,8 @@ flowchart LR
     subgraph g2["2 foreign model"]
         DiscountAddress["<b>DiscountAddress</b><br/>customer"]
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
+        SkillDocument["<b>SkillDocument</b><br/>name · description · body"]
+        NoticeReply["<b>NoticeReply</b><br/>text"]
         CardCharge["<b>CardCharge</b><br/>amt · cur · src · ref"]
         ChargeApproved["<b>ChargeApproved</b><br/>id"]
         ChargeDeclined["<b>ChargeDeclined</b><br/>decline_codes"]
@@ -58,11 +62,13 @@ flowchart LR
         Approval["<b>Approval</b><br/>charge"]
         Decline["<b>Decline</b><br/>reasons"]
         Failure["<b>Failure</b><br/>error"]
+        DeclineNoticeValues["<b>DeclineNoticeValues</b><br/>customer · id · reasons"]
     end
 
     subgraph g4["4 concept model"]
         Order["<b>Order</b><br/>id · customer · card · currency · lines"]
         PricedOrder["<b>PricedOrder</b><br/>order · discount"]
+        NotifiedOrder["<b>NotifiedOrder</b><br/>order · notice"]
     end
 
     subgraph g4u["4 union"]
@@ -75,6 +81,7 @@ flowchart LR
     subgraph g4a["4 action"]
         ReadDiscount["<b>ReadDiscount</b><br/>order"]
         Charge["<b>Charge</b><br/>order"]
+        WriteNotice["<b>WriteNotice</b><br/>order"]
     end
 
     subgraph g5["5 contract model"]
@@ -92,6 +99,7 @@ flowchart LR
     subgraph g8["8 effect interpreter"]
         ReadDiscountInterpreter["<b>ReadDiscountInterpreter</b><br/>action · client"]
         ChargeInterpreter["<b>ChargeInterpreter</b><br/>action · client"]
+        WriteNoticeInterpreter["<b>WriteNoticeInterpreter</b><br/>action · client"]
     end
 
     subgraph g9["9 route"]
@@ -136,12 +144,16 @@ flowchart LR
     OrderRejected --> OrderReply
     OrderUnsettled --> OrderReply
     OrderOutcome -.-> OrderReply --> ReplyRoute
+    DeclinedOrder --> WriteNotice --> WriteNoticeInterpreter ==> NotifiedOrder
+    DeclinedOrder --> NotifiedOrder
+    DeclinedOrder -.-> DeclineNoticeValues
 ```
 
 Every box is a class in the page its group names.
 A solid arrow is a field: the head holds the tail.
 A dotted arrow is construction by shared names: the head is constructed from the tail by `model_validate`.
 A thick arrow is an effect: the interpreter's `interpret` returns the head.
+A box with no arrow is used only by the composition root, to build a client.
 What differs between the variants of a union is one derivation, under one name, on each variant.
 
 ## Its files, in dependency order
@@ -149,14 +161,18 @@ What differs between the variants of a union is one derivation, under one name, 
 ```text
  1  domain/<context>/type.py               semantic-scalar.md  ordered-union.md  collection.md
  2  integration/<system>/model.py          foreign-model.md
+ 2  parser/<format>.py                     prompt-template.md
  3  domain/<context>/value.py              value-object.md  collection.md
- 4  domain/<context>/<concept>.py          union.md  concept-model.md  action.md
- 5  domain/<context>/api.py                contract-model.md
- 6  config.py                              config.md
- 7  integration/<system>/<meaning>.py      transformation.md
- 8  integration/<system>/interpreter.py    effect-interpreter.md
- 9  api/<context>.py                       route.md
-10  main.py                                composition-root.md
+ 4  prompts/agents/<agent>/SKILL.md        prompt-template.md
+ 4  prompts/skills/<skill>/SKILL.md        skill.md
+ 5  domain/<context>/<concept>.py          union.md  concept-model.md  action.md
+ 6  domain/<context>/api.py                contract-model.md
+ 7  config.py                              config.md
+ 8  integration/<system>/<meaning>.py      transformation.md
+ 9  integration/<system>/interpreter.py    effect-interpreter.md
+10  api/<context>.py                       route.md                 (a process; a package has no transport)
+11  main.py                                composition-root.md      (a process)
+11  <package>/__init__.py                  composition-root.md      (a package)
 ```
 
 A file imports only the files above it. Its constructs are on the pages beside it.
