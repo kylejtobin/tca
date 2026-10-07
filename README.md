@@ -13,7 +13,7 @@
 
 ## The same feature, twice
 
-A venue sends a fill. The program updates the account's position, records it with a clearing house, and replies.
+A trading desk has to know what every account holds, and the clearing house is the record it answers to. When a venue reports a fill, the program updates the account's position, records it with the clearing house, and tells the desk what happened.
 
 Here is the version everyone writes, and every coding agent writes by default:
 
@@ -41,11 +41,11 @@ def on_fill(raw):
 
 It works on the day it is written. It also contains these, none of which a test suite will find until production does:
 
-- `"Buy"` with a capital B is a sell.
-- A halted clearing house and a bug both return `None`, and the caller cannot tell them apart.
-- A restart forgets every position.
-- A refused save leaves the position already changed in memory.
-- A missing `quantity` is a `KeyError` three lines after the bad message was accepted.
+- `"Buy"` with a capital B is booked as a sell: the account now holds the opposite of what it traded.
+- A halted clearing house and a bug both return `None`: the desk cannot tell an unrecorded trade from a crash.
+- A restart forgets every position: after a deploy, nobody knows what the firm holds.
+- A refused save leaves the position changed in memory: the program believes a trade the clearing house never recorded.
+- A missing `quantity` is a `KeyError` three lines after the fill was accepted: the venue gets a crash instead of a rejection.
 
 Here is the same feature in TCA. Every class is frozen and strict; that configuration is left out here and is exact in the skill.
 
@@ -91,13 +91,23 @@ class Position(BaseModel):
         return PersistPosition(position=self)
 ```
 
-Every "or" is a model over its variants, and construction picks the variant:
+Every way a trade can go is a model over its variants, and construction picks the one that happened:
 
 ```python
-class Fill(RootModel[BuyFill | SellFill]): ...
-class ClearingReply(RootModel[ClearingAcknowledgement | ClearingRefusal]): ...
-class PositionOutcome(RootModel[RecordedPosition | RefusedPosition]): ...
-class FillReply(RootModel[FillBooked | FillDeclined]): ...
+class Fill(RootModel[BuyFill | SellFill]):
+    """A trade a venue executed for an account."""
+
+
+class ClearingReply(RootModel[ClearingAcknowledgement | ClearingRefusal]):
+    """What the clearing house says of a position it was asked to record."""
+
+
+class PositionOutcome(RootModel[RecordedPosition | RefusedPosition]):
+    """What became of a position at the clearing house."""
+
+
+class FillReply(RootModel[FillBooked | FillDeclined]):
+    """This program's reply to a fill."""
 ```
 
 And this is the entire program that runs:
@@ -124,15 +134,15 @@ One function, one returned expression. The raw message is read once, where it ar
 
 ## What happened to each line
 
-| The procedural line | What it became | What can no longer be written |
+| The procedural line | What it became | What can no longer happen |
 |---|---|---|
-| `json.loads(raw)` and `body["data"]["payload"]` | `FillRoute.model_validate_json(...)`: the whole message given to one constructor where it arrives | a half-read message; a `KeyError` downstream |
-| `if fill["side"] == "buy"` | `BuyFill` or `SellFill`, picked by construction, each with its own `signed` | a third spelling of "buy"; `"Buy"` constructs neither |
-| `positions.get(key)` and `if position is None` | `FlatPosition`, the holding before any fill | a forgotten `None` check |
-| `position["net"] += ...` | a new `Position` that holds its `prior` and one `Fill` | a position changed before the save succeeded |
-| `positions = {}` | the prior, read from the clearing house on every fill | state lost on restart |
-| `try` / `except` / `return None` | `ClearingRefusal`, a variant of the reply; `RefusedPosition`, of the outcome; `FillDeclined`, of what the caller receives | a refusal the caller cannot see |
-| `return {...}` | `FillBooked` or `FillDeclined`, picked by construction | a reply shape nobody declared |
+| `json.loads(raw)` and `body["data"]["payload"]` | `FillRoute.model_validate_json(...)`: the whole message given to one constructor where it arrives | a fill accepted, then dropped halfway through |
+| `if fill["side"] == "buy"` | `BuyFill` or `SellFill`, picked by construction, each with its own `signed` | a sell booked from a mistyped buy; `"Buy"` constructs neither |
+| `positions.get(key)` and `if position is None` | `FlatPosition`, the holding before any fill | an account's first trade crashing on a missing position |
+| `position["net"] += ...` | a new `Position` that holds its `prior` and one `Fill` | a position the program believes and the clearing house never recorded |
+| `positions = {}` | the prior, read from the clearing house on every fill | every position lost on a restart |
+| `try` / `except` / `return None` | `ClearingRefusal`, a variant of the reply; `RefusedPosition`, of the outcome; `FillDeclined`, of what the desk receives | a refusal the desk never hears about |
+| `return {...}` | `FillBooked` or `FillDeclined`, picked by construction | a reply the desk was never promised |
 
 The clearing house's raw reply enters at one place, its interpreter, and is given whole to the union:
 
@@ -151,7 +161,7 @@ async def interpret(self) -> PersistAttempt:
     )
 ```
 
-When the clearing house answers `{"error": "halted"}`, the caller receives:
+When the clearing house answers `{"error": "halted"}`, the desk is told exactly that: which position, and why it was refused.
 
 ```json
 {"outcome":{"position":{"account":"A1","instrument":"ESZ6","net_quantity":"1"},"clearing":{"reason":"halted"}}}
@@ -163,20 +173,20 @@ Nothing was caught. The refusal was constructed, carried, and published like any
 
 That is the picture at the top of this page, and it is the whole method.
 
-A procedure says: do this, then that. TCA says: the later thing holds the earlier thing. A reply holds the outcome. The outcome holds the position. The position holds the fill and the position before it, down to the flat position at the start. Order is depth, and Pydantic's constructors run it. You never write the sequence, so you cannot write it wrong.
+A procedure says: do this, then that. TCA says: the later thing holds the earlier thing. A reply holds the outcome. The outcome holds the position. The position holds the fill and the position before it, down to the flat position at the start. Order is depth, and Pydantic's constructors run it. You never write the sequence, so you cannot write it wrong. And a position is its own history: its fields are the trades that made it, back to flat.
 
 Every step you are about to type is a thing you have not named yet:
 
-| You are about to… | You declare |
-|---|---|
-| do this, then that | a later fact holding the earlier fact as a field |
-| check whether | a union; construction picks the variant |
-| handle it failing | a refusal variant in the reply and in the outcome |
-| handle there being none | a named thing for the empty case |
-| handle several | a tuple held whole, or one construction for each arrival |
-| read what another system sent | a route or foreign model given the raw input where it arrives |
-| ask another system for something | an action, one interpreter, and the raw reply given to a union |
-| keep something between arrivals | a prior read on each arrival, and a successor constructed from it |
+| You are about to… | The question it settles | You declare |
+|---|---|---|
+| do this, then that | What does this depend on? | a later fact holding the earlier fact as a field |
+| check whether | Which case is this? | a union; construction picks the variant |
+| handle it failing | What if they say no? | a refusal variant in the reply and in the outcome |
+| handle there being none | What if there is nothing? | a named thing for the empty case |
+| handle several | What if there are many? | a tuple held whole, or one construction for each arrival |
+| read what another system sent | What exactly did they send? | a route or foreign model given the raw input where it arrives |
+| ask another system for something | What do we ask, and what can come back? | an action, one interpreter, and the raw reply given to a union |
+| keep something between arrivals | What do we remember between trades? | a prior read on each arrival, and a successor constructed from it |
 
 ## Three questions
 
@@ -188,10 +198,10 @@ Ask them of every change:
 
 The third fails in exactly four ways:
 
-- **Escaped.** A meaning with no structure: it lives in a comment, a procedure, or a convention.
-- **Duplicated.** A meaning with two structures, kept in agreement by hand.
-- **Vacuous.** A structure with no meaning: a wrapper, a helper, a name that says nothing.
-- **Fused.** A structure with two meanings that vary independently.
+- **Escaped.** A meaning with no structure: it lives in a comment, a procedure, or a convention. *A halted market refuses trades, says a comment.*
+- **Duplicated.** A meaning with two structures, kept in agreement by hand. *The side is `"buy"` in one place and `+1` in another.*
+- **Vacuous.** A structure with no meaning: a wrapper, a helper, a name that says nothing. *`PositionManager`.*
+- **Fused.** A structure with two meanings that vary independently. *One `status` string for both refused and unreachable.*
 
 There is no fifth. Every design argument reduces to which of the four it is.
 
@@ -294,6 +304,6 @@ The procedural version was always the cheap one on day one and the expensive one
 
 A model that can read your field names, your variants, and your type structure removes the reason for the trade. The modeled design now arrives at the speed the shortcut used to, without the bugs listed at the top of this page.
 
-And a type is an instruction. The same declaration that stops an invalid value from existing tells a model what is allowed to exist. One structure does both jobs, so design, code, and documentation stop being three copies of the same intent.
+And a type is an instruction. The same declaration that stops an invalid value from existing tells a model what is allowed to exist. One structure does both jobs, so requirements, design, code, and documentation stop being four copies of the same intent.
 
 None of the ideas are new. This is the good half of typed functional programming and domain-driven design, held to one test and delivered in a form an agent cannot talk its way around.
