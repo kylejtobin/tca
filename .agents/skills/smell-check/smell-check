@@ -20,8 +20,9 @@ scan() {
 }
 PATHS=("$@")
 
-# 1. FREE FUNCTION: a def at column 0. The only admitted one is the callback in main.py.
-scan 'FREE-FUNCTION ' '^(async )?def ' -g '!main.py'
+# 1. FREE FUNCTION: a def at column 0. The only admitted ones are the composition root's callbacks:
+# the one callback in main.py, and one per public function in a package's __init__.py.
+scan 'FREE-FUNCTION ' '^(async )?def ' -g '!main.py' -g '!__init__.py'
 # main.py admits one def. A second def there is a free function wearing the callback's exemption.
 while IFS= read -r mainpy; do
   [ -z "$mainpy" ] && continue
