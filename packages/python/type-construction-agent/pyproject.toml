@@ -21,7 +21,6 @@ dependencies = [
     "pydantic-settings>=2.6,<3",
     "pydantic-ai-slim[openai,anthropic,bedrock,spec]>=2.54,<3",
     "pydantic-ai-harness[skills]>=0.54",
-    "pyyaml>=6,<7",
 ]
 import-names = ["type_construction.agent"]
 import-namespaces = ["type_construction"]

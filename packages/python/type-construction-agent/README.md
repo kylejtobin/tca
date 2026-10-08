@@ -11,7 +11,7 @@ answer.text.root
 answer = run_sync(Prompt(text="Model a checkout domain."))
 ```
 
-The agent's own words are `prompts/agents/tca-agent/SKILL.md`. The skills it may load when a task needs them are in `prompts/skills/` (`python-dev-tca`, `docker-infra-tca`, `smell-check`), which the repo's `.agents/skills/` links to; it reads their pages read-only.
+The agent's prompt is `prompts/agents/tca-agent.md`. The skills it may load when a task needs them are in `prompts/skills/` (`python-dev-tca`, `docker-infra-tca`, `smell-check`), which the repo's `.agents/skills/` links to; it reads their pages read-only.
 
 The deployment names its provider and model, and the provider's credentials, in the environment:
 

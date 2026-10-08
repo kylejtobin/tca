@@ -191,49 +191,19 @@ class CloudflareProviderName(StrEnum):
     CLOUDFLARE = "cloudflare"
 
 
-class SkillName(RootModel[str]):
-    """The name an agent's words are known by, the same as their directory."""
+class PromptLibrary(StrEnum):
+    """Where an agent's prompts and skills are kept, within the package."""
 
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    PROMPTS = "prompts"
 
 
-class SkillDescription(RootModel[str]):
-    """What an agent's words are for, and when they are used."""
+class PromptLocation(StrEnum):
+    """Where each agent's prompt is kept, within the prompt library."""
 
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class SkillBody(RootModel[str]):
-    """The words an agent is given."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class SkillLocation(StrEnum):
-    """Where each agent's own words are kept, within the package."""
-
-    TCA_AGENT = "prompts/agents/tca-agent/SKILL.md"
+    TCA_AGENT = "agents/tca-agent.md"
 
 
 class SkillLibrary(StrEnum):
-    """Where the skills an agent may load are kept, within the package."""
+    """Where the skills an agent may load are kept, within the prompt library."""
 
-    SKILLS = "prompts/skills"
+    SKILLS = "skills"
