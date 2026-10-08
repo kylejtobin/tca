@@ -105,27 +105,6 @@ class Payments(RootModel[CardPayments | InvoicePayments]):
         return self.root.client
 
 
-class Notices(BaseModel):
-    """The model that writes the shop's notices, at Anthropic, under the shop's key."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-        from_attributes=True,
-    )
-    notices_model: ModelName
-    notices_key: ProviderKey
-
-    @property
-    def client(self) -> AnthropicModel:
-        return AnthropicModel(
-            self.notices_model.root, provider=AnthropicProvider(api_key=self.notices_key.root)
-        )
-
-
 class CatalogIndex(BaseModel):
     """The catalog's collection in the index, at its address."""
 
@@ -147,8 +126,29 @@ class CatalogIndex(BaseModel):
         )
 
 
+class SupportModel(BaseModel):
+    """The model that answers customers, at Anthropic, under the shop's key."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    support_model: ModelName
+    support_key: ProviderKey
+
+    @property
+    def client(self) -> AnthropicModel:
+        return AnthropicModel(
+            self.support_model.root, provider=AnthropicProvider(api_key=self.support_key.root)
+        )
+
+
 class ShopConfig(BaseSettings):
-    """The deployment's addresses, its payment provider, its notice model, and their credentials."""
+    """The deployment's addresses, its payment provider, its support model, and their credentials."""
 
     model_config = SettingsConfigDict(
         frozen=True,
@@ -162,19 +162,19 @@ class ShopConfig(BaseSettings):
     payments_provider: CardProviderName | InvoiceProviderName
     payments_url: ProviderUrl
     payments_key: ProviderKey | Unset = Unset()
-    notices_model: ModelName
-    notices_key: ProviderKey
     index_collection_url: CollectionUrl
+    support_model: ModelName
+    support_key: ProviderKey
 
     @property
     def payments(self) -> Payments:
         return Payments.model_validate(self)
 
     @property
-    def notices(self) -> Notices:
-        return Notices.model_validate(self)
-
-    @property
     def catalog(self) -> CatalogIndex:
         return CatalogIndex.model_validate(self)
+
+    @property
+    def support(self) -> SupportModel:
+        return SupportModel.model_validate(self)
 ```

@@ -72,22 +72,6 @@ class PricedOrder(BaseModel):
 
 ```python
 # domain/shop/order.py
-class NotifiedOrder(BaseModel):
-    """A declined order, with the notice written to its customer."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    order: DeclinedOrder
-    notice: NoticeText
-```
-
-```python
-# domain/shop/order.py
 class RecommendedOrder(BaseModel):
     """A paid order, with what the catalog suggests beside it."""
 
@@ -101,4 +85,38 @@ class RecommendedOrder(BaseModel):
     )
     order: PaidOrder
     recommendation: Recommendation
+```
+
+```python
+# domain/shop/support.py
+class SupportRequest(BaseModel):
+    """A customer's question to the shop."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    customer: CustomerId
+    text: RequestText
+
+    @property
+    def answering(self) -> Answering:
+        return Answering(request=self)
+
+
+class AnsweredRequest(BaseModel):
+    """A customer's question, with the support agent's reply."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    request: SupportRequest
+    reply: ReplyText
 ```

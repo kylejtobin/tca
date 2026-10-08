@@ -111,3 +111,19 @@ class Match(BaseModel):
     category: Category
     similarity: Similarity
 ```
+
+```python
+# domain/shop/value.py
+class SupportValues(BaseModel):
+    """What fills the support agent's prompt: the customer it answers."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    customer: CustomerId
+```

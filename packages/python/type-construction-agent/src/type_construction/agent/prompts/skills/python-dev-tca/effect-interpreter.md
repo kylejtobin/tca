@@ -81,39 +81,6 @@ class ChargeInterpreter(BaseModel):
 ```
 
 ```python
-# integration/model_provider/interpreter.py
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai.agent import AbstractAgent
-
-from domain.shop.order import NotifiedOrder, WriteNotice
-from domain.shop.value import DeclineNoticeValues
-from integration.model_provider.model import NoticeReply
-
-
-class WriteNoticeInterpreter(BaseModel):
-    """The one place a declined order's notice is written by the model the shop names."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-        arbitrary_types_allowed=True,
-    )
-    action: WriteNotice
-    client: AbstractAgent[DeclineNoticeValues, NoticeReply] = Field(exclude=True, repr=False)
-
-    async def interpret(self) -> NotifiedOrder:
-        return NotifiedOrder(
-            order=self.action.order,
-            notice=(
-                await self.client.run(deps=DeclineNoticeValues.model_validate(self.action.order))
-            ).output.text,
-        )
-```
-
-```python
 # integration/catalog_index/interpreter.py
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -151,5 +118,41 @@ class FindRelatedInterpreter(BaseModel):
                     )
                 ).content
             ),
+        )
+```
+
+```python
+# integration/model_provider/interpreter.py
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.agent import AbstractAgent
+
+from domain.shop.support import AnsweredRequest, Answering
+from domain.shop.value import SupportValues
+from integration.model_provider.model import SupportReply
+
+
+class AnsweringInterpreter(BaseModel):
+    """The one place a customer's question is answered by the model the shop names."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        arbitrary_types_allowed=True,
+    )
+    action: Answering
+    client: AbstractAgent[SupportValues, SupportReply] = Field(exclude=True, repr=False)
+
+    async def interpret(self) -> AnsweredRequest:
+        return AnsweredRequest(
+            request=self.action.request,
+            reply=(
+                await self.client.run(
+                    self.action.request.text.root,
+                    deps=SupportValues.model_validate(self.action.request),
+                )
+            ).output.text,
         )
 ```

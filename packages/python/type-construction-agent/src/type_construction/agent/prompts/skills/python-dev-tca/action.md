@@ -33,21 +33,6 @@ class Charge(BaseModel):
 
 ```python
 # domain/shop/order.py
-class WriteNotice(BaseModel):
-    """The intended writing of the notice that tells a customer their order was declined."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    order: DeclinedOrder
-```
-
-```python
-# domain/shop/order.py
 class FindRelated(BaseModel):
     """The intended search of the catalog for products close to the ones a paid order bought."""
 
@@ -62,4 +47,19 @@ class FindRelated(BaseModel):
     closeness: Closeness
     per_aisle: GroupSize
     limit: MatchLimit
+```
+
+```python
+# domain/shop/support.py
+class Answering(BaseModel):
+    """The intended answering of a customer's question by the support agent."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    request: SupportRequest
 ```

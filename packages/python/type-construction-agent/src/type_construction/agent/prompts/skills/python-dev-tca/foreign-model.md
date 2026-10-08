@@ -133,48 +133,6 @@ class DiscountOffer(BaseModel):
 ```
 
 ```python
-# integration/agent_skills/model.py
-from pydantic import BaseModel, ConfigDict
-
-from domain.shop.type import SkillBody, SkillDescription, SkillName
-
-
-class SkillDocument(BaseModel):
-    """An agent's words in the Agent Skills format: their name, what they are for, and the words."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    name: SkillName
-    description: SkillDescription
-    body: SkillBody
-```
-
-```python
-# integration/model_provider/model.py
-from pydantic import BaseModel, ConfigDict
-
-from domain.shop.type import NoticeText
-
-
-class NoticeReply(BaseModel):
-    """What the model provider sends back for a notice: its words."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    text: NoticeText
-```
-
-```python
 # integration/catalog_index/model.py
 from enum import StrEnum
 from uuid import uuid5
@@ -497,4 +455,24 @@ class IndexReply(RootModel[IndexGroups | IndexFailure]):
     @property
     def answer(self) -> IndexGroups | IndexFailure:
         return self.root
+```
+
+```python
+# integration/model_provider/model.py
+from pydantic import BaseModel, ConfigDict
+
+from domain.shop.type import ReplyText
+
+
+class SupportReply(BaseModel):
+    """What the model provider sends back for a question: its words."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    text: ReplyText
 ```

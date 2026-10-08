@@ -60,22 +60,19 @@ from pydantic_ai_harness import FileSystem, Skills
 
 from config import ShopConfig
 from domain.shop.order import (
-    DeclinedOrder,
-    NotifiedOrder,
     Order,
     OrderOutcome,
     PaidOrder,
     RecommendedOrder,
 )
-from domain.shop.type import SkillLibrary, SkillLocation
-from domain.shop.value import DeclineNoticeValues
-from integration.agent_skills.model import SkillDocument
+from domain.shop.support import AnsweredRequest, SupportRequest
+from domain.shop.type import PromptLibrary, PromptLocation, SkillLibrary
+from domain.shop.value import SupportValues
 from integration.catalog_index.interpreter import FindRelatedInterpreter
-from integration.model_provider.interpreter import WriteNoticeInterpreter
-from integration.model_provider.model import NoticeReply
+from integration.model_provider.interpreter import AnsweringInterpreter
+from integration.model_provider.model import SupportReply
 from integration.payments.interpreter import ChargeInterpreter
 from integration.promotions.interpreter import ReadDiscountInterpreter
-from parser.skill import read
 
 
 async def checkout(order: Order) -> OrderOutcome:
@@ -98,31 +95,6 @@ def checkout_sync(order: Order) -> OrderOutcome:
 
 ```python
 # shop/__init__.py
-async def notify(order: DeclinedOrder) -> NotifiedOrder:
-    return await WriteNoticeInterpreter(
-        action=order.notice,
-        client=Agent(
-            ShopConfig().notices.client,
-            deps_type=DeclineNoticeValues,
-            output_type=NoticeReply,
-            instructions=TemplateStr(
-                SkillDocument.model_validate_json(read(SkillLocation.DECLINE_NOTICE)).body.root
-            ),
-            capabilities=(
-                LocalWorkspace(Path(__file__).parent, read_only=True),
-                Skills(SkillLibrary.SKILLS),
-                FileSystem(read_only=True),
-            ),
-        ),
-    ).interpret()
-
-
-def notify_sync(order: DeclinedOrder) -> NotifiedOrder:
-    return asyncio.run(notify(order))
-```
-
-```python
-# shop/__init__.py
 async def recommend(order: PaidOrder) -> RecommendedOrder:
     return (
         await FindRelatedInterpreter(
@@ -134,4 +106,29 @@ async def recommend(order: PaidOrder) -> RecommendedOrder:
 
 def recommend_sync(order: PaidOrder) -> RecommendedOrder:
     return asyncio.run(recommend(order))
+```
+
+```python
+# shop/__init__.py
+async def answer(request: SupportRequest) -> AnsweredRequest:
+    return await AnsweringInterpreter(
+        action=request.answering,
+        client=Agent(
+            ShopConfig().support.client,
+            deps_type=SupportValues,
+            output_type=SupportReply,
+            instructions=TemplateStr(
+                (Path(__file__).parent / PromptLibrary.PROMPTS / PromptLocation.SUPPORT).read_text()
+            ),
+            capabilities=(
+                LocalWorkspace(Path(__file__).parent / PromptLibrary.PROMPTS, read_only=True),
+                Skills(SkillLibrary.SKILLS),
+                FileSystem(tools=("read_file", "list_directory")),
+            ),
+        ),
+    ).interpret()
+
+
+def answer_sync(request: SupportRequest) -> AnsweredRequest:
+    return asyncio.run(answer(request))
 ```

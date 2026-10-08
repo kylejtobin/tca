@@ -48,22 +48,6 @@ class DeclinedOrder(BaseModel):
     order: PricedOrder
     payment: Decline
 
-    @property
-    def customer(self) -> CustomerId:
-        return self.order.order.customer
-
-    @property
-    def id(self) -> OrderId:
-        return self.order.id
-
-    @property
-    def reasons(self) -> DeclineReasons:
-        return self.payment.reasons
-
-    @property
-    def notice(self) -> "WriteNotice":
-        return WriteNotice(order=self)
-
 
 class UnsettledOrder(BaseModel):
     """A priced order the payment provider could not attempt to charge."""

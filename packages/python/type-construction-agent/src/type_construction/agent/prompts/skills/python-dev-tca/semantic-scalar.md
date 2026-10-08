@@ -225,80 +225,6 @@ class Unset(RootModel[str]):
 
 ```python
 # domain/shop/type.py
-class NoticeText(RootModel[str]):
-    """The words a customer is sent about their order."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class ModelName(RootModel[str]):
-    """The name a model provider knows one of its models by."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class SkillName(RootModel[str]):
-    """The name an agent's words are known by, the same as their directory."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
-
-
-class SkillDescription(RootModel[str]):
-    """What an agent's words are for, and when they are used."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class SkillBody(RootModel[str]):
-    """The words an agent is given."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class SkillLocation(StrEnum):
-    """Where each agent's own words are kept, within the package."""
-
-    DECLINE_NOTICE = "prompts/agents/decline-notice/SKILL.md"
-
-
-class SkillLibrary(StrEnum):
-    """Where the skills an agent may load are kept, within the package."""
-
-    SKILLS = "prompts/skills"
-```
-
-```python
-# domain/shop/type.py
 class Category(RootModel[str]):
     """The aisle of the catalog a product belongs to."""
 
@@ -431,4 +357,51 @@ class PayloadKey(StrEnum):
     SKU = "sku"
     CATEGORY = "category"
     CURRENCIES = "currencies"
+```
+
+```python
+# domain/shop/type.py
+class RequestText(RootModel[str]):
+    """The words of a customer's question to the shop."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, validate_default=True, revalidate_instances="never"
+    )
+    root: str = Field(min_length=1)
+
+
+class ReplyText(RootModel[str]):
+    """The words the shop's support agent gives back."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, validate_default=True, revalidate_instances="never"
+    )
+    root: str = Field(min_length=1)
+
+
+class ModelName(RootModel[str]):
+    """The name a model provider knows one of its models by."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, validate_default=True, revalidate_instances="never"
+    )
+    root: str = Field(min_length=1)
+
+
+class PromptLibrary(StrEnum):
+    """Where an agent's prompts and skills are kept, within the package."""
+
+    PROMPTS = "prompts"
+
+
+class PromptLocation(StrEnum):
+    """Where each agent's prompt is kept, within the prompt library."""
+
+    SUPPORT = "agents/support.md"
+
+
+class SkillLibrary(StrEnum):
+    """Where the skills an agent may load are kept, within the prompt library."""
+
+    SKILLS = "skills"
 ```

@@ -31,9 +31,9 @@ Only an interpreter's `interpret` and a composition root's callback read or writ
 A format that is not JSON is read by a maintained library that yields JSON, and is then the line above.
 Only a format no library yields JSON from is read by a format type in `parser/`, and nothing outside `parser/` reads a format.
 
-An action carries every rule its effect must follow; the system it calls enforces them, and its reply is read once into the domain's outcome.
+An agent's words and skills are package data in `prompts/`: its prompt in `agents/<agent>.md` and its skills in `skills/<skill>/`. Only the composition root wires them: `TemplateStr` instructions over the agent's value object as deps, a read-only `LocalWorkspace` on `prompts/`, `Skills`, and a read-only `FileSystem`.
 
-An agent's own words live in `prompts/agents/<agent>/SKILL.md` and the skills it may load in `prompts/skills/<skill>/`; neither is ever a string in code. A template's slots are exactly the fields of its value object, and that value object is the agent's deps.
+An action carries every rule its effect must follow; the system it calls enforces them, and its reply is read once into the domain's outcome.
 
 ## A whole program
 
@@ -48,8 +48,7 @@ flowchart LR
     subgraph g2["2 foreign model"]
         DiscountAddress["<b>DiscountAddress</b><br/>customer"]
         DiscountOffer["<b>DiscountOffer</b><br/>percent"]
-        SkillDocument["<b>SkillDocument</b><br/>name · description · body"]
-        NoticeReply["<b>NoticeReply</b><br/>text"]
+        SupportReply["<b>SupportReply</b><br/>text"]
         CatalogPoint["<b>CatalogPoint</b><br/>sku"]
         IndexQuery["<b>IndexQuery</b><br/>query · filter · score_threshold · group_size · limit"]
         PointHit["<b>PointHit</b><br/>id · score · payload"]
@@ -74,7 +73,7 @@ flowchart LR
         Approval["<b>Approval</b><br/>charge"]
         Decline["<b>Decline</b><br/>reasons"]
         Failure["<b>Failure</b><br/>error"]
-        DeclineNoticeValues["<b>DeclineNoticeValues</b><br/>customer · id · reasons"]
+        SupportValues["<b>SupportValues</b><br/>customer"]
         Match["<b>Match</b><br/>sku · category · similarity"]
         RelatedMatches["<b>RelatedMatches</b><br/>one or more"]
         NoMatches["<b>NoMatches</b><br/>none"]
@@ -83,7 +82,8 @@ flowchart LR
     subgraph g4["4 concept model"]
         Order["<b>Order</b><br/>id · customer · card · currency · lines"]
         PricedOrder["<b>PricedOrder</b><br/>order · discount"]
-        NotifiedOrder["<b>NotifiedOrder</b><br/>order · notice"]
+        SupportRequest["<b>SupportRequest</b><br/>customer · text"]
+        AnsweredRequest["<b>AnsweredRequest</b><br/>request · reply"]
         RecommendedOrder["<b>RecommendedOrder</b><br/>order · recommendation"]
     end
 
@@ -101,7 +101,7 @@ flowchart LR
     subgraph g4a["4 action"]
         ReadDiscount["<b>ReadDiscount</b><br/>order"]
         Charge["<b>Charge</b><br/>order"]
-        WriteNotice["<b>WriteNotice</b><br/>order"]
+        Answering["<b>Answering</b><br/>request"]
         FindRelated["<b>FindRelated</b><br/>order · closeness · per_aisle · limit"]
     end
 
@@ -122,7 +122,7 @@ flowchart LR
     subgraph g8["8 effect interpreter"]
         ReadDiscountInterpreter["<b>ReadDiscountInterpreter</b><br/>action · client"]
         ChargeInterpreter["<b>ChargeInterpreter</b><br/>action · client"]
-        WriteNoticeInterpreter["<b>WriteNoticeInterpreter</b><br/>action · client"]
+        AnsweringInterpreter["<b>AnsweringInterpreter</b><br/>action · client"]
         FindRelatedInterpreter["<b>FindRelatedInterpreter</b><br/>action · client"]
     end
 
@@ -168,9 +168,6 @@ flowchart LR
     OrderRejected --> OrderReply
     OrderUnsettled --> OrderReply
     OrderOutcome -.-> OrderReply --> ReplyRoute
-    DeclinedOrder --> WriteNotice --> WriteNoticeInterpreter ==> NotifiedOrder
-    DeclinedOrder --> NotifiedOrder
-    DeclinedOrder -.-> DeclineNoticeValues
     PaidOrder --> FindRelated --> FindRelatedInterpreter ==> RelatedSearch
     FindRelated --> RelatedQuery -.-> IndexQuery
     Line -.-> CatalogPoint
@@ -192,13 +189,15 @@ flowchart LR
     RelatedSearch -.-> RecommendedOrder
     PaidOrder --> RecommendedOrder
     Recommendation --> RecommendedOrder
+    SupportRequest --> Answering --> AnsweringInterpreter ==> AnsweredRequest
+    SupportRequest --> AnsweredRequest
+    Answering -.-> SupportValues
 ```
 
 Every box is a class in the page its group names.
 A solid arrow is a field: the head holds the tail.
 A dotted arrow is construction by shared names: the head is constructed from the tail by `model_validate`.
 A thick arrow is an effect: the interpreter's `interpret` returns the head.
-A box with no arrow is used only by the composition root, to build a client.
 What differs between the variants of a union is one derivation, under one name, on each variant.
 
 ## Its files, in dependency order
@@ -206,10 +205,9 @@ What differs between the variants of a union is one derivation, under one name, 
 ```text
  1  domain/<context>/type.py               semantic-scalar.md  ordered-union.md  collection.md
  2  integration/<system>/model.py          foreign-model.md
- 2  parser/<format>.py                     prompt-template.md
  3  domain/<context>/value.py              value-object.md  collection.md
- 4  prompts/agents/<agent>/SKILL.md        prompt-template.md
- 4  prompts/skills/<skill>/SKILL.md        skill.md
+ 4  prompts/agents/<agent>.md              agent-skills.md
+ 4  prompts/skills/<skill>/                agent-skills.md
  5  domain/<context>/<concept>.py          union.md  concept-model.md  action.md
  6  domain/<context>/api.py                contract-model.md
  7  config.py                              config.md
