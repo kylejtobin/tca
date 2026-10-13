@@ -8,3 +8,5 @@ __pycache__/
 .DS_Store
 dist/
 .import_linter_cache/
+eval-build-transcript.json
+logs/

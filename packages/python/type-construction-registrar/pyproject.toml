@@ -1,0 +1,33 @@
+[project]
+name = "type-construction-registrar"
+version = "0.0.0"
+description = "Type Construction Architecture's reference program: domain name registration, modeled as types."
+requires-python = ">=3.14"
+license = "LicenseRef-TCA-BSL-1.1"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
+keywords = ["tca", "type-construction-architecture", "pydantic", "reference"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = ["httpx>=0.27,<1", "pydantic>=2.9,<3", "pydantic-settings>=2.6,<3"]
+import-names = ["type_construction.registrar"]
+import-namespaces = ["type_construction"]
+
+[project.urls]
+Homepage = "https://github.com/kylejtobin/tca"
+Repository = "https://github.com/kylejtobin/tca"
+Issues = "https://github.com/kylejtobin/tca/issues"
+
+[build-system]
+requires = ["uv_build>=0.12.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "type_construction.registrar"

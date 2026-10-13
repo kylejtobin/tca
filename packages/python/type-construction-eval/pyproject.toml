@@ -15,7 +15,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["pydantic>=2.9,<3"]
+dependencies = [
+    "dspy>=3.4,<4",
+    "inspect-ai>=0.3,<0.4",
+    "pydantic>=2.9,<3",
+]
 import-names = ["type_construction.eval"]
 import-namespaces = ["type_construction"]
 
