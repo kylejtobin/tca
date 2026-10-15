@@ -2,6 +2,8 @@
 
 Type Construction Architecture's evaluation: the eval architecture for the TCA agent, built on Inspect AI and DSPy.
 
+This package is that architecture as planned: this README, the judge's prompt and the first case's reference. The code and the recipes named below, `just eval`, `just calibrate`, `just baseline` and `just tune`, are not yet built.
+
 The agent gets a problem statement and its own package, and nothing else. What it produces is graded against a reference program, by nouns, layers, fields and edges, with code where the fact is exact and a judge where meaning decides. The registrar package is the first reference.
 
 ## Layout
