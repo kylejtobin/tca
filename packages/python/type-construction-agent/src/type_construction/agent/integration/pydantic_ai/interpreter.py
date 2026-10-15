@@ -1,6 +1,9 @@
+from collections.abc import Sequence
+
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import AgentRunResult, CancellationToken
 from pydantic_ai.agent import EventStreamHandler
+from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
 from type_construction.agent.domain.agent.prompt import Answer, Prompt
@@ -14,8 +17,9 @@ class AnswerInterpreter(BaseModel):
     library's own result of the run, whose output is the answer the library constructed, with
     every message, the usage and the run's identity beside it. The caller may hand `interpret`
     the library's own execution resources, unchanged: a usage the run accumulates into; a token
-    by which the caller may cancel the run; and a handler the library streams the run's events
-    to as they happen, while the agent is still held. A handler that fails stops the run, and the
+    by which the caller may cancel the run; the toolsets this one run may call, beside the
+    agent's own file and skill tools; and a handler the library streams the run's events to as
+    they happen, while the agent is still held. A handler that fails stops the run, and the
     agent is released all the same."""
 
     model_config = ConfigDict(
@@ -33,6 +37,7 @@ class AnswerInterpreter(BaseModel):
         *,
         usage: RunUsage | None = None,
         cancellation_token: CancellationToken | None = None,
+        toolsets: Sequence[AbstractToolset[None]] | None = None,
         event_stream_handler: EventStreamHandler[None] | None = None,
     ) -> AgentRunResult[Answer]:
         async with self.provider.client as agent:
@@ -40,6 +45,7 @@ class AnswerInterpreter(BaseModel):
                 self.prompt.text.root,
                 usage=usage,
                 cancellation_token=cancellation_token,
+                toolsets=toolsets,
                 event_stream_handler=event_stream_handler,
             )
 

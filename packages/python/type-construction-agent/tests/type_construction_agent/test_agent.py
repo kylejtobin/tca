@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.toolsets import FunctionToolset
 
 import type_construction.agent
 from type_construction.agent import (
@@ -486,6 +487,31 @@ def test_the_agent_reads_edits_and_writes_the_files_where_it_runs(
     assert isinstance(written, ToolReturnPart)
     assert Path("checkout.py").read_text() == "price = 2\n"
     assert Path("order.py").read_text() == "order = 1\n"
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_caller_hands_one_run_the_tools_it_may_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    def remember(word: str) -> str:
+        """Keep one word for the caller."""
+        return f"kept {word}"
+
+    seen: list[ToolReturnPart | RetryPromptPart] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen[:] = returns(messages)
+        if seen:
+            return answered(str(seen[0].content))
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name="remember", args={"word": "pomegranate"})]
+        )
+
+    config = scripted(monkeypatch, FunctionModel(model))
+    handed = run_sync(config, COIN, toolsets=[FunctionToolset([remember])])
+    assert handed == Answer(text=AnswerText("kept pomegranate"))
+    assert isinstance(seen[0], ToolReturnPart)
+    withheld = run_sync(config, COIN)
+    assert isinstance(seen[0], RetryPromptPart)
+    assert "remember" in withheld.text.root
 
 
 @pytest.mark.usefixtures("bare_environment")

@@ -1,6 +1,8 @@
 import asyncio
+from collections.abc import Sequence
 
 from pydantic_ai import CancellationToken
+from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
 from type_construction.agent.config import AgentConfig
@@ -36,10 +38,11 @@ async def run(
     *,
     usage: RunUsage | None = None,
     cancellation_token: CancellationToken | None = None,
+    toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Answer:
     return (
         await AnswerInterpreter(prompt=prompt, provider=config.agent).interpret(
-            usage=usage, cancellation_token=cancellation_token
+            usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
         )
     ).output
 
@@ -50,8 +53,11 @@ def run_sync(
     *,
     usage: RunUsage | None = None,
     cancellation_token: CancellationToken | None = None,
+    toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Answer:
-    return asyncio.run(run(config, prompt, usage=usage, cancellation_token=cancellation_token))
+    return asyncio.run(
+        run(config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets)
+    )
 
 
 def chat(config: AgentConfig) -> None:

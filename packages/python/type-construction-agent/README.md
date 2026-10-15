@@ -9,7 +9,7 @@ answer = run_sync(AgentConfig(), Prompt(text=PromptText("Model a checkout domain
 print(answer.text.root)
 ```
 
-In an async program, `await run(config, prompt)` returns the same `Answer`; a graph or any other async caller uses `run`, never `run_sync`, which starts its own event loop. Both take two optional keyword arguments, Pydantic AI's own execution controls: `usage`, a `RunUsage` the run accumulates into, and `cancellation_token`, a `CancellationToken` the caller owns; a cancelled token raises Pydantic AI's `RunCancelled` and stays cancelled.
+In an async program, `await run(config, prompt)` returns the same `Answer`; a graph or any other async caller uses `run`, never `run_sync`, which starts its own event loop. Both take three optional keyword arguments, Pydantic AI's own execution resources: `usage`, a `RunUsage` the run accumulates into; `cancellation_token`, a `CancellationToken` the caller owns, which when cancelled raises Pydantic AI's `RunCancelled` and stays cancelled; and `toolsets`, a sequence of Pydantic AI's toolsets this one run may call beside the agent's own file and skill tools, as a program that orchestrates the agent hands it its own.
 
 A `Prompt` is the words a person gives; an `Answer` is the words the agent gives back, and Pydantic AI constructs it as the agent's structured output: an answer that does not validate as one is sent back to the model, and one the model cannot form is refused with Pydantic AI's own `UnexpectedModelBehavior`. One run is one answer: the agent holds no conversation between runs. Its prompt is `prompts/agents/tca-agent.md`, held as its instructions. It works in the directory it runs in, with Pydantic AI's own file tools, and loads its skills from that directory's `.agents/skills`.
 
