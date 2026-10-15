@@ -74,8 +74,11 @@ def bare_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     for name in tuple(os.environ):
         if name.startswith("TCA_"):
             monkeypatch.delenv(name)
-    shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
+    workspace = tmp_path / "workspace"
+    shutil.copytree(SKILLS, workspace / ".agents" / "skills")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TCA_AGENT__WORKSPACE__KIND", "local")
+    monkeypatch.setenv("TCA_AGENT__WORKSPACE__PATH", str(workspace))
 
 
 def scripted(monkeypatch: pytest.MonkeyPatch, model: models.Model) -> AgentConfig:

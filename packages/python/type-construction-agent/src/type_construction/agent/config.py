@@ -4,10 +4,10 @@ from type_construction.agent.integration.pydantic_ai.provider import AgentProvid
 
 
 class AgentConfig(BaseSettings):
-    """What the deployment sets: the agent's provider, named under `TCA_` in its
-    environment or in a `.env` file in its working directory, the environment winning. From the
-    file, as from the environment, only the agent's own settings are read; a key another system
-    owns is left to it."""
+    """What the deployment sets: the agent's provider, its model and its workspace with its
+    boundary, named under `TCA_` in its environment or in a `.env` file in its working directory,
+    the environment winning. From the file, as from the environment, only the agent's own
+    settings are read; a key another system owns is left to it."""
 
     model_config = SettingsConfigDict(
         frozen=True,

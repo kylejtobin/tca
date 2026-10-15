@@ -9,17 +9,23 @@ answer = run_sync(AgentConfig(), Prompt(text=PromptText("Model a checkout domain
 print(answer.text.root)
 ```
 
-In an async program, `await run(config, prompt)` returns the same `Answer`; a graph or any other async caller uses `run`, never `run_sync`, which starts its own event loop. Both take three optional keyword arguments, Pydantic AI's own execution resources: `usage`, a `RunUsage` the run accumulates into; `cancellation_token`, a `CancellationToken` the caller owns, which when cancelled raises Pydantic AI's `RunCancelled` and stays cancelled; and `toolsets`, a sequence of Pydantic AI's toolsets this one run may call beside the agent's own file and skill tools, as a program that orchestrates the agent hands it its own.
+In an async program, `await run(config, prompt)` returns the same `Answer`; a graph or any other async caller uses `run`, never `run_sync`, which starts its own event loop. Both take three optional keyword arguments, Pydantic AI's own execution resources: `usage`, a `RunUsage` the run accumulates into; `cancellation_token`, a `CancellationToken` the caller owns, which when cancelled raises Pydantic AI's `RunCancelled` and stays cancelled; and `toolsets`, a sequence of Pydantic AI's toolsets this one run may call beside the agent's own, as a program that orchestrates the agent hands it its own.
 
-A `Prompt` is the words a person gives; an `Answer` is the words the agent gives back, and Pydantic AI constructs it as the agent's structured output: an answer that does not validate as one is sent back to the model, and one the model cannot form is refused with Pydantic AI's own `UnexpectedModelBehavior`. One run is one answer: the agent holds no conversation between runs. Its prompt is `prompts/agents/tca-agent.md`, held as its instructions. It works in the directory it runs in, with Pydantic AI's own file tools, and loads its skills from that directory's `.agents/skills`.
+The agent's tools are Pydantic AI's own: its file and shell tools, and its skills. It carries no callback of this program. The workspace declares its check as an executable named `check` at its root, the loop in the agent's prompt runs it through the shell after every file, and nonzero is not done. `answer` returns Pydantic AI's own `AgentRunResult[Answer]`, the answer with every message, the usage and the run's id; `run` returns the answer alone.
+
+A `Prompt` is the words a person gives; an `Answer` is the words the agent gives back, and Pydantic AI constructs it as the agent's structured output: an answer that does not validate as one is sent back to the model, and one the model cannot form is refused with Pydantic AI's own `UnexpectedModelBehavior`. One run is one answer: the agent holds no conversation between runs. Its prompt is `prompts/agents/tca-agent.md`, held as its instructions. It works in the workspace the deployment names, and loads its skills from that directory's `.agents/skills`.
 
 ## Configuring it
 
-A deployment names one thing: the model. The agent has no other setting: Pydantic AI's own defaults govern a run, its request limit, its timeouts and how hard the model thinks, the directory the agent runs in is its workspace, and the named provider reads its credentials and endpoint from its own variables. The agent's one setting is read under `TCA_` from the process environment or from a `.env` file in its working directory, the environment winning; a key another system owns in that file is left to it, and a setting the agent does not have is refused.
+A deployment names two things: the model, and the workspace the agent models in, with the boundary it runs in. The agent has no other setting: Pydantic AI's own defaults govern a run, its request limit, its timeouts and how hard the model thinks, and the named provider reads its credentials and endpoint from its own variables. The agent's settings are read under `TCA_` from the process environment or from a `.env` file in its working directory, the environment winning; a key another system owns in that file is left to it, and a setting the agent does not have is refused.
+
+The workspace is not the directory the program runs in. It holds the skills under `.agents/skills`, its check as an executable named `check` at its root, and the work, and nothing else: the agent reads and runs whatever is in it, and what it reads enters the model's context and its traces, so a key never lives there. Its kind is the boundary, as Pydantic AI draws it: `local` is the library's local workspace, which isolates nothing; `sandbox` is that workspace in the library's bubblewrap sandbox, where every command sees the host read-only, has no network, and writes only inside the directory. The sandbox needs `bwrap` on the machine. The check must exit zero only when the work is clean, and in a sandbox must write nothing outside the directory, so a linter's cache goes inside it or nowhere. A workspace that does not exist is refused on the first run with Pydantic AI's own `WorkspaceUnavailableError`.
 
 | Variable | Holds |
 |---|---|
 | `TCA_AGENT__MODEL` | A model as Pydantic AI names it, its provider first: `anthropic:claude-opus-5-5`, `openai-chat:gpt-5`, `bedrock:…`; `test` is Pydantic AI's own offline model. |
+| `TCA_AGENT__WORKSPACE__KIND` | The workspace's boundary: `local` or `sandbox`. |
+| `TCA_AGENT__WORKSPACE__PATH` | The directory the agent models in. |
 | the provider's own | `ANTHROPIC_API_KEY`; `OPENAI_API_KEY`, and `OPENAI_BASE_URL` for a model an OpenAI-compatible endpoint serves, as `openai-chat:@cf/zai-org/glm-5.3-flash` at Workers AI; `AZURE_OPENAI_ENDPOINT`, `OPENAI_API_VERSION`, `AZURE_OPENAI_API_KEY`; `AWS_DEFAULT_REGION` with an AWS access key, session or bearer token. |
 
 A model Pydantic AI does not know, or one whose credentials are missing, is refused on the first run with Pydantic AI's own `UserError`, saying what to set.
@@ -34,7 +40,7 @@ A model Pydantic AI does not know, or one whose credentials are missing, is refu
 
 ## Talking to it at a terminal
 
-`tca-agent` is the agent in Pydantic AI's own chat command line. The agent and its model are held for the whole conversation, and each prompt is a run. From Python, `chat(config)` opens the same command line.
+`tca-agent` is the agent in Pydantic AI's own chat command line. The agent and its model are held for the whole conversation, and each prompt is a run. At the terminal the agent has every tool it has anywhere. From Python, `chat(config)` opens the same command line.
 
 ```sh
 tca-agent

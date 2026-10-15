@@ -40,6 +40,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.workspaces import WorkspaceUnavailableError
 
 import type_construction.agent
 from type_construction.agent import (
@@ -49,14 +50,22 @@ from type_construction.agent import (
     Answer,
     AnswerInterpreter,
     AnswerText,
+    Local,
+    LocalKind,
     ModelName,
     Prompt,
     PromptText,
+    Sandboxed,
+    SandboxKind,
+    Workspace,
+    WorkspacePath,
     run,
     run_sync,
 )
 
 MODEL = "TCA_AGENT__MODEL"
+KIND = "TCA_AGENT__WORKSPACE__KIND"
+WORKSPACE = "TCA_AGENT__WORKSPACE__PATH"
 SKILLS = Path(__file__).parents[5] / ".agents" / "skills"
 README = Path(type_construction.agent.__file__).parents[3] / "README.md"
 COIN = Prompt(text=PromptText("Model a coin toss."))
@@ -64,13 +73,25 @@ OK = Answer(text=AnswerText("ok"))
 
 
 @pytest.fixture
-def bare_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """No setting of the agent's in the environment, and no `.env` where it is read from."""
+def bare_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """No setting of the agent's in the environment, no `.env` where it is read from, and the
+    workspace the deployment names beside the process directory, holding the skills."""
     for name in tuple(os.environ):
         if name.startswith(("TCA_", "OPENAI_")):
             monkeypatch.delenv(name)
-    shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
+    workspace = tmp_path / "workspace"
+    shutil.copytree(SKILLS, workspace / ".agents" / "skills")
+    checked(workspace, "exit 0")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(KIND, "local")
+    monkeypatch.setenv(WORKSPACE, str(workspace))
+    return workspace
+
+
+def checked(workspace: Path, script: str) -> None:
+    """The workspace's check, as the workspace declares it: one script named check at its root."""
+    (workspace / "check").write_text(f"#!/bin/sh\n{script}\n")
+    (workspace / "check").chmod(0o755)
 
 
 def scripted(monkeypatch: pytest.MonkeyPatch, model: models.Model) -> AgentConfig:
@@ -304,6 +325,8 @@ def conversed(
         env={
             **{k: v for k, v in os.environ.items() if not k.startswith(("TCA_", "OTEL_"))},
             MODEL: "openai-chat:deployed",
+            KIND: "local",
+            WORKSPACE: str(cwd),
             "OPENAI_BASE_URL": f"{served.url}/v1",
             "OPENAI_API_KEY": "test",
             "PYDANTIC_AI_NO_BANNER": "1",
@@ -313,11 +336,25 @@ def conversed(
     )
 
 
-@pytest.mark.usefixtures("bare_environment")
-def test_the_deployment_names_the_model_and_nothing_else(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_deployment_names_the_model_and_the_workspace_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, bare_environment: Path
+) -> None:
     monkeypatch.setenv(MODEL, "openai-chat:@cf/zai-org/glm-5.3-flash")
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
-    assert config.agent == AgentProvider(model=ModelName("openai-chat:@cf/zai-org/glm-5.3-flash"))
+    assert config.agent == AgentProvider(
+        model=ModelName("openai-chat:@cf/zai-org/glm-5.3-flash"),
+        workspace=Workspace(
+            Local(kind=LocalKind("local"), path=WorkspacePath(str(bare_environment)))
+        ),
+    )
+    monkeypatch.setenv(KIND, "sandbox")
+    assert AgentConfig().agent.workspace == Workspace(  # pyright: ignore[reportCallIssue]
+        Sandboxed(kind=SandboxKind("sandbox"), path=WorkspacePath(str(bare_environment)))
+    )
+    monkeypatch.setenv(KIND, "container")
+    with pytest.raises(ValidationError):
+        AgentConfig()  # pyright: ignore[reportCallIssue]
+    monkeypatch.setenv(KIND, "local")
     monkeypatch.setenv(MODEL, "")
     with pytest.raises(ValidationError):
         AgentConfig()  # pyright: ignore[reportCallIssue]
@@ -325,6 +362,13 @@ def test_the_deployment_names_the_model_and_nothing_else(monkeypatch: pytest.Mon
     with pytest.raises(ValidationError):
         AgentConfig()  # pyright: ignore[reportCallIssue]
     monkeypatch.setenv(MODEL, "test")
+    monkeypatch.setenv(WORKSPACE, "")
+    with pytest.raises(ValidationError):
+        AgentConfig()  # pyright: ignore[reportCallIssue]
+    monkeypatch.delenv(WORKSPACE)
+    with pytest.raises(ValidationError):
+        AgentConfig()  # pyright: ignore[reportCallIssue]
+    monkeypatch.setenv(WORKSPACE, str(bare_environment))
     monkeypatch.setenv("TCA_AGENT__THINKING", "high")
     with pytest.raises(ValidationError):
         AgentConfig()  # pyright: ignore[reportCallIssue]
@@ -347,7 +391,15 @@ def test_a_deployment_configures_the_agent_from_its_dotenv_file(
     with pytest.raises(ValidationError):
         AgentConfig()  # pyright: ignore[reportCallIssue]
     with pytest.raises(ValidationError):
-        AgentConfig(agent=AgentProvider(model=ModelName("test")), agnet=None)  # pyright: ignore[reportCallIssue]
+        AgentConfig(
+            agent=AgentProvider(
+                model=ModelName("test"),
+                workspace=Workspace(
+                    Local(kind=LocalKind("local"), path=WorkspacePath(str(tmp_path)))
+                ),
+            ),
+            agnet=None,  # pyright: ignore[reportCallIssue]
+        )
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -428,9 +480,10 @@ def test_a_cancelled_token_stops_the_run_and_stays_cancelled(
     assert len(calls) == 1
 
 
-@pytest.mark.usefixtures("bare_environment")
-def test_the_agent_loads_the_skills_its_workspace_holds(monkeypatch: pytest.MonkeyPatch) -> None:
-    own = Path(".agents/skills/release-notes")
+def test_the_agent_loads_the_skills_its_workspace_holds(
+    monkeypatch: pytest.MonkeyPatch, bare_environment: Path
+) -> None:
+    own = bare_environment / ".agents/skills/release-notes"
     own.mkdir()
     (own / "SKILL.md").write_text(
         "---\nname: release-notes\ndescription: The workspace's own.\n---\nWrite them short.\n"
@@ -459,11 +512,10 @@ def test_the_agent_loads_the_skills_its_workspace_holds(monkeypatch: pytest.Monk
     )
 
 
-@pytest.mark.usefixtures("bare_environment")
-def test_the_agent_reads_edits_and_writes_the_files_where_it_runs(
-    monkeypatch: pytest.MonkeyPatch,
+def test_the_agent_reads_edits_and_writes_the_files_in_its_workspace(
+    monkeypatch: pytest.MonkeyPatch, bare_environment: Path
 ) -> None:
-    Path("checkout.py").write_text("price = 1\n")
+    (bare_environment / "checkout.py").write_text("price = 1\n")
     calls = (
         ToolCallPart(tool_name="read_file", args={"path": "checkout.py"}),
         ToolCallPart(
@@ -485,8 +537,82 @@ def test_the_agent_reads_edits_and_writes_the_files_where_it_runs(
     assert "price = 1" in str(read.content)
     assert isinstance(edited, ToolReturnPart)
     assert isinstance(written, ToolReturnPart)
-    assert Path("checkout.py").read_text() == "price = 2\n"
-    assert Path("order.py").read_text() == "order = 1\n"
+    assert (bare_environment / "checkout.py").read_text() == "price = 2\n"
+    assert (bare_environment / "order.py").read_text() == "order = 1\n"
+    assert not Path("checkout.py").exists()
+    assert not Path("order.py").exists()
+
+
+def test_the_agent_runs_the_check_its_workspace_declares(
+    monkeypatch: pytest.MonkeyPatch, bare_environment: Path
+) -> None:
+    checked(bare_environment, "echo 'coin.py: a step'; echo 'and a warning' >&2; exit 3")
+    calls = (
+        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
+        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
+    )
+    seen: list[ToolReturnPart | RetryPromptPart] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen[:] = returns(messages)
+        if len(seen) == 1:
+            checked(bare_environment, "echo 'All checks passed!'; exit 0")
+        if len(seen) == len(calls):
+            return answered("ok")
+        return ModelResponse(parts=[calls[len(seen)]])
+
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    failed, clean = seen
+    assert isinstance(failed, ToolReturnPart)
+    assert "coin.py: a step" in str(failed.content)
+    assert "and a warning" in str(failed.content)
+    assert "exit code: 3" in str(failed.content)
+    assert isinstance(clean, ToolReturnPart)
+    assert "All checks passed!" in str(clean.content)
+    assert "exit code" not in str(clean.content)
+
+
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="the library's sandbox needs bwrap")
+def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
+    monkeypatch: pytest.MonkeyPatch, bare_environment: Path
+) -> None:
+    monkeypatch.setenv(KIND, "sandbox")
+    home = Path.home()
+    for escape in ("escaped-by-shell", "escaped-by-check"):
+        (home / escape).unlink(missing_ok=True)
+    checked(bare_environment, "touch ~/escaped-by-check")
+    calls = (
+        ToolCallPart(tool_name="run_command", args={"command": "touch ~/escaped-by-shell"}),
+        ToolCallPart(tool_name="run_command", args={"command": "touch kept"}),
+        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
+    )
+    seen: list[ToolReturnPart | RetryPromptPart] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen[:] = returns(messages)
+        if len(seen) == len(calls):
+            return answered("ok")
+        return ModelResponse(parts=[calls[len(seen)]])
+
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    escaped, kept, checked_inside = seen
+    assert "exit code" in str(escaped.content)
+    assert isinstance(kept, ToolReturnPart)
+    assert isinstance(checked_inside, ToolReturnPart)
+    assert "Read-only file system" in str(checked_inside.content)
+    assert "exit code" in str(checked_inside.content)
+    assert (bare_environment / "kept").exists()
+    assert not (home / "escaped-by-shell").exists()
+    assert not (home / "escaped-by-check").exists()
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_workspace_that_does_not_exist_is_refused_in_the_library_s_words(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(WORKSPACE, str(tmp_path / "nowhere"))
+    with pytest.raises(WorkspaceUnavailableError, match="nowhere"):
+        run_sync(scripted(monkeypatch, TestModel(custom_output_args=OK.model_dump_json())), COIN)
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -642,7 +768,10 @@ def test_an_operator_has_the_agent_s_spans_exported_by_naming_a_collector(tmp_pa
     assert b"Model a coin toss." in exported
 
 
-def test_the_configured_provider_answers() -> None:
+def test_the_configured_provider_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
+    monkeypatch.setenv(KIND, "local")
+    monkeypatch.setenv(WORKSPACE, str(tmp_path))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
     answer = run_sync(config, Prompt(text=PromptText("Reply with one word.")))
     assert isinstance(answer, Answer)
@@ -650,7 +779,12 @@ def test_the_configured_provider_answers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_configured_provider_answers_async() -> None:
+async def test_the_configured_provider_answers_async(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
+    monkeypatch.setenv(KIND, "local")
+    monkeypatch.setenv(WORKSPACE, str(tmp_path))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
     answer = await run(config, Prompt(text=PromptText("Reply with one word.")))
     assert isinstance(answer, Answer)
@@ -662,11 +796,12 @@ def test_the_configured_provider_works_in_its_workspace(
 ) -> None:
     shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
     (tmp_path / "NOTE.md").write_text("pomegranate\n")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(KIND, "local")
+    monkeypatch.setenv(WORKSPACE, str(tmp_path))
     asked = Prompt(
         text=PromptText(
-            "Read the file NOTE.md in the working directory, write the one word it contains to a "
-            "new file REPLY.md in the same directory, and reply with only that word."
+            "Read the file NOTE.md in your workspace, write the one word it contains to a "
+            "new file REPLY.md beside it, and reply with only that word."
         )
     )
     answer = run_sync(AgentConfig(), asked)  # pyright: ignore[reportCallIssue]

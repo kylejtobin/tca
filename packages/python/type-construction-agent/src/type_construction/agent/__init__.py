@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Sequence
 
-from pydantic_ai import CancellationToken
+from pydantic_ai import AgentRunResult, CancellationToken
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
@@ -12,8 +12,19 @@ from type_construction.agent.integration.pydantic_ai.interpreter import (
     AnswerInterpreter,
     ChatInterpreter,
 )
-from type_construction.agent.integration.pydantic_ai.model import AgentName, ModelName
-from type_construction.agent.integration.pydantic_ai.provider import AgentProvider
+from type_construction.agent.integration.pydantic_ai.model import (
+    AgentName,
+    LocalKind,
+    ModelName,
+    SandboxKind,
+    WorkspacePath,
+)
+from type_construction.agent.integration.pydantic_ai.provider import (
+    AgentProvider,
+    Local,
+    Sandboxed,
+    Workspace,
+)
 
 __all__ = (
     "AgentConfig",
@@ -23,13 +34,33 @@ __all__ = (
     "AnswerInterpreter",
     "AnswerText",
     "ChatInterpreter",
+    "Local",
+    "LocalKind",
     "ModelName",
     "Prompt",
     "PromptText",
+    "SandboxKind",
+    "Sandboxed",
+    "Workspace",
+    "WorkspacePath",
+    "answer",
     "chat",
     "run",
     "run_sync",
 )
+
+
+async def answer(
+    config: AgentConfig,
+    prompt: Prompt,
+    *,
+    usage: RunUsage | None = None,
+    cancellation_token: CancellationToken | None = None,
+    toolsets: Sequence[AbstractToolset[None]] | None = None,
+) -> AgentRunResult[Answer]:
+    return await AnswerInterpreter(prompt=prompt, provider=config.agent).interpret(
+        usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
+    )
 
 
 async def run(
@@ -41,8 +72,8 @@ async def run(
     toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Answer:
     return (
-        await AnswerInterpreter(prompt=prompt, provider=config.agent).interpret(
-            usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
+        await answer(
+            config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
         )
     ).output
 

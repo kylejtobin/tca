@@ -13,12 +13,12 @@ from type_construction.agent.integration.pydantic_ai.provider import AgentProvid
 
 class AnswerInterpreter(BaseModel):
     """The one place a prompt is answered: the agent is acquired for the crossing, with the model
-    it is built on, run on the prompt once, and released on every path; what it returns is the
-    library's own result of the run, whose output is the answer the library constructed, with
-    every message, the usage and the run's identity beside it. The caller may hand `interpret`
-    the library's own execution resources, unchanged: a usage the run accumulates into; a token
-    by which the caller may cancel the run; the toolsets this one run may call, beside the
-    agent's own file and skill tools; and a handler the library streams the run's events to as
+    it is built on, run on the prompt once in its workspace, and released on every path; what it
+    returns is the library's own result of the run, whose output is the answer the library
+    constructed, with every message, the usage and the run's identity beside it. The caller may
+    hand `interpret` the library's own execution resources, unchanged: a usage the run
+    accumulates into; a token by which the caller may cancel the run; the toolsets this one run
+    may call beside the agent's own; and a handler the library streams the run's events to as
     they happen, while the agent is still held. A handler that fails stops the run, and the
     agent is released all the same."""
 
@@ -53,8 +53,8 @@ class AnswerInterpreter(BaseModel):
 class ChatInterpreter(BaseModel):
     """The one place a person holds a conversation with the agent at a terminal, in the library's
     own command line: the agent is acquired for the whole conversation, which the library holds
-    for as long as the terminal is open, each prompt a run, and released when the terminal
-    closes. A request whose only purpose is its effect is its own action."""
+    for as long as the terminal is open, each prompt a run in its workspace, and released when
+    the terminal closes. A request whose only purpose is its effect is its own action."""
 
     model_config = ConfigDict(
         frozen=True,

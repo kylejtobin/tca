@@ -10,3 +10,6 @@ dist/
 .import_linter_cache/
 eval-build-transcript.json
 logs/
+
+# The directory the TCA agent models in, named by .env; local to each deployment.
+/workspace/
