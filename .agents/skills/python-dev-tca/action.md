@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "One intended external effect, as a value that performs nothing, carrying every rule its effect must follow. Holds semantic scalars, value objects, and concept models. Lives in domain/<context>/<concept>.py, beside the fact that authorizes it."
+description: "One intended external effect, as a thing that performs nothing, carrying every rule its effect must follow. Holds semantic scalars, value objects, and concept models. Lives in domain/<context>/<concept>.py, beside the fact that authorizes it."
 ---
 
 ```python
@@ -16,6 +16,7 @@ class ReadDiscount(BaseModel):
         revalidate_instances="never",
     )
     order: Order
+
 
 class Charge(BaseModel):
     """The intended charging of a priced order's amount to its card."""

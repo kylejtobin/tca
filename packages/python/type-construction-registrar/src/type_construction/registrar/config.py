@@ -9,7 +9,7 @@ class RegistrarConfig(BaseSettings):
     model_config = SettingsConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
         env_nested_delimiter="__",

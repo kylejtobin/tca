@@ -7,8 +7,18 @@ description: "A full domain thing or durable fact, including the one that holds 
 # domain/shop/order.py
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from domain.shop.type import Amount, CardToken, Currency, CustomerId, OrderId
-from domain.shop.value import Approval, Decline, Discount, Failure, Lines
+from domain.shop.type import Amount, CardToken, Currency, CustomerId, IndexFault, OrderId
+from domain.shop.value import (
+    Aisles,
+    Approval,
+    Decline,
+    Discount,
+    Failure,
+    Lines,
+    NoAisles,
+    Recommending,
+)
+
 
 class Order(BaseModel):
     """A customer's request to buy some lines in one currency, paid with one card."""
@@ -29,6 +39,7 @@ class Order(BaseModel):
     @property
     def pricing(self) -> "ReadDiscount":
         return ReadDiscount(order=self)
+
 
 class PricedOrder(BaseModel):
     """An order with the discount the promotions system gave its customer."""

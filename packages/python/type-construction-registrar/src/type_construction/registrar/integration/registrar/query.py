@@ -24,7 +24,7 @@ class RegistrationQuery(BaseModel):
 
     @property
     def fqdn(self) -> Fqdn:
-        return self.action.offer.request.name.fqdn
+        return self.action.offer.request.name
 
     @property
     def term(self) -> Term:

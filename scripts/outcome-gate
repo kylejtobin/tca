@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# The commit gate: the declared outcome must be what the staged change does.
+set -euo pipefail
+
+refuse() { printf 'commit refused: %s\n' "$1" >&2; exit 1; }
+
+# The message without its template comments; grep exits 1 when nothing is left.
+message=$(grep -v '^#' "$1" || true)
+# The declared outcome: the Outcome paragraph, wrapped as the body is, as one line.
+declared=$(printf '%s\n' "$message" | sed -n '/^Outcome:/,/^[[:space:]]*$/p' |
+  sed '1s/^Outcome:[[:space:]]*//; /^[[:space:]]*$/d' | paste -sd ' ')
+[[ -n "$declared" && "$declared" != \<* ]] || refuse "fill the Outcome: line from .gitmessage"
+
+diff=$(git diff --cached)
+[[ -n "$diff" ]] || refuse "nothing is staged"
+# The skill governs the Python under the packages' src; the reviewer is handed that part of
+# the change apart from the rest, which it judges by the outcome and the message alone.
+governed=$(git diff --cached -- 'packages/python/*/src/*')
+rest=$(git diff --cached -- . ':!packages/python/*/src/*')
+
+ask() {
+  claude -p "$2" --agent "$1" --model sonnet --effort high \
+    --allowedTools "Read,Grep,Glob" --disallowedTools "Read(.git/**)"
+}
+
+inferred=$(printf '%s\n' "$diff" | ask outcome-inference \
+  "Infer the outcome of the staged diff on standard input.") ||
+  refuse "Outcome Inference did not run"
+[[ -n "$inferred" ]] || refuse "Outcome Inference returned nothing"
+
+review=$(printf 'Commit message:\n%s\n\nStaged diff under packages/python/*/src, governed by the skill:\n%s\n\nStaged diff elsewhere, judged by the outcome and the message:\n%s\n\nInferred outcome:\n%s\n\nIntended outcome:\n%s\n' \
+  "$message" "$governed" "$rest" "$inferred" "$declared" | ask outcome-review \
+  "Review the commit on standard input.") ||
+  refuse "Outcome Review did not run"
+
+# The verdict: the review's first line, PASS or FAIL alone, bold or not.
+verdict=$(printf '%s\n' "$review" | head -n 1 | tr -d '\r' |
+  sed -E 's/[[:space:]]+$//; s/^\*\*(PASS|FAIL)\*\*$/\1/')
+case "$verdict" in
+  PASS) exit 0 ;;
+  FAIL) reason="Outcome Review found the failures above" ;;
+  *) reason="Outcome Review gave no PASS or FAIL" ;;
+esac
+
+# A refusal that shows the review shows first what a refused committer reads before any
+# finding, from the one file the code review agent opens its reports with too.
+printf '%s\n\n%s\n' "$(cat "$(dirname "$0")/../.agents/agents/refusal.md")" "$review" >&2
+refuse "$reason"

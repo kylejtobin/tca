@@ -1,0 +1,3 @@
+# expect: LAMBDA
+def run(*args: int) -> int:
+    return 1

@@ -28,16 +28,17 @@ class CheckAvailabilityInterpreter(BaseModel):
     provider: Registrar
 
     async def interpret(self) -> AvailabilityCheck:
-        return AvailabilityCheck(
-            request=self.action.request,
-            reply=AvailabilityReply.model_validate_json(
-                (
-                    await self.provider.client.get(
-                        AvailabilityAddress.model_validate(self.action.request.name).path.root
-                    )
-                ).content
-            ),
-        )
+        async with self.provider.client as client:
+            return AvailabilityCheck(
+                request=self.action.request,
+                reply=AvailabilityReply.model_validate_json(
+                    (
+                        await client.get(
+                            AvailabilityAddress.model_validate(self.action.request).path.root
+                        )
+                    ).content
+                ),
+            )
 
 
 class RegisterInterpreter(BaseModel):
@@ -54,16 +55,17 @@ class RegisterInterpreter(BaseModel):
     provider: Registrar
 
     async def interpret(self) -> RegistrationAttempt:
-        return RegistrationAttempt(
-            offer=self.action.offer,
-            reply=RegistrationReply.model_validate_json(
-                (
-                    await self.provider.client.post(
-                        RegistrarResource.REGISTRATIONS,
-                        content=RegistrationOrder.model_validate(
-                            RegistrationQuery(action=self.action)
-                        ).model_dump_json(),
-                    )
-                ).content
-            ),
-        )
+        async with self.provider.client as client:
+            return RegistrationAttempt(
+                offer=self.action.offer,
+                reply=RegistrationReply.model_validate_json(
+                    (
+                        await client.post(
+                            RegistrarResource.REGISTRATIONS,
+                            content=RegistrationOrder.model_validate(
+                                RegistrationQuery(action=self.action)
+                            ).model_dump_json(),
+                        )
+                    ).content
+                ),
+            )

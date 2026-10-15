@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "Deployment input: one BaseSettings whose fields are the providers this program reaches and the value objects a deployment may set, constructed from the environment by name, nested; absence is the declared default. Holds providers and value objects. Lives in config.py."
+description: "Deployment input: one BaseSettings whose fields are the providers this program reaches and the value objects a deployment may set, named by the environment, nested; absence is the declared default. Strict as every class is: the settings source decodes the environment's text against each field's type. Holds providers and value objects. Lives in config.py."
 ---
 
 ```python
@@ -12,13 +12,14 @@ from integration.catalog_index.provider import CatalogIndex
 from integration.payments.provider import Payments
 from integration.promotions.provider import Promotions
 
+
 class ShopConfig(BaseSettings):
     """What the deployment sets: the systems the shop reaches, and how a recommendation is drawn."""
 
     model_config = SettingsConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
         env_prefix="SHOP_",

@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "A sum: closed alternatives on one axis, each a class holding its own facts. Holds its variants. Lives beside them."
+description: "A sum: closed alternatives on one axis, each a class holding its own facts, at the level of its variants; every input constructs exactly one variant, which its own facts decide. Holds its variants. Lives beside them."
 ---
 
 ```python
@@ -81,7 +81,7 @@ class OrderOutcome(RootModel[PaidOrder | DeclinedOrder | UnsettledOrder]):
 ```python
 # domain/shop/order.py
 class Recommended(BaseModel):
-    """Products close enough to an order to recommend beside it."""
+    """The aisles with products close enough to an order to recommend beside it."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -91,11 +91,11 @@ class Recommended(BaseModel):
         revalidate_instances="never",
         from_attributes=True,
     )
-    matches: RelatedMatches
+    aisles: Aisles
 
 
 class NothingRelated(BaseModel):
-    """No product in the catalog close enough to an order to recommend."""
+    """No aisle with a product close enough to an order to recommend; the search found none."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -105,7 +105,7 @@ class NothingRelated(BaseModel):
         revalidate_instances="never",
         from_attributes=True,
     )
-    matches: NoMatches
+    aisles: NoAisles
 
 
 class Unavailable(BaseModel):

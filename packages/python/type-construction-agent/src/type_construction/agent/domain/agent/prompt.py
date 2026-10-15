@@ -16,7 +16,6 @@ class Prompt(BaseModel):
     text: PromptText
 
 
-
 class Answer(BaseModel):
     """The agent's answer to a prompt, in its words."""
 

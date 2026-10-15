@@ -16,7 +16,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "dspy>=3.4,<4",
     "inspect-ai>=0.3,<0.4",
     "pydantic>=2.9,<3",
 ]

@@ -4,32 +4,11 @@ from type_construction.registrar.domain.registration.type import (
     Amount,
     Currency,
     ExpiryDate,
-    Fqdn,
-    Labels,
     Price,
     Refusals,
     RegistrationId,
     ReservedPolicy,
-    TopLevelDomain,
 )
-
-
-class DomainName(BaseModel):
-    """A name under a top-level domain: its labels, outermost first, and the domain under them."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    labels: Labels
-    tld: TopLevelDomain
-
-    @property
-    def fqdn(self) -> Fqdn:
-        return Fqdn(".".join(part.root for part in (*self.labels.root, self.tld)))
 
 
 class Quote(BaseModel):

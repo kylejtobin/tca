@@ -27,7 +27,7 @@ Configuration
 Entry
 ```
 
-The base and every tool are named by a moving tag for the newest release; nothing is pinned by version or digest. Dependencies come only from the lockfile, installed with `uv sync --frozen` in a layer of their own, before the code is copied. Code is copied into the image and mounted over it in development, at the same path; the environment the dependencies live in sits outside the mounted code. The container runs as the host's user, never as root. Nothing known only at run time is in the image: no secret and no deployment setting. Configuration enters only from the environment, through the service's `env_file`, and every variable it may hold is named in `.env.example`. The build context holds only what the image needs. Every action is exactly one recipe, each one command run in the service; there is no other way in.
+Every input the build reads is fixed by its content: the base image, every tool image and every service image by version and digest, the Python dependencies by the lockfile, and nothing installed from a package archive at build time; a newer release enters as a change that names its new digest, never by a moving tag. Dependencies come only from the lockfile, installed with `uv sync --frozen` in a layer of their own, before the code is copied. Code is copied into the image and mounted over it in development, at the same path; the environment the dependencies live in sits outside the mounted code. The container runs as the host's user, never as root. Nothing known only at run time is in the image: no secret and no deployment setting. Configuration enters only from the environment, through the service's `env_file`, and every variable it may hold is named in `.env.example`. The build context holds only what the image needs. Every action is a named recipe, and there is no other way in: building the image runs through Docker, and every check and every run of the code happens in the declared service.
 
 ## A whole environment
 
@@ -38,8 +38,8 @@ flowchart LR
     end
 
     subgraph g2["2 image"]
-        Base["<b>Base</b><br/>python:slim · uv:latest"]
-        System["<b>System</b><br/>ripgrep · dev user"]
+        Base["<b>Base</b><br/>python 3.14.8 · uv 0.13.0, by digest"]
+        System["<b>System</b><br/>dev user"]
         Dependencies["<b>Dependencies</b><br/>pyproject.toml · uv.lock → /opt/venv"]
         Code["<b>Code</b><br/>the repo → /workspace"]
     end
@@ -67,7 +67,7 @@ flowchart LR
 Every box is a declaration in the page its group names.
 A solid arrow is a layer: the head is built on the tail.
 A dotted arrow is given at run time: the head receives the tail when the container starts.
-A thick arrow is a recipe: it runs one command in the head.
+A thick arrow is a recipe: a named action, run in the head.
 
 ## Its files, in dependency order
 

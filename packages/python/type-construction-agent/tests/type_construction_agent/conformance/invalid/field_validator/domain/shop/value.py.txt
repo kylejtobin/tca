@@ -1,0 +1,11 @@
+# expect: PARSE-METHOD
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+class Thing(BaseModel):
+    """A thing."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, validate_default=True, revalidate_instances="never", from_attributes=True)
+    @field_validator('sku')
+    def check(self) -> int:
+        return 1

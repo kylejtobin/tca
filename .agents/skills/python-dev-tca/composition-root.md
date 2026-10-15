@@ -12,11 +12,11 @@ from starlette.routing import Route
 
 from api.shop import CheckoutRoute, ReplyRoute
 from config import ShopConfig
-from domain.shop.type import MediaType
 from integration.payments.interpreter import ChargeInterpreter
 from integration.promotions.interpreter import ReadDiscountInterpreter
 
 config = ShopConfig()  # pyright: ignore[reportCallIssue]
+
 
 async def checkout(request: Request) -> Response:
     return Response(
@@ -33,8 +33,9 @@ async def checkout(request: Request) -> Response:
                 provider=config.payments,
             ).interpret()
         ).model_dump_json(),
-        media_type=MediaType.JSON,
+        media_type="application/json",
     )
+
 
 app = Starlette(routes=(Route("/checkout", checkout, methods=("POST",)),))
 ```
@@ -49,6 +50,7 @@ from integration.catalog_index.interpreter import FindRelatedInterpreter
 from integration.payments.interpreter import ChargeInterpreter
 from integration.promotions.interpreter import ReadDiscountInterpreter
 
+
 async def checkout(config: ShopConfig, order: Order) -> OrderOutcome:
     return (
         await ChargeInterpreter(
@@ -60,6 +62,7 @@ async def checkout(config: ShopConfig, order: Order) -> OrderOutcome:
             provider=config.payments,
         ).interpret()
     ).outcome
+
 
 def checkout_sync(config: ShopConfig, order: Order) -> OrderOutcome:
     return asyncio.run(checkout(config, order))
@@ -74,6 +77,7 @@ async def recommend(config: ShopConfig, order: PaidOrder) -> RecommendedOrder:
             provider=config.catalog,
         ).interpret()
     ).recommended
+
 
 def recommend_sync(config: ShopConfig, order: PaidOrder) -> RecommendedOrder:
     return asyncio.run(recommend(config, order))

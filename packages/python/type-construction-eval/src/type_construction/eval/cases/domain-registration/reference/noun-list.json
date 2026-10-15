@@ -1,7 +1,4 @@
 [
-  {"name": "Label", "layer": "Scalar", "kind": "semantic scalar", "file": "domain/registration/type.py"},
-  {"name": "TopLevelDomain", "layer": "Scalar", "kind": "semantic scalar", "file": "domain/registration/type.py"},
-  {"name": "Labels", "layer": "Scalar", "kind": "collection", "file": "domain/registration/type.py"},
   {"name": "Fqdn", "layer": "Scalar", "kind": "semantic scalar", "file": "domain/registration/type.py"},
   {"name": "Term", "layer": "Scalar", "kind": "semantic scalar", "file": "domain/registration/type.py"},
   {"name": "RegistrantId", "layer": "Scalar", "kind": "semantic scalar", "file": "domain/registration/type.py"},
@@ -37,7 +34,6 @@
   {"name": "Refused", "layer": "Alternative", "kind": "foreign model", "file": "integration/registrar/model.py"},
   {"name": "RegistrationReply", "layer": "Alternative", "kind": "foreign model", "file": "integration/registrar/model.py"},
   {"name": "Registrar", "layer": "Value", "kind": "provider", "file": "integration/registrar/provider.py"},
-  {"name": "DomainName", "layer": "Value", "kind": "value object", "file": "domain/registration/value.py"},
   {"name": "Quote", "layer": "Value", "kind": "value object", "file": "domain/registration/value.py"},
   {"name": "PremiumQuote", "layer": "Value", "kind": "value object", "file": "domain/registration/value.py"},
   {"name": "Holding", "layer": "Value", "kind": "value object", "file": "domain/registration/value.py"},

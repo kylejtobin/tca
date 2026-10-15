@@ -18,10 +18,14 @@ build:
 test:
     {{dev}} pytest
 
-# Lint and type-check.
+# Lint, type-check, enforce the dependency contracts, and verify the lockfile and the pinned images.
 lint:
-    {{dev}} ruff check packages/python
+    {{dev}} ruff check packages tests
+    {{dev}} ruff format --check packages tests
     {{dev}} basedpyright
+    {{dev}} lint-imports
+    {{dev}} uv lock --check
+    {{dev}} bash -c '! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"'
 
 # Scan the packages' source for procedure.
 smell:

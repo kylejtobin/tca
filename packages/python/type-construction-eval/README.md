@@ -34,8 +34,8 @@ The agent is told to build. Its answer is read for the program, and its trace is
 | violated sentence of the skill | judge | output and the skill |
 | outcome before any noun | judge | the trace |
 | crossings before any file | judge | the trace |
-| list reprinted whole after each file | judge | the trace |
-| noun question asked after each file | judge | the trace |
+| whole list questioned after each file | judge | the trace |
+| list reprinted whole whenever it changed | judge | the trace |
 
 Recall, precision and agreement are computed from the noun matches. Each sample runs five epochs. The judge's scores count once its agreement with the labels reaches 0.9.
 

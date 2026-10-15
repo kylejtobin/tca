@@ -1,18 +1,23 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from type_construction.agent.integration.model_provider.provider import ModelProvider
+from type_construction.agent.integration.pydantic_ai.provider import AgentProvider
 
 
 class AgentConfig(BaseSettings):
-    """What the deployment sets: the model provider the agent runs on."""
+    """What the deployment sets: the agent's provider, named under `TCA_` in its
+    environment or in a `.env` file in its working directory, the environment winning. From the
+    file, as from the environment, only the agent's own settings are read; a key another system
+    owns is left to it."""
 
     model_config = SettingsConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
         env_prefix="TCA_",
         env_nested_delimiter="__",
+        env_file=".env",
+        dotenv_filtering="only_existing",
     )
-    agent: ModelProvider
+    agent: AgentProvider

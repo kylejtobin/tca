@@ -38,7 +38,7 @@ class ChargeAttempt(BaseModel):
 from pydantic import BaseModel, ConfigDict
 
 from domain.shop.order import FindRelated
-from domain.shop.type import Closeness, GroupSize, MatchLimit
+from domain.shop.type import AisleLimit, Closeness, ProductsPerAisle
 from integration.catalog_index.model import (
     CatalogPoint,
     Conditions,
@@ -89,12 +89,12 @@ class RelatedQuery(BaseModel):
         return self.action.tuning.closeness
 
     @property
-    def group_size(self) -> GroupSize:
+    def group_size(self) -> ProductsPerAisle:
         return self.action.tuning.per_aisle
 
     @property
-    def limit(self) -> MatchLimit:
-        return self.action.tuning.limit
+    def limit(self) -> AisleLimit:
+        return self.action.tuning.aisles
 ```
 
 ```python

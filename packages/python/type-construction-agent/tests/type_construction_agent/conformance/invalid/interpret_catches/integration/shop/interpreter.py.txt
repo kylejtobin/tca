@@ -1,0 +1,13 @@
+# expect: BODY CATCH
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+class Thing(BaseModel):
+    """A thing."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, validate_default=True, revalidate_instances="never", from_attributes=True)
+    async def interpret(self) -> Thing:
+        try:
+            return Thing()
+        except ValueError:
+            return Thing()

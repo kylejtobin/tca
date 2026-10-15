@@ -1,24 +1,79 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, SecretStr
 
 from type_construction.registrar.domain.registration.type import (
     Amount,
-    AvailableStatus,
     Currency,
     ExpiryDate,
     Fqdn,
-    PremiumStatus,
     Price,
     Refusals,
     RegistrantId,
     RegistrationId,
     ReservedPolicy,
-    ReservedStatus,
-    ResourcePath,
-    TakenStatus,
     Term,
 )
+
+
+class ProviderUrl(RootModel[str]):
+    """Where the registrar is."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
+class ProviderKey(RootModel[SecretStr]):
+    """The key the registrar knows this program by; never shown, never published."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: SecretStr = Field(min_length=1)
+
+
+class ResourcePath(RootModel[str]):
+    """The place of one thing the registrar holds, relative to its address."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(pattern=r"^[a-z]+(/[^/]+)*$")
+
+
+class AvailableStatus(StrEnum):
+    """The registrar's word for a name that can be had at its ordinary price."""
+
+    AVAILABLE = "available"
+
+
+class PremiumStatus(StrEnum):
+    """The registrar's word for a name that can be had at a premium."""
+
+    PREMIUM = "premium"
+
+
+class TakenStatus(StrEnum):
+    """The registrar's word for a name someone else holds."""
+
+    TAKEN = "taken"
+
+
+class ReservedStatus(StrEnum):
+    """The registrar's word for a name it keeps from registration."""
+
+    RESERVED = "reserved"
 
 
 class RegistrarResource(StrEnum):
@@ -39,11 +94,11 @@ class AvailabilityAddress(BaseModel):
         revalidate_instances="never",
         from_attributes=True,
     )
-    fqdn: Fqdn
+    name: Fqdn
 
     @property
     def path(self) -> ResourcePath:
-        return ResourcePath("/".join((RegistrarResource.AVAILABILITY, self.fqdn.root)))
+        return ResourcePath("/".join((RegistrarResource.AVAILABILITY, self.name.root)))
 
 
 class Available(BaseModel):

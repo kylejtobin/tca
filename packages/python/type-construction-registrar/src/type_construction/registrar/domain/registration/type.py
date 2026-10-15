@@ -1,48 +1,19 @@
 from datetime import date
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import ConfigDict, Field, RootModel, SecretStr
-
-
-class Label(RootModel[str]):
-    """One label of a domain name: letters, digits and inner hyphens, up to sixty-three."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(pattern=r"^[a-z0-9]$|^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$")
+from pydantic import ConfigDict, Field, RootModel, model_validator
 
 
-class TopLevelDomain(RootModel[str]):
-    """The top-level domain a name is registered under, as the registry spells it."""
+class Invariant(StrEnum):
+    """A rule of registration that construction enforces, in the registry's words."""
 
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(pattern=r"^[a-z]{2,63}$|^xn--[a-z0-9-]{1,59}$")
-
-
-class Labels(RootModel[tuple[Label, ...]]):
-    """The labels of a domain name beneath its top-level domain, outermost first."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: tuple[Label, ...] = Field(min_length=1)
+    UNLISTED_REFUSAL = "an unlisted refusal is one this program has no word for"
 
 
 class Fqdn(RootModel[str]):
-    """A domain name as it is written: its labels and top-level domain joined by dots."""
+    """A domain name as it is written: its labels and top-level domain joined by dots, at most
+    253 characters."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -50,7 +21,10 @@ class Fqdn(RootModel[str]):
         validate_default=True,
         revalidate_instances="never",
     )
-    root: str = Field(min_length=1)
+    root: str = Field(
+        max_length=253,
+        pattern=r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})$",
+    )
 
 
 class Term(RootModel[int]):
@@ -163,6 +137,12 @@ class UnlistedRefusal(RootModel[str]):
     )
     root: str = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def no_word_for_it(self) -> Self:
+        if not all(reason != self.root for reason in RefusalReason):
+            raise ValueError(Invariant.UNLISTED_REFUSAL)
+        return self
+
 
 class StatedRefusal(
     RootModel[Annotated[RefusalReason | UnlistedRefusal, Field(union_mode="left_to_right")]]
@@ -187,87 +167,3 @@ class Refusals(RootModel[tuple[StatedRefusal, ...]]):
         revalidate_instances="never",
     )
     root: tuple[StatedRefusal, ...] = Field(min_length=1)
-
-
-class AvailableStatus(StrEnum):
-    """The registrar's word for a name that can be had at its ordinary price."""
-
-    AVAILABLE = "available"
-
-
-class PremiumStatus(StrEnum):
-    """The registrar's word for a name that can be had at a premium."""
-
-    PREMIUM = "premium"
-
-
-class TakenStatus(StrEnum):
-    """The registrar's word for a name someone else holds."""
-
-    TAKEN = "taken"
-
-
-class ReservedStatus(StrEnum):
-    """The registrar's word for a name it keeps from registration."""
-
-    RESERVED = "reserved"
-
-
-class ProviderUrl(RootModel[str]):
-    """The address of another system this program calls."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(min_length=1)
-
-
-class ResourcePath(RootModel[str]):
-    """The place of one thing the registrar holds, relative to its address."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(pattern=r"^[a-z]+(/[^/]+)*$")
-
-
-class ProviderKey(RootModel[SecretStr]):
-    """The key the registrar knows this program by; never shown, never published."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: SecretStr = Field(min_length=1)
-
-
-class BlankPassword(RootModel[str]):
-    """The password the registrar's scheme leaves blank; the key alone names this program."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="never",
-    )
-    root: str = Field(default="", max_length=0)
-
-
-class MediaType(StrEnum):
-    """The form of a message body that crosses between this program and the registrar."""
-
-    JSON = "application/json"
-
-
-class FieldName(StrEnum):
-    """The name of a header this program sends to the registrar."""
-
-    CONTENT_TYPE = "Content-Type"

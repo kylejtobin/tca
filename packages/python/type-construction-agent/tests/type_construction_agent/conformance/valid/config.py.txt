@@ -1,0 +1,10 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from integration.shop.provider import Shop
+
+
+class ShopConfig(BaseSettings):
+    """What the deployment sets."""
+
+    model_config = SettingsConfigDict(frozen=True, strict=True, env_prefix="SHOP_", env_nested_delimiter="__")
+    shop: Shop

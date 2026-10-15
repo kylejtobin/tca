@@ -30,7 +30,7 @@ services:
       - jaeger
 
   jaeger:
-    image: jaegertracing/jaeger:2.14.0
+    image: jaegertracing/jaeger:2.14.0@sha256:7da6b6e878760315130de8799887ebff012efaa18af2e20112c07feddeda7d52
     ports:
       - "16686:16686"
 ```

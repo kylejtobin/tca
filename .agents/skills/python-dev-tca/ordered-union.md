@@ -1,11 +1,13 @@
 ---
 type: Construct
-description: "A strong alternative whose only failure to construct means the fallback. Holds its variants. Lives beside them."
+description: "A strong alternative whose only failure to construct means the fallback; the fallback admits only what the strong alternative does not, so each holds exactly its meaning, constructed alone or in the union. Holds its variants. Lives beside them."
 ---
 
 ```python
 # domain/shop/type.py
-from typing import Annotated
+from typing import Annotated, Self
+
+from pydantic import ConfigDict, Field, RootModel, model_validator
 
 
 class UnlistedReason(RootModel[str]):
@@ -18,6 +20,12 @@ class UnlistedReason(RootModel[str]):
         revalidate_instances="never",
     )
     root: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def no_word_for_it(self) -> Self:
+        if not all(reason != self.root for reason in DeclineReason):
+            raise ValueError(Invariant.UNLISTED_REASON)
+        return self
 
 
 class StatedReason(
@@ -43,6 +51,12 @@ class UnlistedError(RootModel[str]):
         revalidate_instances="never",
     )
     root: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def no_word_for_it(self) -> Self:
+        if not all(error != self.root for error in ProviderError):
+            raise ValueError(Invariant.UNLISTED_ERROR)
+        return self
 
 
 class StatedError(

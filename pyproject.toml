@@ -30,7 +30,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
-testpaths = ["packages/python"]
+testpaths = ["packages/python", "tests"]
 asyncio_mode = "strict"
 strict_config = true
 strict_markers = true
@@ -55,7 +55,7 @@ runtime-evaluated-base-classes = ["pydantic.BaseModel","pydantic.RootModel"]
 known-first-party = ["type_construction"]
 
 [tool.basedpyright]
-include = ["packages/python"]
+include = ["packages/python", "tests"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 
@@ -64,3 +64,66 @@ targets = ["."]
 exclude_dirs = [".venv", "venv", "tests", "build", "dist", "htmlcov", ".git"]
 confidence = "LOW"
 severity = "LOW"
+
+[tool.importlinter]
+root_packages = ["type_construction.agent", "type_construction.registrar"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "The registrar's domain imports nothing outside itself"
+type = "forbidden"
+source_modules = ["type_construction.registrar.domain"]
+forbidden_modules = [
+    "type_construction.registrar.integration",
+    "type_construction.registrar.config",
+    "httpx",
+    "pydantic_settings",
+]
+
+[[tool.importlinter.contracts]]
+name = "The agent's domain imports nothing outside itself"
+type = "forbidden"
+source_modules = ["type_construction.agent.domain"]
+forbidden_modules = [
+    "type_construction.agent.integration",
+    "type_construction.agent.config",
+    "pydantic_ai",
+    "pydantic_ai_harness",
+    "pydantic_settings",
+]
+
+[[tool.importlinter.contracts]]
+name = "The registrar imports inward, file by file"
+type = "layers"
+containers = ["type_construction.registrar"]
+layers = ["config", "integration", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "The registrar's domain files import those above them"
+type = "layers"
+containers = ["type_construction.registrar.domain.registration"]
+layers = ["name", "value", "type"]
+
+[[tool.importlinter.contracts]]
+name = "The registrar's integration files import those above them"
+type = "layers"
+containers = ["type_construction.registrar.integration.registrar"]
+layers = ["interpreter", "attempt | check | query", "provider", "model"]
+
+[[tool.importlinter.contracts]]
+name = "The agent imports inward, file by file"
+type = "layers"
+containers = ["type_construction.agent"]
+layers = ["config", "integration", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "The agent's domain files import those above them"
+type = "layers"
+containers = ["type_construction.agent.domain.agent"]
+layers = ["prompt", "type"]
+
+[[tool.importlinter.contracts]]
+name = "The agent's integration files import those above them"
+type = "layers"
+containers = ["type_construction.agent.integration.pydantic_ai"]
+layers = ["interpreter", "provider", "model"]

@@ -18,11 +18,14 @@ from domain.shop.type import (
     OrderId,
     StatedError,
 )
+from parser.receipt import ReceiptLine
+
 
 class PaymentsResource(StrEnum):
     """What the payment provider holds, relative to its address."""
 
     CHARGES = "/charges"
+
 
 class CardCharge(BaseModel):
     """A charge of an amount in a currency to a card, under the payment provider's reference."""
@@ -41,8 +44,9 @@ class CardCharge(BaseModel):
     card: CardToken = Field(serialization_alias="src")
     id: OrderId = Field(serialization_alias="ref")
 
+
 class ChargeApproved(BaseModel):
-    """A charge the payment provider made."""
+    """A charge the payment provider made, with its receipt in the provider's own line format."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -52,6 +56,8 @@ class ChargeApproved(BaseModel):
         revalidate_instances="never",
     )
     charge: ChargeId = Field(alias="id")
+    receipt: ReceiptLine
+
 
 class ChargeDeclined(BaseModel):
     """A charge the payment provider refused, and why."""
@@ -65,6 +71,7 @@ class ChargeDeclined(BaseModel):
     )
     reasons: DeclineReasons = Field(alias="decline_codes")
 
+
 class ChargeFailed(BaseModel):
     """A charge the payment provider could not attempt, and why."""
 
@@ -76,6 +83,7 @@ class ChargeFailed(BaseModel):
         revalidate_instances="never",
     )
     error: StatedError
+
 
 class ChargeReply(RootModel[ChargeApproved | ChargeDeclined | ChargeFailed]):
     """What the payment provider says of a charge."""
@@ -98,6 +106,7 @@ from pydantic import BaseModel, ConfigDict
 
 from domain.shop.type import CustomerId, Percent
 
+
 class DiscountAddress(BaseModel):
     """The place of one customer's discount within the promotions system's discounts, named there by that customer."""
 
@@ -110,6 +119,7 @@ class DiscountAddress(BaseModel):
         from_attributes=True,
     )
     customer: CustomerId
+
 
 class DiscountOffer(BaseModel):
     """The share the promotions system takes off for a customer; none when it states none."""
@@ -127,31 +137,28 @@ class DiscountOffer(BaseModel):
 ```python
 # integration/catalog_index/model.py
 from enum import StrEnum
+from typing import Self
 from uuid import uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from domain.shop.type import (
+    AisleLimit,
     Category,
     Closeness,
     Currency,
-    GroupSize,
     IndexFault,
-    IndexStatus,
-    MatchLimit,
-    PayloadKey,
-    PointId,
-    PointNamespace,
-    PointVersion,
-    QueryTime,
+    ProductsPerAisle,
     Similarity,
     Sku,
 )
+
 
 class IndexResource(StrEnum):
     """What the catalog's collection answers, relative to its address."""
 
     GROUPED_QUERY = "points/query/groups"
+
 
 class CatalogPoint(BaseModel):
     """A product as the catalog index names it."""
@@ -170,6 +177,7 @@ class CatalogPoint(BaseModel):
     def id(self) -> PointId:
         return PointId(uuid5(PointNamespace().root, self.sku.root))
 
+
 class PointIds(RootModel[tuple[PointId, ...]]):
     """The products a recommendation is drawn toward."""
 
@@ -180,6 +188,7 @@ class PointIds(RootModel[tuple[PointId, ...]]):
         revalidate_instances="never",
     )
     root: tuple[PointId, ...] = Field(min_length=1)
+
 
 class Recommend(BaseModel):
     """A recommendation drawn toward some products."""
@@ -193,6 +202,7 @@ class Recommend(BaseModel):
     )
     positive: PointIds
 
+
 class RecommendQuery(BaseModel):
     """A query that recommends by example."""
 
@@ -205,6 +215,7 @@ class RecommendQuery(BaseModel):
     )
     recommend: Recommend
 
+
 class CurrencyMatch(BaseModel):
     """A payload value a product must hold."""
 
@@ -216,6 +227,7 @@ class CurrencyMatch(BaseModel):
         revalidate_instances="never",
     )
     value: Currency
+
 
 class CurrencyCondition(BaseModel):
     """A product sold in a currency."""
@@ -230,6 +242,7 @@ class CurrencyCondition(BaseModel):
     key: PayloadKey = PayloadKey.CURRENCIES
     match: CurrencyMatch
 
+
 class Conditions(RootModel[tuple[CurrencyCondition, ...]]):
     """Conditions every product in a recommendation meets."""
 
@@ -240,6 +253,7 @@ class Conditions(RootModel[tuple[CurrencyCondition, ...]]):
         revalidate_instances="never",
     )
     root: tuple[CurrencyCondition, ...] = Field(min_length=1)
+
 
 class MarketFilter(BaseModel):
     """The products a market may be offered."""
@@ -253,6 +267,7 @@ class MarketFilter(BaseModel):
     )
     must: Conditions
 
+
 class PayloadSelection(RootModel[tuple[PayloadKey, ...]]):
     """The fields the catalog index returns beside each product."""
 
@@ -263,6 +278,7 @@ class PayloadSelection(RootModel[tuple[PayloadKey, ...]]):
         revalidate_instances="never",
     )
     root: tuple[PayloadKey, ...] = (PayloadKey.SKU, PayloadKey.CATEGORY)
+
 
 class IndexQuery(BaseModel):
     """A grouped recommendation, as the catalog index accepts it."""
@@ -280,9 +296,10 @@ class IndexQuery(BaseModel):
     market: MarketFilter = Field(serialization_alias="filter")
     score_threshold: Closeness
     group_by: PayloadKey = PayloadKey.CATEGORY
-    group_size: GroupSize
-    limit: MatchLimit
+    group_size: ProductsPerAisle
+    limit: AisleLimit
     with_payload: PayloadSelection = PayloadSelection()
+
 
 class PointPayload(BaseModel):
     """The fields the catalog index returned beside a product."""
@@ -296,6 +313,7 @@ class PointPayload(BaseModel):
     )
     sku: Sku
     category: Category
+
 
 class PointHit(BaseModel):
     """A product the catalog index found, and how alike it scored it."""
@@ -320,8 +338,9 @@ class PointHit(BaseModel):
     def category(self) -> Category:
         return self.payload.category
 
+
 class Hits(RootModel[tuple[PointHit, ...]]):
-    """The products the catalog index found in one aisle."""
+    """The products the catalog index found in one group."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -331,8 +350,9 @@ class Hits(RootModel[tuple[PointHit, ...]]):
     )
     root: tuple[PointHit, ...] = Field(min_length=1)
 
+
 class PointGroup(BaseModel):
-    """One aisle of a grouped recommendation."""
+    """One group of a grouped recommendation: an aisle, keyed by its category, and its hits, every one in it."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -344,8 +364,23 @@ class PointGroup(BaseModel):
     hits: Hits
     id: Category
 
+    @model_validator(mode="after")
+    def every_hit_in_its_aisle(self) -> Self:
+        if not all(hit.category == self.id for hit in self.hits.root):
+            raise ValueError(IndexInvariant.EVERY_HIT_IN_ITS_AISLE)
+        return self
+
+    @property
+    def category(self) -> Category:
+        return self.id
+
+    @property
+    def matches(self) -> tuple[PointHit, ...]:
+        return self.hits.root
+
+
 class PointGroups(RootModel[tuple[PointGroup, ...]]):
-    """Every aisle of a grouped recommendation; none when nothing was close enough."""
+    """Every group of a grouped recommendation; none when nothing was close enough."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -353,6 +388,7 @@ class PointGroups(RootModel[tuple[PointGroup, ...]]):
         validate_default=True,
         revalidate_instances="never",
     )
+
 
 class GroupResult(BaseModel):
     """The aisles the catalog index found."""
@@ -365,6 +401,7 @@ class GroupResult(BaseModel):
         revalidate_instances="never",
     )
     groups: PointGroups
+
 
 class IndexGroups(BaseModel):
     """The catalog index's answer to a grouped recommendation."""
@@ -381,8 +418,9 @@ class IndexGroups(BaseModel):
     time: QueryTime
 
     @property
-    def matches(self) -> tuple[PointHit, ...]:
-        return tuple(hit for group in self.result.groups.root for hit in group.hits.root)
+    def aisles(self) -> tuple[PointGroup, ...]:
+        return self.result.groups.root
+
 
 class IndexFaultStatus(BaseModel):
     """What the catalog index said went wrong."""
@@ -395,6 +433,7 @@ class IndexFaultStatus(BaseModel):
         revalidate_instances="never",
     )
     error: IndexFault
+
 
 class IndexFailure(BaseModel):
     """A recommendation the catalog index could not give."""
@@ -412,6 +451,7 @@ class IndexFailure(BaseModel):
     @property
     def reason(self) -> IndexFault:
         return self.status.error
+
 
 class IndexReply(RootModel[IndexGroups | IndexFailure]):
     """What the catalog index says of a grouped recommendation."""

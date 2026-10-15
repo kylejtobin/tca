@@ -1,0 +1,11 @@
+# expect: TYPEADAPTER
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+
+
+class Thing(BaseModel):
+    """A thing."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, validate_default=True, revalidate_instances="never", from_attributes=True)
+    @property
+    def kind(self) -> int:
+        return TypeAdapter(Thing).validate_python(self)

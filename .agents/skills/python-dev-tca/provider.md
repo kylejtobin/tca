@@ -1,6 +1,6 @@
 ---
 type: Construct
-description: "What this program needs to reach another system, as the deployment names it: its address and credential, whose one derivation is its client, which keeps nothing between crossings. Holds semantic scalars. It holds what the deployment names and the library does not read for itself: httpx reads nothing, so an address and a key. Where the deployment names one of several, their union, picked by shape. The environment constructs it from strings, so it is lax, as config is. Lives in integration/<system>/provider.py."
+description: "What this program needs to reach another system, as the deployment names it: its address and credential, whose one derivation is its client, which keeps nothing between crossings. Holds semantic scalars. It holds what the deployment names and the library does not read for itself: httpx reads nothing, so an address and a key. Where the deployment names one of several, their union, picked by shape. It is strict, as every class is; the settings source decodes the environment's text against its fields. Its client is acquired by the interpreter that uses it, for one crossing. Lives in integration/<system>/provider.py."
 ---
 
 ```python
@@ -8,7 +8,8 @@ description: "What this program needs to reach another system, as the deployment
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from domain.shop.type import CollectionUrl
+from integration.promotions.model import DiscountsUrl
+
 
 class Promotions(BaseModel):
     """The promotions system, at the address of its discounts."""
@@ -16,17 +17,15 @@ class Promotions(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
     )
-    url: CollectionUrl
+    url: DiscountsUrl
 
     @property
     def client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self.url.root, limits=httpx.Limits(max_keepalive_connections=0)
-        )
+        return httpx.AsyncClient(base_url=self.url.root)
 ```
 
 ```python
@@ -34,15 +33,13 @@ class Promotions(BaseModel):
 import httpx
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from domain.shop.type import (
-    BlankPassword,
+from integration.payments.model import (
     CardProviderName,
-    FieldName,
     InvoiceProviderName,
-    MediaType,
     ProviderKey,
     ProviderUrl,
 )
+
 
 class CardPayments(BaseModel):
     """The card provider, at its address, under the shop's key."""
@@ -50,7 +47,7 @@ class CardPayments(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
     )
@@ -62,10 +59,10 @@ class CardPayments(BaseModel):
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self.url.root,
-            auth=(self.key.root.get_secret_value(), BlankPassword().root),
-            headers=((FieldName.CONTENT_TYPE, MediaType.JSON),),
-            limits=httpx.Limits(max_keepalive_connections=0),
+            auth=(self.key.root.get_secret_value(), ""),
+            headers=(("Content-Type", "application/json"),),
         )
+
 
 class InvoicePayments(BaseModel):
     """The invoicing provider, at its address."""
@@ -73,7 +70,7 @@ class InvoicePayments(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
     )
@@ -84,16 +81,16 @@ class InvoicePayments(BaseModel):
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self.url.root,
-            headers=((FieldName.CONTENT_TYPE, MediaType.JSON),),
-            limits=httpx.Limits(max_keepalive_connections=0),
+            headers=(("Content-Type", "application/json"),),
         )
+
 
 class Payments(RootModel[CardPayments | InvoicePayments]):
     """The payment provider the deployment names, with what that provider takes."""
 
     model_config = ConfigDict(
         frozen=True,
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
     )
@@ -108,7 +105,8 @@ class Payments(RootModel[CardPayments | InvoicePayments]):
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from domain.shop.type import CollectionUrl, FieldName, MediaType
+from integration.catalog_index.model import CollectionUrl
+
 
 class CatalogIndex(BaseModel):
     """The catalog's collection in the index, at its address."""
@@ -116,7 +114,7 @@ class CatalogIndex(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        strict=False,
+        strict=True,
         validate_default=True,
         revalidate_instances="never",
     )
@@ -126,7 +124,6 @@ class CatalogIndex(BaseModel):
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self.url.root,
-            headers=((FieldName.CONTENT_TYPE, MediaType.JSON),),
-            limits=httpx.Limits(max_keepalive_connections=0),
+            headers=(("Content-Type", "application/json"),),
         )
 ```

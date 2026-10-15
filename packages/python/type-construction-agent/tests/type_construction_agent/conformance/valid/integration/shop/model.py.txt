@@ -1,0 +1,29 @@
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, RootModel
+
+from domain.shop.type import Sku
+
+
+class Effort(RootModel[Literal["low", "high"]]):
+    """A library's vocabulary as an owned scalar's root."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+
+
+class Unbounded(StrEnum):
+    """No bound of a kind."""
+
+    UNBOUNDED = "unbounded"
+
+    @property
+    def bound(self) -> None:
+        return None
+
+
+class ChargeReply(BaseModel):
+    """What the provider says of a charge."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, validate_default=True, revalidate_instances="never", from_attributes=True)
+    sku: Sku

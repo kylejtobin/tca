@@ -26,18 +26,17 @@ from type_construction.registrar.domain.registration.type import (
     Amount,
     Currency,
     ExpiryDate,
-    Label,
-    Labels,
+    Fqdn,
+    Invariant,
     RefusalReason,
     RegistrantId,
     RegistrationId,
+    StatedRefusal,
     Term,
-    TopLevelDomain,
     UnlistedRefusal,
 )
 from type_construction.registrar.domain.registration.value import (
     Cost,
-    DomainName,
     Grant,
     Holding,
     Quote,
@@ -48,7 +47,7 @@ URL = "https://registrar.example"
 KEY = "secret-key-value"
 REQUEST = RegistrationRequest(
     registrant=RegistrantId("acct_42"),
-    name=DomainName(labels=Labels((Label("example"),)), tld=TopLevelDomain("com")),
+    name=Fqdn("example.com"),
     term=Term(2),
 )
 OFFER = Offer(
@@ -197,3 +196,25 @@ async def test_the_crossings_run_in_one_loop(
     answering(monkeypatch, '{"id": "reg_9f1c", "expires": "2028-03-01"}')
     outcome = await register(config, Offer.model_validate(availability.root))
     assert type(outcome.root) is RegisteredName
+
+
+def test_a_name_is_its_written_form_and_only_a_writable_one() -> None:
+    assert Fqdn("www.example.com").root == "www.example.com"
+    for written in ("", "example", "-bad.com", "example.c", "a..b.com", "Example.com"):
+        with pytest.raises(ValidationError):
+            Fqdn(written)
+    longest = ".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 57, "com"))
+    assert len(Fqdn(longest).root) == 253
+    with pytest.raises(ValidationError, match="at most 253 characters"):
+        Fqdn(".".join(("a" * 63, "b" * 63, "c" * 63, "d" * 57, "e", "com")))
+
+
+def test_an_unlisted_refusal_is_one_this_program_has_no_word_for() -> None:
+    assert StatedRefusal.model_validate_json('"object_exists"').root is RefusalReason.OBJECT_EXISTS
+    assert StatedRefusal.model_validate_json('"introduced_later"').root == UnlistedRefusal(
+        "introduced_later"
+    )
+    with pytest.raises(ValidationError, match=Invariant.UNLISTED_REFUSAL):
+        UnlistedRefusal("object_exists")
+    with pytest.raises(ValidationError):
+        StatedRefusal.model_validate_json('""')

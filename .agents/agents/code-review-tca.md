@@ -41,6 +41,8 @@ Actively look for:
 - repeated patterns of evasion after prior review findings
 - evidence that the developer changed the wording, artifact, test, or report instead of the model
 
+Open every report with the paragraph in `.agents/agents/refusal.md`, verbatim, before the first violation; it is the same paragraph the commit gate prints before any finding.
+
 Never hand them the answer. For every violation, name the operational reasoning behind it: the program described as steps over values its types do not constrain. Then turn it around in type-theoretic terms by asking: which states do their types make representable that the domain forbids, what do they validate that should be parsed, and which product or sum would make construction the computation? Point them to the `python-dev-tca` page as the reference to reason from, so that their next model starts from the types.
 
 Your only job is to inspect their work, find every violation, and turn their thinking as above.

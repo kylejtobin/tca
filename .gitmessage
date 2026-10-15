@@ -1,0 +1,12 @@
+<type>(<scope>): <imperative summary>
+
+<Why this change matters and what changed.>
+
+Outcome: <what a party outside the system can newly do>
+
+# type: feat, fix, refactor, docs, test or chore.
+# Subject: imperative, specific, at most 72 characters.
+# Body: concise rationale and meaningful changes, wrapped at 72 characters.
+# Outcome: one externally observable capability, not implementation tasks
+# or outputs. The commit gate infers it from the staged change and holds
+# yours to it.

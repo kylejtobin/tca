@@ -1,0 +1,18 @@
+from pydantic import BaseModel, ConfigDict
+from pydantic_ai import CancellationToken
+
+from domain.shop.order import Charge
+from integration.shop.model import ChargeReply
+from integration.shop.provider import Shop
+
+
+class ChargeInterpreter(BaseModel):
+    """The one place an order is charged."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+    action: Charge
+    provider: Shop
+
+    async def interpret(self, *, cancellation_token: CancellationToken | None = None) -> ChargeReply:
+        async with self.provider.client as client:
+            return ChargeReply.model_validate_json((await client.post("/charges", content=self.action.model_dump_json())).content)

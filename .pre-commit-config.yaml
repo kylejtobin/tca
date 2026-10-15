@@ -1,3 +1,6 @@
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -31,11 +34,13 @@ repos:
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix --force-exclude
+        exclude: ^\.agents/skills/
         language: system
         types: [python]
       - id: ruff-format
         name: ruff format
         entry: uv run ruff format --force-exclude
+        exclude: ^\.agents/skills/
         language: system
         types: [python]
       - id: basedpyright
@@ -68,3 +73,12 @@ repos:
         language: system
         files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: outcome-gate
+        name: outcome gate
+        entry: scripts/outcome-gate
+        language: script
+        stages: [commit-msg]
+        always_run: true

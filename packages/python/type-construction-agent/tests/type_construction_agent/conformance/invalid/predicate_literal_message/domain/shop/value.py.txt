@@ -1,0 +1,16 @@
+# expect: CATCH CONDITIONAL PREDICATE
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, RootModel, model_validator
+
+
+class Thing(RootModel[tuple[int, ...]]):
+    """A thing."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        if not len(self.root):
+            raise ValueError("a literal is not an invariant the domain names")
+        return self

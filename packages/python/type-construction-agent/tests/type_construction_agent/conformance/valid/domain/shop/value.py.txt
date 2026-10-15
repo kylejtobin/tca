@@ -1,0 +1,29 @@
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+
+from domain.shop.type import Invariant, Sku
+
+
+class Line(BaseModel):
+    """A product on an order."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, validate_default=True, revalidate_instances="never", from_attributes=True)
+    sku: Sku
+
+
+class Lines(RootModel[tuple[Line, ...]]):
+    """The lines of an order: at least one, each product once."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+    root: tuple[Line, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def each_product_once(self) -> Self:
+        if not len({line.sku for line in self.root if line.sku.root}) == len(self.root):
+            raise ValueError(Invariant.EACH_PRODUCT_ONCE)
+        return self
+
+    @property
+    def count(self) -> int:
+        return sum(1 for _ in self.root)

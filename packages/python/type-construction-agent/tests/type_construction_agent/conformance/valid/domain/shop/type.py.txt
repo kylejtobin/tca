@@ -1,0 +1,37 @@
+"""Scalars; a docstring may mention isinstance(x), Any, None and dict without being code."""
+from enum import StrEnum
+from typing import Annotated
+
+from pydantic import ConfigDict, Field, RootModel
+
+
+class Invariant(StrEnum):
+    """A rule of the shop that construction enforces."""
+
+    EACH_PRODUCT_ONCE = "a product is ordered once"
+
+
+class Sku(RootModel[str]):
+    """The identity of a product."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+    root: str = Field(min_length=1)
+
+
+class Reason(StrEnum):
+    """Why a charge was declined."""
+
+    EXPIRED = "expired"
+
+
+class Unlisted(RootModel[str]):
+    """A reason this program has no word for."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")
+    root: str = Field(min_length=1)
+
+
+class StatedReason(RootModel[Annotated[Reason | Unlisted, Field(union_mode="left_to_right")]]):
+    """A reason given, known or not."""
+
+    model_config = ConfigDict(frozen=True, strict=True, validate_default=True, revalidate_instances="never")

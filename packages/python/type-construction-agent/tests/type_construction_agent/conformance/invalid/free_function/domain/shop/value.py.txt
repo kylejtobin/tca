@@ -1,0 +1,6 @@
+# expect: FREE-FUNCTION
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+def price() -> int:
+    return 1

@@ -19,11 +19,15 @@ classifiers = [
 dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
-    "pydantic-ai-slim[openai,anthropic,bedrock,spec]>=2.54,<3",
+    "pydantic-ai-slim[openai,anthropic,bedrock,spec,cli]>=2.54,<3",
     "pydantic-ai-harness[skills]>=0.54",
+    "logfire>=4",
 ]
 import-names = ["type_construction.agent"]
 import-namespaces = ["type_construction"]
+
+[project.scripts]
+tca-agent = "type_construction.agent.main:main"
 
 [project.urls]
 Homepage = "https://github.com/kylejtobin/tca"

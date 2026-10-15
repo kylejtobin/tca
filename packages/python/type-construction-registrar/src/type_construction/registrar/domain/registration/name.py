@@ -1,9 +1,8 @@
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from type_construction.registrar.domain.registration.type import Amount, RegistrantId, Term
+from type_construction.registrar.domain.registration.type import Amount, Fqdn, RegistrantId, Term
 from type_construction.registrar.domain.registration.value import (
     Cost,
-    DomainName,
     Grant,
     Holding,
     PremiumQuote,
@@ -24,7 +23,7 @@ class RegistrationRequest(BaseModel):
         revalidate_instances="never",
     )
     registrant: RegistrantId
-    name: DomainName
+    name: Fqdn
     term: Term
 
     @property

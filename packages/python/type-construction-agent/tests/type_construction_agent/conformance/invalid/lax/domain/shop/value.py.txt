@@ -1,0 +1,9 @@
+# expect: LAX
+from pydantic import BaseModel, ConfigDict, RootModel
+
+
+class Thing(BaseModel):
+    """A thing."""
+
+    model_config = ConfigDict(frozen=True, strict=False)
+    sku: Thing

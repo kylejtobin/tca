@@ -19,10 +19,14 @@ flowchart LR
         DiscountAddress["DiscountAddress: customer"]
         DiscountOffer["DiscountOffer: percent"]
         CardCharge["CardCharge: amt · cur · src · ref"]
-        ChargeApproved["ChargeApproved: id"]
+        ChargeApproved["ChargeApproved: id · receipt"]
         ChargeDeclined["ChargeDeclined: decline_codes"]
         ChargeFailed["ChargeFailed: error"]
         ChargeReply["ChargeReply"]
+    end
+
+    subgraph s2f["2 format type"]
+        Receipt["Receipt: ref · amount · currency"]
     end
 
     subgraph s2p["4 provider"]
@@ -104,6 +108,7 @@ flowchart LR
     ChargeInterpreter ==>|returns| ChargeAttempt
     PricedOrder -.->|constructs| CardCharge
     PricedOrder -->|held by| ChargeAttempt
+    Receipt -->|held by| ChargeApproved
     ChargeApproved -->|held by| ChargeReply
     ChargeDeclined -->|held by| ChargeReply
     ChargeFailed -->|held by| ChargeReply
@@ -148,7 +153,7 @@ flowchart LR
         IndexQuery["IndexQuery: query · filter · score_threshold · group_size · limit"]
         PointHit["PointHit: id · score · payload"]
         Hits["Hits"]
-        PointGroup["PointGroup: hits · id"]
+        PointGroup["PointGroup: hits · id, every hit in its aisle"]
         PointGroups["PointGroups"]
         GroupResult["GroupResult: groups"]
         IndexGroups["IndexGroups: result · status · time"]
@@ -162,10 +167,12 @@ flowchart LR
 
     subgraph s3["3 value object · collection"]
         Line["Line: sku · unit_price · quantity"]
-        Recommending["Recommending: closeness · per_aisle · limit"]
-        Match["Match: sku · category · similarity"]
-        RelatedMatches["RelatedMatches: one or more"]
-        NoMatches["NoMatches: none"]
+        Recommending["Recommending: closeness · per_aisle · aisles"]
+        AisleMatch["AisleMatch: sku · similarity"]
+        AisleMatches["AisleMatches: one or more, each product once"]
+        Aisle["Aisle: category · matches"]
+        Aisles["Aisles: one or more, each aisle once"]
+        NoAisles["NoAisles: none"]
     end
 
     subgraph s5c["5 concept model"]
@@ -174,8 +181,8 @@ flowchart LR
 
     subgraph s5u["5 union"]
         PaidOrder["PaidOrder: order · payment"]
-        Recommended["Recommended: matches"]
-        NothingRelated["NothingRelated: matches"]
+        Recommended["Recommended: aisles"]
+        NothingRelated["NothingRelated: aisles"]
         Unavailable["Unavailable: reason"]
         Recommendation["Recommendation"]
     end
@@ -212,14 +219,17 @@ flowchart LR
     IndexFailure -->|held by| IndexReply
     PaidOrder -->|held by| RelatedSearch
     IndexReply -->|held by| RelatedSearch
-    PointHit -.->|constructs| Match
-    Match -->|held by| RelatedMatches
-    Match -->|held by| NoMatches
+    PointHit -.->|constructs| AisleMatch
+    AisleMatch -->|held by| AisleMatches
+    PointGroup -.->|constructs| Aisle
+    AisleMatches -->|held by| Aisle
+    Aisle -->|held by| Aisles
+    Aisle -->|held by| NoAisles
     IndexGroups -.->|constructs| Recommended
     IndexGroups -.->|constructs| NothingRelated
     IndexFailure -.->|constructs| Unavailable
-    RelatedMatches -->|held by| Recommended
-    NoMatches -->|held by| NothingRelated
+    Aisles -->|held by| Recommended
+    NoAisles -->|held by| NothingRelated
     Recommended -->|held by| Recommendation
     NothingRelated -->|held by| Recommendation
     Unavailable -->|held by| Recommendation
