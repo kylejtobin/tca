@@ -29,7 +29,7 @@ The agent is told to build, in a workspace made for the run. The program it leav
 
 ## Scores
 
-The program scores are the headline: they say whether what the agent built is the reference's domain. The framing score says whether it saw the same crossings. The trace scores are diagnostics of how it worked, and where a run's steps have typed outputs, they read those outputs, not prose.
+The program scores say whether what the agent built is the reference's domain; the framing score whether it saw the same crossings; the trace scores whether it worked the loop as AGENTS.md states it, the whole list questioned after every file and reprinted whenever it changed. Where a run's steps have typed outputs, the trace scores read those outputs, not prose.
 
 | Score | By | Reads |
 |---|---|---|
