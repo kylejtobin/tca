@@ -72,6 +72,23 @@ class DatabasePath(RootModel[str]):
     root: str = Field(min_length=1)
 
 
+class ContextShare(RootModel[float]):
+    """The share of the model's context window a conversation may fill before the library
+    compacts it, as the library's tiered compaction takes its target: above it, the oldest tool
+    results are cleared first, and the older messages summarized by the same model only if that
+    is not enough; the window is the model's own, which the library resolves from the model a
+    request goes to. Seven tenths when the deployment names nothing, leaving the rest for the
+    model's answer and the next tool results."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: float = Field(default=0.7, gt=0, le=1)
+
+
 class WorkspaceResource(StrEnum):
     """What a workspace declares at its root, by the name the agent reaches it under."""
 

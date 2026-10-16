@@ -5,7 +5,8 @@ from type_construction.agent.integration.pydantic_ai.provider import AgentProvid
 
 class AgentConfig(BaseSettings):
     """What the deployment sets: the agent's provider, its model, its workspace with its boundary,
-    and the history its runs are recorded in, named under `TCA_` in its environment or in a
+    the history its runs are recorded in, and the share of the model's window a conversation
+    may fill before it is compacted, named under `TCA_` in its environment or in a
     `.env` file in its working directory, the environment winning. From the file, as from the
     environment, only the agent's own settings are read; a key another system owns is left to
     it."""

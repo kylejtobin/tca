@@ -17,7 +17,7 @@ A prompt is the words a person gives: an `Opening`, which starts an exchange, or
 
 ## Configuring it
 
-A deployment names three things: the model; the workspace the agent models in, with the boundary it runs in; and the SQLite file its runs are recorded in, which defaults to `tca-agent.sqlite` where the program runs. The workspace and the history are providers whose one derivation is a library capability, each reached a second way by a provider constructed from it, the workspace as a shell and the history as a store, and the agent's provider holds all three and derives the one capability the agent is built with. The agent has no other setting: Pydantic AI's own defaults govern a run, its request limit, its timeouts and how hard the model thinks, and the named provider reads its credentials and endpoint from its own variables. The agent's settings are read under `TCA_` from the process environment or from a `.env` file in its working directory, the environment winning; a key another system owns in that file is left to it, and a setting the agent does not have is refused.
+A deployment names three things: the model; the workspace the agent models in, with the boundary it runs in; and the SQLite file its runs are recorded in, which defaults to `tca-agent.sqlite` where the program runs. It may also set the share of the model's context window a conversation fills before it is compacted, seven tenths unless named. The workspace and the history are providers whose one derivation is a library capability, each reached a second way by a provider constructed from it, the workspace as a shell and the history as a store, and the agent's provider holds all three and derives the one capability the agent is built with. Beyond these the agent has no setting of its own: Pydantic AI's own defaults govern a run, its request limit, its timeouts and how hard the model thinks, and the named provider reads its credentials and endpoint from its own variables. The agent's settings are read under `TCA_` from the process environment or from a `.env` file in its working directory, the environment winning; a key another system owns in that file is left to it, and a setting the agent does not have is refused.
 
 The workspace is not the directory the program runs in. It holds the skills under `.agents/skills`, its check as an executable named `check` at its root, and the work, and nothing else: the agent reads and runs whatever is in it, and what it reads enters the model's context and its traces, so a key never lives there. Its kind is the boundary, as Pydantic AI draws it: `local` is the library's local workspace, which isolates nothing; `sandbox` is that workspace in the library's bubblewrap sandbox, where every command sees the host read-only, has no network, and writes only inside the directory. The sandbox needs `bwrap` on the machine. The check must exit zero only when the work is clean, and in a sandbox must write nothing outside the directory, so a linter's cache goes inside it or nowhere. A workspace that does not exist is refused on the first run with Pydantic AI's own `WorkspaceUnavailableError`.
 
@@ -27,6 +27,7 @@ The workspace is not the directory the program runs in. It holds the skills unde
 | `TCA_AGENT__WORKSPACE__KIND` | The workspace's boundary: `local` or `sandbox`. |
 | `TCA_AGENT__WORKSPACE__PATH` | The directory the agent models in. |
 | `TCA_AGENT__HISTORY__DATABASE` | The SQLite file the agent's runs are recorded in; `tca-agent.sqlite` when unset. |
+| `TCA_AGENT__COMPACTION` | The share of the model's context window a conversation may fill before Pydantic AI compacts it, above zero and at most one; `0.7` when unset. |
 | the provider's own | `ANTHROPIC_API_KEY`; `OPENAI_API_KEY`, and `OPENAI_BASE_URL` for a model an OpenAI-compatible endpoint serves, as `openai-chat:@cf/zai-org/glm-5.3-flash` at Workers AI; `AZURE_OPENAI_ENDPOINT`, `OPENAI_API_VERSION`, `AZURE_OPENAI_API_KEY`; `AWS_DEFAULT_REGION` with an AWS access key, session or bearer token. |
 
 A model Pydantic AI does not know, or one whose credentials are missing, is refused on the first run with Pydantic AI's own `UserError`, saying what to set.
@@ -58,6 +59,10 @@ first = run_sync(config, Opening(text=PromptText("Model a coin toss.")))
 second = follow_up_sync(config, FollowUp(text=PromptText("Now a die."), after=first.run))
 print(second.answer.text.root)
 ```
+
+## Keeping a long conversation within the window
+
+A conversation never dies on the model's context limit. Before each request, Pydantic AI Harness's tiered compaction measures the history against the window of the model the request goes to, resolved from the model itself, and when it fills more than the named share, seven tenths unless the deployment says otherwise, compacts it down to that share: the oldest tool results are cleared first, which costs nothing and reclaims what usually fills a modeling run, and only if that is not enough are the older messages summarized by the same model behind a recent tail. What is compacted stays compacted in the run's history and in the snapshot the file records, so a follow-up continues from the compacted conversation. Nothing of this program is in the way: the tiers, the measuring and the summary are the library's.
 
 ## Talking to it at a terminal
 

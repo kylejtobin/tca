@@ -33,6 +33,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
+    TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -40,6 +41,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.workspaces import WorkspaceUnavailableError
 from pydantic_ai_harness.step_persistence import SqliteStepStore, continue_run
@@ -777,6 +779,44 @@ def test_a_new_process_continues_a_conversation_from_the_file_and_the_reply_s_ru
     runs = asyncio.run(SqliteStepStore(database=database).list_runs())
     assert [r.run_id for r in runs] == [first.run.root, continued.stdout.strip()]
     assert len({r.conversation_id for r in runs}) == 1
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_long_conversation_is_compacted_within_the_model_s_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def recall(topic: str) -> str:
+        """Everything known about a topic, at length."""
+        return f"{topic} " * 600
+
+    made: list[str] = []
+    seen: list[list[ModelMessage]] = []
+    summarized: list[int] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if not info.output_tools:
+            summarized.append(len(messages))
+            return ModelResponse(parts=[TextPart(content="What was said so far, in short.")])
+        seen.append(messages)
+        if len(made) < 12:
+            made.append(f"topic{len(made)}")
+            return ModelResponse(parts=[ToolCallPart(tool_name="recall", args={"topic": made[-1]})])
+        return answered("ok")
+
+    config = scripted(monkeypatch, FunctionModel(model, profile=ModelProfile(context_window=4_000)))
+    assert config.agent.compaction.root == 0.7
+    reply = run_sync(config, COIN, toolsets=[FunctionToolset([recall])])
+    assert reply.answer == OK
+    assert len(made) == 12
+    returned = [
+        str(part.content)
+        for message in seen[-1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "recall"
+    ]
+    assert "[tool result cleared]" in returned
+    assert sum(len(content) > 1_000 for content in returned) < 12
 
 
 @pytest.mark.usefixtures("bare_environment")

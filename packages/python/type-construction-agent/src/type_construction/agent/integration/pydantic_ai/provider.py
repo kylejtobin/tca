@@ -11,11 +11,13 @@ from pydantic_ai.workspaces import LocalWorkspaceBackend
 from pydantic_ai.workspaces import Workspace as LibraryWorkspace
 from pydantic_ai_harness import BubblewrapSandbox, FileSystem, Shell, Skills
 from pydantic_ai_harness.bubblewrap_sandbox import BubblewrapWorkspace
+from pydantic_ai_harness.compaction import ClearToolResults, SummarizingCompaction, TieredCompaction
 from pydantic_ai_harness.step_persistence import SqliteStepStore, StepPersistence
 
 from type_construction.agent.integration.pydantic_ai.model import (
     AgentName,
     AgentTool,
+    ContextShare,
     DatabasePath,
     LocalKind,
     ModelName,
@@ -193,12 +195,14 @@ class History(BaseModel):
 
 class AgentProvider(BaseModel):
     """Pydantic AI's provider of the agent: the model, the workspace and the history the
-    deployment names, and nothing else, since the library reads the rest for itself. Its one
-    derivation is everything the agent is but its model and its callbacks, as one of the
-    library's capabilities: the workspace as the run's boundary, the library's own file and
-    shell tools inside it, its skills from the workspace's `.agents/skills`, its runs recorded in
-    the history, the check's result shown to the model as its type, the packaged prompt as its
-    instructions, and its runs traced. The agent itself is the composition root's, built from
+    deployment names, the share of the model's window a conversation may fill, and nothing
+    else, since the library reads the rest for itself. Its one derivation is everything the
+    agent is but its model and its callbacks, as one of the library's capabilities: the
+    workspace as the run's boundary, the library's own file and shell tools inside it, its
+    skills from the workspace's `.agents/skills`, its runs recorded in the history, its
+    conversation compacted in tiers when it fills that share of the window, the check's result
+    shown to the model as its type, the packaged prompt as its instructions, and its runs
+    traced. The agent itself is the composition root's, built from
     the model's name, the answer's type, the root's check callback and this capability."""
 
     model_config = ConfigDict(
@@ -211,6 +215,7 @@ class AgentProvider(BaseModel):
     model: ModelName
     workspace: Workspace
     history: History = History(database=DatabasePath("tca-agent.sqlite"))
+    compaction: ContextShare = ContextShare()
 
     @property
     def client(self) -> AbstractCapability[None]:
@@ -221,6 +226,13 @@ class AgentProvider(BaseModel):
                 FileSystem(),
                 Shell(),
                 self.history.client,
+                TieredCompaction(
+                    tiers=(
+                        ClearToolResults(max_fraction=self.compaction.root),
+                        SummarizingCompaction(max_fraction=self.compaction.root),
+                    ),
+                    target_fraction=self.compaction.root,
+                ),
                 IncludeToolReturnSchemas((AgentTool.CHECK,)),
                 Instrumentation(),
                 Capability(instructions=AgentName.TCA_AGENT.prompt.read_text()),
