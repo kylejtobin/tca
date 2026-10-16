@@ -2,7 +2,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel
+
+from type_construction.agent.domain.agent.type import Failure, Output, Success
 
 
 class AgentName(StrEnum):
@@ -68,6 +70,35 @@ class DatabasePath(RootModel[str]):
         revalidate_instances="never",
     )
     root: str = Field(min_length=1)
+
+
+class WorkspaceResource(StrEnum):
+    """What a workspace declares at its root, by the name the agent reaches it under."""
+
+    CHECK = "./check"
+
+
+class AgentTool(StrEnum):
+    """The one name a tool of this program goes by to the model and to the library."""
+
+    CHECK = "check"
+
+
+class CheckReply(BaseModel):
+    """What the library's workspace hands back from the check: the exit, and what it printed on
+    each stream."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    exit: Success | Failure = Field(alias="exit_code")
+    out: Output = Field(alias="stdout")
+    err: Output = Field(alias="stderr")
 
 
 class ModelName(RootModel[str]):

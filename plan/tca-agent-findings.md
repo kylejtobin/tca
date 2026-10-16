@@ -17,6 +17,7 @@ What building the TCA agent with Pydantic AI showed about the `python-dev-tca` s
 | The JSON-only entry rule was false for config and for the agent's output | Who authors the contract decides what validates it | Data is validated once, by the type that stands for its contract, in its representation's mode; a foreign record precedes the domain fact when another system authors the contract |
 | The regex checker missed multi-line signatures, flagged docstrings, and could not admit native controls | Mechanical rules follow the specification, not lines of text | An AST checker by zone, with one valid tree and an adversarial fixture per label, each held to its exact labels |
 | Moving image tags and an archive-installed tool | A reproducible build fixes every input by content | Images pinned by version and digest, the lockfile checked, nothing installed from an archive |
+| The agent's provider could not derive the agent: its tools are interpreters, and a provider precedes interpreters | A library that calls back into the program is composed by the interpreter that acquires it, from the providers' clients and the interpreters it calls back; a system reached two ways is two providers from one deployment statement | The agent's provider derives one capability, everything the agent is but its model and its tools; the answering and chat interpreters compose the agent with the check interpreter's `interpret` as its tool and acquire it; the workspace reached as a shell is the check's provider, constructed from the workspace the deployment named |
 
 ## Held
 

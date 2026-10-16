@@ -6,47 +6,75 @@ from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
 from type_construction.agent.config import AgentConfig
+from type_construction.agent.domain.agent.check import Check, CheckResult, Clean, Failed
 from type_construction.agent.domain.agent.prompt import Answer, Prompt
-from type_construction.agent.domain.agent.type import AnswerText, PromptText
+from type_construction.agent.domain.agent.type import (
+    AnswerText,
+    Failure,
+    Output,
+    PromptText,
+    Success,
+)
 from type_construction.agent.integration.pydantic_ai.interpreter import (
     AnswerInterpreter,
     ChatInterpreter,
+    CheckInterpreter,
 )
 from type_construction.agent.integration.pydantic_ai.model import (
     AgentName,
+    AgentTool,
+    CheckReply,
     DatabasePath,
     LocalKind,
     ModelName,
     SandboxKind,
     WorkspacePath,
+    WorkspaceResource,
 )
 from type_construction.agent.integration.pydantic_ai.provider import (
     AgentProvider,
     History,
     Local,
+    LocalShell,
     Sandboxed,
+    SandboxedShell,
     Workspace,
+    WorkspaceShell,
 )
 
 __all__ = (
     "AgentConfig",
     "AgentName",
     "AgentProvider",
+    "AgentTool",
     "Answer",
     "AnswerInterpreter",
     "AnswerText",
     "ChatInterpreter",
+    "Check",
+    "CheckInterpreter",
+    "CheckReply",
+    "CheckResult",
+    "Clean",
     "DatabasePath",
+    "Failed",
+    "Failure",
     "History",
     "Local",
     "LocalKind",
+    "LocalShell",
     "ModelName",
+    "Output",
     "Prompt",
     "PromptText",
     "SandboxKind",
     "Sandboxed",
+    "SandboxedShell",
+    "Success",
     "Workspace",
     "WorkspacePath",
+    "WorkspaceResource",
+    "WorkspaceShell",
     "answer",
     "chat",
     "run",

@@ -51,7 +51,10 @@ from type_construction.agent import (
     Answer,
     AnswerInterpreter,
     AnswerText,
+    CheckResult,
+    Clean,
     DatabasePath,
+    Failed,
     History,
     Local,
     LocalKind,
@@ -556,18 +559,20 @@ def test_the_agent_reads_edits_and_writes_the_files_in_its_workspace(
     assert not Path("order.py").exists()
 
 
-def test_the_agent_runs_the_check_its_workspace_declares(
+def test_the_agent_checks_its_work_and_reads_what_the_check_concluded(
     monkeypatch: pytest.MonkeyPatch, bare_environment: Path
 ) -> None:
     checked(bare_environment, "echo 'coin.py: a step'; echo 'and a warning' >&2; exit 3")
     calls = (
-        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
-        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
+        ToolCallPart(tool_name="check", args={}),
+        ToolCallPart(tool_name="check", args={}),
     )
     seen: list[ToolReturnPart | RetryPromptPart] = []
+    shown: list[str] = []
 
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         seen[:] = returns(messages)
+        shown[:] = [tool.description or "" for tool in info.function_tools if tool.name == "check"]
         if len(seen) == 1:
             checked(bare_environment, "echo 'All checks passed!'; exit 0")
         if len(seen) == len(calls):
@@ -575,14 +580,16 @@ def test_the_agent_runs_the_check_its_workspace_declares(
         return ModelResponse(parts=[calls[len(seen)]])
 
     assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    assert "Clean" in shown[0] and "Failed" in shown[0]
     failed, clean = seen
     assert isinstance(failed, ToolReturnPart)
-    assert "coin.py: a step" in str(failed.content)
-    assert "and a warning" in str(failed.content)
-    assert "exit code: 3" in str(failed.content)
+    assert failed.content == CheckResult(
+        Failed.model_validate({"exit": 3, "out": "coin.py: a step\n", "err": "and a warning\n"})
+    )
     assert isinstance(clean, ToolReturnPart)
-    assert "All checks passed!" in str(clean.content)
-    assert "exit code" not in str(clean.content)
+    assert clean.content == CheckResult(
+        Clean.model_validate({"exit": 0, "out": "All checks passed!\n", "err": ""})
+    )
 
 
 @pytest.mark.skipif(shutil.which("bwrap") is None, reason="the library's sandbox needs bwrap")
@@ -597,7 +604,7 @@ def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
     calls = (
         ToolCallPart(tool_name="run_command", args={"command": "touch ~/escaped-by-shell"}),
         ToolCallPart(tool_name="run_command", args={"command": "touch kept"}),
-        ToolCallPart(tool_name="run_command", args={"command": "./check"}),
+        ToolCallPart(tool_name="check", args={}),
     )
     seen: list[ToolReturnPart | RetryPromptPart] = []
 
@@ -612,8 +619,9 @@ def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
     assert "exit code" in str(escaped.content)
     assert isinstance(kept, ToolReturnPart)
     assert isinstance(checked_inside, ToolReturnPart)
-    assert "Read-only file system" in str(checked_inside.content)
-    assert "exit code" in str(checked_inside.content)
+    assert isinstance(checked_inside.content, CheckResult)
+    assert isinstance(checked_inside.content.root, Failed)
+    assert "Read-only file system" in checked_inside.content.root.err.root
     assert (bare_environment / "kept").exists()
     assert not (home / "escaped-by-shell").exists()
     assert not (home / "escaped-by-check").exists()
@@ -743,13 +751,17 @@ def test_a_caller_sees_a_run_s_whole_result(monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.mark.usefixtures("bare_environment")
 def test_a_caller_watches_each_tool_call_as_it_happens(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[AgentStreamEvent] = []
-    model = TestModel(custom_output_args=OK.model_dump_json(), call_tools=["list_directory"])
+    model = TestModel(custom_output_args=OK.model_dump_json(), call_tools=["check"])
     config = scripted(monkeypatch, model)
     result = asyncio.run(answering(config.agent).interpret(event_stream_handler=watching(events)))
     called = [event for event in events if isinstance(event, FunctionToolCallEvent)]
     returned = [event for event in events if isinstance(event, FunctionToolResultEvent)]
-    assert [event.part.tool_name for event in called] == ["list_directory"]
-    assert [event.part.tool_name for event in returned] == ["list_directory"]
+    assert [event.part.tool_name for event in called] == ["check"]
+    assert [event.part.tool_name for event in returned] == ["check"]
+    assert isinstance(returned[0].part, ToolReturnPart)
+    assert returned[0].part.content == CheckResult(
+        Clean.model_validate({"exit": 0, "out": "", "err": ""})
+    )
     assert result.output == OK
 
 
