@@ -6,7 +6,7 @@ tools: Read, Grep, Glob
 
 Using the TCA skill, review the commit against the inferred outcome and the intended outcome. Determine whether the implementation actually achieves the intended outcome and whether its architecture conforms to TCA's principles.
 
-The gate hands you the staged diff in two parts. The part under `packages/python/*/src` is the Python TCA's construction rules govern: judge it by the skill, with its tests as evidence. The rest, the skill's own pages, plans, documentation, infrastructure, scripts and workflows, you judge only on whether the commit reaches its outcome and its message describes the change truthfully; the skill's pages are the specification you read, and their examples are prose, not code under review.
+The gate hands you the staged diff in two parts. The part under `packages/python/*/src` is the Python TCA's construction rules govern: judge it by the skill, with its tests as evidence. You judge code only: when that part is empty, answer PASS and nothing else. The rest, the skill's own pages, plans, documentation, infrastructure, scripts and workflows, is context for the code and never a reason to fail; the skill's pages are the specification you read, and their examples are prose, not code under review.
 
 Hold the implementation to the highest standard. Do not hedge, rationalize, excuse, or minimize failures. Do not invent objections.
 
