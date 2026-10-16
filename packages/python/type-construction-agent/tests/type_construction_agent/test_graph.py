@@ -31,7 +31,7 @@ from type_construction.agent import (
     PromptText,
     Reply,
     RunId,
-    run,
+    answer,
 )
 
 MODEL = "TCA_AGENT__MODEL"
@@ -64,8 +64,8 @@ def counting_graph() -> Graph[Controls, AgentConfig, Opening, WordCount]:
     )
 
     @g.step
-    async def answer(ctx: StepContext[Controls, AgentConfig, Opening]) -> Reply:
-        return await run(
+    async def reply(ctx: StepContext[Controls, AgentConfig, Opening]) -> Reply:
+        return await answer(
             ctx.deps, ctx.inputs, usage=ctx.state.usage, cancellation_token=ctx.state.token
         )
 
@@ -73,7 +73,7 @@ def counting_graph() -> Graph[Controls, AgentConfig, Opening, WordCount]:
     async def count(ctx: StepContext[Controls, AgentConfig, Reply]) -> WordCount:
         return WordCount(len(ctx.inputs.answer.text.root.split()))
 
-    g.add(g.edge_from(g.start_node).to(answer), g.edge_from(answer).to(count))
+    g.add(g.edge_from(g.start_node).to(reply), g.edge_from(reply).to(count))
     g.add(g.edge_from(count).to(g.end_node))
     return g.build()
 
@@ -110,8 +110,8 @@ def answering() -> TestModel:
 
 def test_the_graph_draws_the_agent_as_one_step() -> None:
     drawn = counting_graph().render(direction="LR")
-    assert "[*] --> answer" in drawn
-    assert "answer --> count" in drawn
+    assert "[*] --> reply" in drawn
+    assert "reply --> count" in drawn
     assert "count --> [*]" in drawn
 
 

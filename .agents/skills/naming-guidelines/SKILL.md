@@ -35,4 +35,5 @@ A name states what a thing is. Not what happens to it, not when it occurs, not h
 
 - Say the name to someone who knows the domain and not the code. Their first guess must be right. A wrong first guess is a finding; rename at once, before the commit, and reprint the noun list.
 - Read the public call aloud. `follow_up_sync(config, FollowUp(text=..., after=reply.run))` says what it does. If a call needs a comment, a name in it is wrong.
+- Draw the line between the caller's vocabulary and the library's, and keep every public name on one side of it. A caller of the agent holds a conversation, so `answer`, `follow_up` and `Reply` are theirs; the library performs runs, so `run` and `AgentRunResult` are the library's, and `instructions` is the library's word for the agent's standing text. A name that says conversation and hands back a run is wrong, whatever it returns.
 - Check the three vocabularies agree: the domain's word, the library's word where the type touches the library, and the construct's suffix. When they pull apart, the domain's word wins inside the domain and the library's word wins at the crossing.

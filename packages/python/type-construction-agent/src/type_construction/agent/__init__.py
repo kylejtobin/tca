@@ -7,7 +7,7 @@ from pydantic_ai.usage import RunUsage
 
 from type_construction.agent.config import AgentConfig
 from type_construction.agent.domain.agent.check import Check, CheckResult, Clean, Failed
-from type_construction.agent.domain.agent.prompt import Answer, FollowUp, Opening, Reply
+from type_construction.agent.domain.agent.exchange import Answer, FollowUp, Opening, Reply
 from type_construction.agent.domain.agent.type import (
     AnswerText,
     Failure,
@@ -88,16 +88,16 @@ __all__ = (
     "WorkspaceResource",
     "WorkspaceShell",
     "answer",
-    "answer_follow_up",
+    "answer_sync",
     "chat",
     "follow_up",
     "follow_up_sync",
     "run",
-    "run_sync",
+    "run_follow_up",
 )
 
 
-async def answer(
+async def run(
     config: AgentConfig,
     prompt: Opening,
     *,
@@ -110,7 +110,7 @@ async def answer(
     )
 
 
-async def run(
+async def answer(
     config: AgentConfig,
     prompt: Opening,
     *,
@@ -119,14 +119,14 @@ async def run(
     toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Reply:
     return AnsweredRun.model_validate(
-        await answer(
+        await run(
             config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
         ),
         from_attributes=True,
     ).reply
 
 
-def run_sync(
+def answer_sync(
     config: AgentConfig,
     prompt: Opening,
     *,
@@ -135,11 +135,13 @@ def run_sync(
     toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Reply:
     return asyncio.run(
-        run(config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets)
+        answer(
+            config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
+        )
     )
 
 
-async def answer_follow_up(
+async def run_follow_up(
     config: AgentConfig,
     prompt: FollowUp,
     *,
@@ -161,7 +163,7 @@ async def follow_up(
     toolsets: Sequence[AbstractToolset[None]] | None = None,
 ) -> Reply:
     return AnsweredRun.model_validate(
-        await answer_follow_up(
+        await run_follow_up(
             config, prompt, usage=usage, cancellation_token=cancellation_token, toolsets=toolsets
         ),
         from_attributes=True,

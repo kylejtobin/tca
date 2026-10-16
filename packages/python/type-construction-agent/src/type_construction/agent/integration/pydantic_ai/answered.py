@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from type_construction.agent.domain.agent.prompt import Answer, Reply
+from type_construction.agent.domain.agent.exchange import Answer, Reply
 from type_construction.agent.domain.agent.type import RunId
 
 

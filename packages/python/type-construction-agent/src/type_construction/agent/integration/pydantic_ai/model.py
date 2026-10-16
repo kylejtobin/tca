@@ -9,12 +9,12 @@ from type_construction.agent.domain.agent.type import Failure, Output, Success
 
 class AgentName(StrEnum):
     """The one name an agent goes by: to the library, in its spans, at the command line and in its
-    telemetry; the packaged prompt it is instructed by is kept under it."""
+    telemetry; the packaged instructions it is given are kept under it."""
 
     TCA_AGENT = "tca-agent"
 
     @property
-    def prompt(self) -> Path:
+    def instructions(self) -> Path:
         return (Path(__file__).parents[2] / "prompts" / "agents" / self.value).with_suffix(".md")
 
 

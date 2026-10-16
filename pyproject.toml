@@ -120,7 +120,7 @@ layers = ["config", "integration", "domain"]
 name = "The agent's domain files import those above them"
 type = "layers"
 containers = ["type_construction.agent.domain.agent"]
-layers = ["prompt", "type"]
+layers = ["exchange", "type"]
 
 [[tool.importlinter.contracts]]
 name = "The agent's integration files import those above them"

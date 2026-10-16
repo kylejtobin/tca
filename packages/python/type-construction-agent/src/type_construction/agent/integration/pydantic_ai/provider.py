@@ -201,7 +201,8 @@ class AgentProvider(BaseModel):
     workspace as the run's boundary, the library's own file and shell tools inside it, its
     skills from the workspace's `.agents/skills`, its runs recorded in the history, its
     conversation compacted in tiers when it fills that share of the window, the check's result
-    shown to the model as its type, the packaged prompt as its instructions, and its runs
+    shown to the model as its type, the packaged instructions as
+    its instructions, and its runs
     traced. The agent itself is the composition root's, built from
     the model's name, the answer's type, the root's check callback and this capability."""
 
@@ -235,6 +236,6 @@ class AgentProvider(BaseModel):
                 ),
                 IncludeToolReturnSchemas((AgentTool.CHECK,)),
                 Instrumentation(),
-                Capability(instructions=AgentName.TCA_AGENT.prompt.read_text()),
+                Capability(instructions=AgentName.TCA_AGENT.instructions.read_text()),
             )
         )

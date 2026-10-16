@@ -72,9 +72,9 @@ from type_construction.agent import (
     SandboxKind,
     Workspace,
     WorkspacePath,
+    answer,
+    answer_sync,
     follow_up_sync,
-    run,
-    run_sync,
 )
 
 MODEL = "TCA_AGENT__MODEL"
@@ -433,10 +433,10 @@ def test_a_model_the_library_cannot_build_is_refused_in_its_words(
     monkeypatch.setenv(MODEL, "anthropic:claude-opus-5-5")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(UserError, match="ANTHROPIC_API_KEY"):
-        run_sync(AgentConfig(), COIN)  # pyright: ignore[reportCallIssue]
+        answer_sync(AgentConfig(), COIN)  # pyright: ignore[reportCallIssue]
     monkeypatch.setenv(MODEL, "nonsense:x")
     with pytest.raises(UserError, match="Unknown model"):
-        run_sync(AgentConfig(), COIN)  # pyright: ignore[reportCallIssue]
+        answer_sync(AgentConfig(), COIN)  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -447,14 +447,14 @@ def test_the_library_constructs_the_answer_from_the_instructed_model(
         monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
     )
     with capture_run_messages() as messages:
-        reply = run_sync(config, COIN)
+        reply = answer_sync(config, COIN)
     assert isinstance(reply, Reply)
     assert reply.answer == OK
     assert reply.run.root
     request = messages[0]
     assert isinstance(request, ModelRequest)
     assert request.instructions is not None
-    assert request.instructions.startswith(AgentName.TCA_AGENT.prompt.read_text())
+    assert request.instructions.startswith(AgentName.TCA_AGENT.instructions.read_text())
     assert not request.instructions.startswith("---")
 
 
@@ -465,7 +465,7 @@ def test_an_answer_the_model_cannot_form_is_refused(monkeypatch: pytest.MonkeyPa
 
     config = scripted(monkeypatch, FunctionModel(empty))
     with pytest.raises(UnexpectedModelBehavior):
-        run_sync(config, COIN)
+        answer_sync(config, COIN)
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -497,11 +497,11 @@ def test_a_cancelled_token_stops_the_run_and_stays_cancelled(
 
     config = scripted(monkeypatch, FunctionModel(model))
     with pytest.raises(RunCancelled):
-        asyncio.run(run(config, COIN, cancellation_token=token))
+        asyncio.run(answer(config, COIN, cancellation_token=token))
     assert len(calls) == 1
     assert token.cancelled
     with pytest.raises(RunCancelled):
-        run_sync(config, COIN, cancellation_token=token)
+        answer_sync(config, COIN, cancellation_token=token)
     assert len(calls) == 1
 
 
@@ -528,7 +528,7 @@ def test_the_agent_loads_the_skills_its_workspace_holds(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
+    assert answer_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     theirs, tca, page = seen
     assert "Write them short." in str(theirs.content)
     assert "python-dev-tca" in str(tca.content)
@@ -557,7 +557,7 @@ def test_the_agent_reads_edits_and_writes_the_files_in_its_workspace(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
+    assert answer_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     read, edited, written = seen
     assert "price = 1" in str(read.content)
     assert isinstance(edited, ToolReturnPart)
@@ -588,7 +588,7 @@ def test_the_agent_checks_its_work_and_reads_what_the_check_concluded(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
+    assert answer_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     assert "Clean" in shown[0] and "Failed" in shown[0]
     failed, clean = seen
     assert isinstance(failed, ToolReturnPart)
@@ -623,7 +623,7 @@ def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
+    assert answer_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     escaped, kept, checked_inside = seen
     assert "exit code" in str(escaped.content)
     assert isinstance(kept, ToolReturnPart)
@@ -648,8 +648,8 @@ def test_every_run_is_recorded_in_the_database_the_deployment_names(
         TestModel(custom_output_args=OK.model_dump_json(), call_tools=["list_directory"]),
     )
     assert not database.exists()
-    coin = run_sync(config, COIN)
-    die = run_sync(config, Opening(text=PromptText("Model a die.")))
+    coin = answer_sync(config, COIN)
+    die = answer_sync(config, Opening(text=PromptText("Model a die.")))
     assert coin.answer == die.answer == OK
     store = SqliteStepStore(database=database)
     runs = asyncio.run(store.list_runs())
@@ -672,7 +672,7 @@ def test_a_workspace_that_does_not_exist_is_refused_in_the_library_s_words(
 ) -> None:
     monkeypatch.setenv(WORKSPACE, str(tmp_path / "nowhere"))
     with pytest.raises(WorkspaceUnavailableError, match="nowhere"):
-        run_sync(scripted(monkeypatch, TestModel(custom_output_args=OK.model_dump_json())), COIN)
+        answer_sync(scripted(monkeypatch, TestModel(custom_output_args=OK.model_dump_json())), COIN)
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -692,10 +692,10 @@ def test_a_caller_hands_one_run_the_tools_it_may_call(monkeypatch: pytest.Monkey
         )
 
     config = scripted(monkeypatch, FunctionModel(model))
-    handed = run_sync(config, COIN, toolsets=[FunctionToolset([remember])])
+    handed = answer_sync(config, COIN, toolsets=[FunctionToolset([remember])])
     assert handed.answer == Answer(text=AnswerText("kept pomegranate"))
     assert isinstance(seen[0], ToolReturnPart)
-    withheld = run_sync(config, COIN)
+    withheld = answer_sync(config, COIN)
     assert isinstance(seen[0], RetryPromptPart)
     assert "remember" in withheld.answer.text.root
 
@@ -708,9 +708,9 @@ def test_runs_share_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     first, second = Opening(text=PromptText("First.")), Opening(text=PromptText("Second."))
     assert config.agent.client is not config.agent.client
     assert config.agent.history.store.client is not config.agent.history.store.client
-    run_sync(config, first)
+    answer_sync(config, first)
     with capture_run_messages() as messages:
-        run_sync(config, second)
+        answer_sync(config, second)
     assert prompts_in(messages) == ["Second."]
 
 
@@ -734,7 +734,7 @@ def test_a_follow_up_continues_the_conversation_an_opening_started(
     config = scripted(
         monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
     )
-    first = run_sync(config, Opening(text=PromptText("First.")))
+    first = answer_sync(config, Opening(text=PromptText("First.")))
     with capture_run_messages() as messages:
         second = follow_up_sync(config, FollowUp(text=PromptText("Second."), after=first.run))
     assert prompts_in(messages) == ["First.", "Second."]
@@ -754,7 +754,7 @@ def test_a_new_process_continues_a_conversation_from_the_file_and_the_reply_s_ru
     database = tmp_path / "agent.sqlite"
     monkeypatch.setenv(DATABASE, str(database))
     with Endpoint(CHAT_COMPLETION, "application/json") as served:
-        first = run_sync(served_by(monkeypatch, served), Opening(text=PromptText("First.")))
+        first = answer_sync(served_by(monkeypatch, served), Opening(text=PromptText("First.")))
         continued = subprocess.run(  # noqa: S603
             (
                 sys.executable,
@@ -805,7 +805,7 @@ def test_a_long_conversation_is_compacted_within_the_model_s_window(
 
     config = scripted(monkeypatch, FunctionModel(model, profile=ModelProfile(context_window=4_000)))
     assert config.agent.compaction.root == 0.7
-    reply = run_sync(config, COIN, toolsets=[FunctionToolset([recall])])
+    reply = answer_sync(config, COIN, toolsets=[FunctionToolset([recall])])
     assert reply.answer == OK
     assert len(made) == 12
     returned = [
@@ -838,8 +838,8 @@ def test_a_configured_model_is_acquired_for_each_crossing_and_released(
     lifecycle = acquisitions(monkeypatch)
     with Endpoint(CHAT_COMPLETION, "application/json") as served:
         config = served_by(monkeypatch, served)
-        assert run_sync(config, COIN).answer == OK
-        assert run_sync(config, COIN).answer == OK
+        assert answer_sync(config, COIN).answer == OK
+        assert answer_sync(config, COIN).answer == OK
     assert served.paths == ["/v1/chat/completions"] * 2
     assert lifecycle == ["acquired", "released", "acquired", "released"]
 
@@ -850,8 +850,8 @@ def test_a_model_the_library_builds_is_acquired_for_each_crossing_and_released(
 ) -> None:
     held = Held()
     config = scripted(monkeypatch, held)
-    assert run_sync(config, COIN).answer == OK
-    assert asyncio.run(run(config, COIN)).answer == OK
+    assert answer_sync(config, COIN).answer == OK
+    assert asyncio.run(answer(config, COIN)).answer == OK
     assert held.held == ["acquired", "released", "acquired", "released"]
 
 
@@ -949,7 +949,7 @@ def test_the_configured_provider_answers(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
     monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
-    reply = run_sync(config, Opening(text=PromptText("Reply with one word.")))
+    reply = answer_sync(config, Opening(text=PromptText("Reply with one word.")))
     assert isinstance(reply, Reply)
     assert reply.answer.text.root
     recalled = follow_up_sync(
@@ -967,7 +967,7 @@ async def test_the_configured_provider_answers_async(
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
     monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
-    reply = await run(config, Opening(text=PromptText("Reply with one word.")))
+    reply = await answer(config, Opening(text=PromptText("Reply with one word.")))
     assert isinstance(reply, Reply)
     assert reply.answer.text.root
 
@@ -986,6 +986,6 @@ def test_the_configured_provider_works_in_its_workspace(
             "new file REPLY.md beside it, and reply with only that word."
         )
     )
-    reply = run_sync(AgentConfig(), asked)  # pyright: ignore[reportCallIssue]
+    reply = answer_sync(AgentConfig(), asked)  # pyright: ignore[reportCallIssue]
     assert "pomegranate" in reply.answer.text.root.lower()
     assert "pomegranate" in (tmp_path / "REPLY.md").read_text().lower()

@@ -284,10 +284,10 @@ pip install "git+https://github.com/kylejtobin/tca.git#subdirectory=packages/pyt
 ```
 
 ```python
-from type_construction.agent import AgentConfig, Prompt, run_sync
+from type_construction.agent import AgentConfig, Opening, PromptText, answer_sync
 
-answer = run_sync(AgentConfig(), Prompt(text="Model a checkout domain."))
-print(answer.text.root)
+reply = answer_sync(AgentConfig(), Opening(text=PromptText("Model a checkout domain.")))
+print(reply.answer.text.root)
 ```
 
 A deployment names three things in the environment: the model, whose provider reads its own credentials there; the workspace the agent models in, local or sandboxed; and the SQLite file its runs are recorded in. [`.env.example`](.env.example) lists them and [the package README](packages/python/type-construction-agent/README.md) explains each. Next for it: the [eval](packages/python/type-construction-eval/README.md) that baselines it, then the loop as a durable flow of typed steps on Temporal.

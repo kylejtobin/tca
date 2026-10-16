@@ -9,7 +9,7 @@ from pydantic_ai.usage import RunUsage
 from pydantic_ai_harness.step_persistence import continue_run
 
 from type_construction.agent.domain.agent.check import Check, CheckResult
-from type_construction.agent.domain.agent.prompt import Answer, FollowUp, Opening
+from type_construction.agent.domain.agent.exchange import Answer, FollowUp, Opening
 from type_construction.agent.integration.pydantic_ai.model import (
     AgentName,
     AgentTool,
