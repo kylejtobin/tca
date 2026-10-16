@@ -63,7 +63,9 @@ repos:
         pass_filenames: false
       - id: pip-audit
         name: pip-audit
-        entry: uv run pip-audit
+        # CVE-2026-59951 is in mcp 1.29.0, which semgrep pins exactly; semgrep is a check of ours,
+        # never shipped. Drop the ignore when a semgrep release allows mcp 1.30.0 or later.
+        entry: uv run pip-audit --ignore-vuln CVE-2026-59951
         language: system
         files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
