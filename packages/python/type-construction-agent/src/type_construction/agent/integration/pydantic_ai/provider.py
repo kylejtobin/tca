@@ -143,11 +143,35 @@ class Workspace(RootModel[Local | Sandboxed]):
         return WorkspaceShell.model_validate(self.root, from_attributes=True)
 
 
+class HistoryStore(BaseModel):
+    """The history reached the library's second way, as the store a run's recorded messages are
+    read back from by the library's own `continue_run`, under the run's id; constructed from the
+    history the deployment named. Its one derivation is the library's SQLite step store over
+    that file."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    database: DatabasePath
+
+    @property
+    def client(self) -> SqliteStepStore:
+        return SqliteStepStore(database=self.database.root)
+
+
 class History(BaseModel):
-    """Where the agent's runs are recorded: one SQLite file the deployment names. Its one
-    derivation is the library's step persistence over that file, which records every run, its
-    model requests, its tool calls and a continuable snapshot of its messages, under the agent's
-    name, and from which a conversation is continued by the library's own `continue_run`."""
+    """Where the agent's runs are recorded: one SQLite file the deployment names. The library
+    reaches it two ways, as the capability that records every run and as the store a run is
+    read back from, and a provider derives one client, so the store is its own provider,
+    constructed from this one. Its one derivation is the library's step persistence over that
+    file, which records every run, its model requests, its tool calls and a continuable
+    snapshot of its messages under the id the library gave the run, and the agent's own name
+    beside it; given no name of ours, so the recorded id is the one a reply carries."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -160,9 +184,11 @@ class History(BaseModel):
 
     @property
     def client(self) -> AbstractCapability[object]:
-        return StepPersistence(
-            store=SqliteStepStore(database=self.database.root), agent_name=AgentName.TCA_AGENT
-        )
+        return StepPersistence(store=SqliteStepStore(database=self.database.root))
+
+    @property
+    def store(self) -> HistoryStore:
+        return HistoryStore.model_validate(self, from_attributes=True)
 
 
 class AgentProvider(BaseModel):

@@ -27,6 +27,19 @@ class AnswerText(RootModel[str]):
     root: str = Field(min_length=1)
 
 
+class RunId(RootModel[str]):
+    """The identity of the run that produced a reply, as the library assigns it and records it:
+    what a follow-up continues after, in this process or another."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
 class Success(RootModel[Literal[0]]):
     """The exit with which a check passes."""
 

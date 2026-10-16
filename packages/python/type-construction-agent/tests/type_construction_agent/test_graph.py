@@ -22,11 +22,21 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 from pydantic_graph import Graph, GraphBuilder, StepContext
 
-from type_construction.agent import AgentConfig, Answer, AnswerText, Prompt, PromptText, run
+from type_construction.agent import (
+    AgentConfig,
+    Answer,
+    AnswerText,
+    FollowUp,
+    Opening,
+    PromptText,
+    Reply,
+    RunId,
+    run,
+)
 
 MODEL = "TCA_AGENT__MODEL"
 SKILLS = Path(__file__).parents[5] / ".agents" / "skills"
-COIN = Prompt(text=PromptText("Model a coin toss."))
+COIN = Opening(text=PromptText("Model a coin toss."))
 ANSWER = Answer(text=AnswerText("A coin toss is a Face, Heads or Tails, drawn by a Toss."))
 
 
@@ -44,24 +54,24 @@ class Controls:
     token: CancellationToken = field(default_factory=CancellationToken)
 
 
-def counting_graph() -> Graph[Controls, AgentConfig, Prompt, WordCount]:
+def counting_graph() -> Graph[Controls, AgentConfig, Opening, WordCount]:
     g = GraphBuilder(
         name="count-the-answer",
         state_type=Controls,
         deps_type=AgentConfig,
-        input_type=Prompt,
+        input_type=Opening,
         output_type=WordCount,
     )
 
     @g.step
-    async def answer(ctx: StepContext[Controls, AgentConfig, Prompt]) -> Answer:
+    async def answer(ctx: StepContext[Controls, AgentConfig, Opening]) -> Reply:
         return await run(
             ctx.deps, ctx.inputs, usage=ctx.state.usage, cancellation_token=ctx.state.token
         )
 
     @g.step
-    async def count(ctx: StepContext[Controls, AgentConfig, Answer]) -> WordCount:
-        return WordCount(len(ctx.inputs.text.root.split()))
+    async def count(ctx: StepContext[Controls, AgentConfig, Reply]) -> WordCount:
+        return WordCount(len(ctx.inputs.answer.text.root.split()))
 
     g.add(g.edge_from(g.start_node).to(answer), g.edge_from(answer).to(count))
     g.add(g.edge_from(count).to(g.end_node))
@@ -122,8 +132,12 @@ async def test_a_prompt_in_gives_the_answers_word_count_out(
 
 
 def test_the_domain_crosses_json_whole() -> None:
-    assert Prompt.model_validate_json(COIN.model_dump_json()) == COIN
+    assert Opening.model_validate_json(COIN.model_dump_json()) == COIN
+    asked = FollowUp(text=PromptText("Again."), after=RunId("run"))
+    assert FollowUp.model_validate_json(asked.model_dump_json()) == asked
     assert Answer.model_validate_json(ANSWER.model_dump_json()) == ANSWER
+    reply = Reply(answer=ANSWER, run=RunId("run"))
+    assert Reply.model_validate_json(reply.model_dump_json()) == reply
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -133,9 +147,9 @@ async def test_each_run_of_the_graph_starts_the_agent_afresh(
 ) -> None:
     graph = counting_graph()
     config = scripted(monkeypatch, answering())
-    await graph.run(state=Controls(), deps=config, inputs=Prompt(text=PromptText("First.")))
+    await graph.run(state=Controls(), deps=config, inputs=Opening(text=PromptText("First.")))
     with capture_run_messages() as messages:
-        await graph.run(state=Controls(), deps=config, inputs=Prompt(text=PromptText("Second.")))
+        await graph.run(state=Controls(), deps=config, inputs=Opening(text=PromptText("Second.")))
     prompts = [
         part.content
         for message in messages

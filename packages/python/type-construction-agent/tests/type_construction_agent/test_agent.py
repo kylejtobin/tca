@@ -13,6 +13,7 @@ from collections.abc import AsyncIterable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import TracebackType
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -49,22 +50,27 @@ from type_construction.agent import (
     AgentName,
     AgentProvider,
     Answer,
-    AnswerInterpreter,
     AnswerText,
     CheckResult,
     Clean,
     DatabasePath,
     Failed,
+    FollowUp,
     History,
+    HistoryStore,
     Local,
     LocalKind,
     ModelName,
-    Prompt,
+    Opening,
+    OpeningInterpreter,
     PromptText,
+    Reply,
+    RunId,
     Sandboxed,
     SandboxKind,
     Workspace,
     WorkspacePath,
+    follow_up_sync,
     run,
     run_sync,
 )
@@ -75,7 +81,7 @@ WORKSPACE = "TCA_AGENT__WORKSPACE__PATH"
 DATABASE = "TCA_AGENT__HISTORY__DATABASE"
 SKILLS = Path(__file__).parents[5] / ".agents" / "skills"
 README = Path(type_construction.agent.__file__).parents[3] / "README.md"
-COIN = Prompt(text=PromptText("Model a coin toss."))
+COIN = Opening(text=PromptText("Model a coin toss."))
 OK = Answer(text=AnswerText("ok"))
 
 
@@ -265,9 +271,9 @@ def served_by(monkeypatch: pytest.MonkeyPatch, served: Endpoint) -> AgentConfig:
     return AgentConfig()  # pyright: ignore[reportCallIssue]
 
 
-def answering(provider: AgentProvider) -> AnswerInterpreter:
+def answering(provider: AgentProvider) -> OpeningInterpreter:
     """The answering of the coin toss, constructed as the composition root constructs it."""
-    return AnswerInterpreter(prompt=COIN, provider=provider)
+    return OpeningInterpreter(action=COIN, provider=provider)
 
 
 def acquisitions(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -439,9 +445,10 @@ def test_the_library_constructs_the_answer_from_the_instructed_model(
         monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
     )
     with capture_run_messages() as messages:
-        answer = run_sync(config, COIN)
-    assert isinstance(answer, Answer)
-    assert answer == OK
+        reply = run_sync(config, COIN)
+    assert isinstance(reply, Reply)
+    assert reply.answer == OK
+    assert reply.run.root
     request = messages[0]
     assert isinstance(request, ModelRequest)
     assert request.instructions is not None
@@ -469,9 +476,9 @@ def test_the_readme_examples_run(
         served_by(monkeypatch, served)
         for example in examples:
             exec(example, {})  # noqa: S102
-    assert capsys.readouterr().out.splitlines() == ["ok"]
+    assert capsys.readouterr().out.splitlines() == ["ok", "ok"]
     with pytest.raises(ValidationError):
-        Prompt(text=PromptText(""))
+        Opening(text=PromptText(""))
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -519,7 +526,7 @@ def test_the_agent_loads_the_skills_its_workspace_holds(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     theirs, tca, page = seen
     assert "Write them short." in str(theirs.content)
     assert "python-dev-tca" in str(tca.content)
@@ -548,7 +555,7 @@ def test_the_agent_reads_edits_and_writes_the_files_in_its_workspace(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     read, edited, written = seen
     assert "price = 1" in str(read.content)
     assert isinstance(edited, ToolReturnPart)
@@ -579,7 +586,7 @@ def test_the_agent_checks_its_work_and_reads_what_the_check_concluded(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     assert "Clean" in shown[0] and "Failed" in shown[0]
     failed, clean = seen
     assert isinstance(failed, ToolReturnPart)
@@ -614,7 +621,7 @@ def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
             return answered("ok")
         return ModelResponse(parts=[calls[len(seen)]])
 
-    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN) == OK
+    assert run_sync(scripted(monkeypatch, FunctionModel(model)), COIN).answer == OK
     escaped, kept, checked_inside = seen
     assert "exit code" in str(escaped.content)
     assert isinstance(kept, ToolReturnPart)
@@ -639,13 +646,15 @@ def test_every_run_is_recorded_in_the_database_the_deployment_names(
         TestModel(custom_output_args=OK.model_dump_json(), call_tools=["list_directory"]),
     )
     assert not database.exists()
-    assert run_sync(config, COIN) == OK
-    assert run_sync(config, Prompt(text=PromptText("Model a die."))) == OK
+    coin = run_sync(config, COIN)
+    die = run_sync(config, Opening(text=PromptText("Model a die.")))
+    assert coin.answer == die.answer == OK
     store = SqliteStepStore(database=database)
     runs = asyncio.run(store.list_runs())
     assert [r.agent_name for r in runs] == [AgentName.TCA_AGENT] * 2
+    assert [r.run_id for r in runs] == [coin.run.root, die.run.root]
     assert len({r.conversation_id for r in runs}) == 2
-    history = asyncio.run(continue_run(store, run_id=runs[0].run_id))
+    history = asyncio.run(continue_run(store, run_id=coin.run.root))
     assert "Model a coin toss." in str(history[0])
     assert any(
         part.tool_name == "list_directory"
@@ -682,11 +691,11 @@ def test_a_caller_hands_one_run_the_tools_it_may_call(monkeypatch: pytest.Monkey
 
     config = scripted(monkeypatch, FunctionModel(model))
     handed = run_sync(config, COIN, toolsets=[FunctionToolset([remember])])
-    assert handed == Answer(text=AnswerText("kept pomegranate"))
+    assert handed.answer == Answer(text=AnswerText("kept pomegranate"))
     assert isinstance(seen[0], ToolReturnPart)
     withheld = run_sync(config, COIN)
     assert isinstance(seen[0], RetryPromptPart)
-    assert "remember" in withheld.text.root
+    assert "remember" in withheld.answer.text.root
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -694,19 +703,92 @@ def test_runs_share_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     config = scripted(
         monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
     )
-    first, second = Prompt(text=PromptText("First.")), Prompt(text=PromptText("Second."))
+    first, second = Opening(text=PromptText("First.")), Opening(text=PromptText("Second."))
     assert config.agent.client is not config.agent.client
+    assert config.agent.history.store.client is not config.agent.history.store.client
     run_sync(config, first)
     with capture_run_messages() as messages:
         run_sync(config, second)
-    prompts = [
-        part.content
+    assert prompts_in(messages) == ["Second."]
+
+
+def prompts_in(messages: list[ModelMessage]) -> list[str]:
+    """What a person said, in the order the model saw it."""
+    return [
+        str(part.content)
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
         if isinstance(part, UserPromptPart)
     ]
-    assert prompts == ["Second."]
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_follow_up_continues_the_conversation_an_opening_started(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    database = tmp_path / "agent.sqlite"
+    monkeypatch.setenv(DATABASE, str(database))
+    config = scripted(
+        monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
+    )
+    first = run_sync(config, Opening(text=PromptText("First.")))
+    with capture_run_messages() as messages:
+        second = follow_up_sync(config, FollowUp(text=PromptText("Second."), after=first.run))
+    assert prompts_in(messages) == ["First.", "Second."]
+    asked = [m for m in messages if isinstance(m, ModelRequest) and prompts_in([m]) == ["Second."]]
+    assert asked[0].instructions is not None
+    assert second.answer == OK
+    assert second.run != first.run
+    runs = asyncio.run(SqliteStepStore(database=database).list_runs())
+    assert [r.run_id for r in runs] == [first.run.root, second.run.root]
+    assert len({r.conversation_id for r in runs}) == 1
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_new_process_continues_a_conversation_from_the_file_and_the_reply_s_run_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    database = tmp_path / "agent.sqlite"
+    monkeypatch.setenv(DATABASE, str(database))
+    with Endpoint(CHAT_COMPLETION, "application/json") as served:
+        first = run_sync(served_by(monkeypatch, served), Opening(text=PromptText("First.")))
+        continued = subprocess.run(  # noqa: S603
+            (
+                sys.executable,
+                "-c",
+                "import sys\n"
+                "from type_construction import agent\n"
+                "after = agent.RunId(sys.argv[1])\n"
+                "second = agent.FollowUp(text=agent.PromptText('Second.'), after=after)\n"
+                "print(agent.follow_up_sync(agent.AgentConfig(), second).run.root)",
+                first.run.root,
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=tmp_path,
+            env={**os.environ, "PYDANTIC_AI_NO_BANNER": "1"},
+            timeout=60,
+        )
+    assert continued.returncode == 0, continued.stderr
+    sent = cast("list[dict[str, str]]", served.bodies[-1]["messages"])
+    assert [m["content"] for m in sent if m["role"] == "user"] == ["First.", "Second."]
+    runs = asyncio.run(SqliteStepStore(database=database).list_runs())
+    assert [r.run_id for r in runs] == [first.run.root, continued.stdout.strip()]
+    assert len({r.conversation_id for r in runs}) == 1
+
+
+@pytest.mark.usefixtures("bare_environment")
+def test_a_follow_up_after_a_run_the_history_does_not_hold_is_refused_in_the_library_s_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = scripted(
+        monkeypatch, TestModel(custom_output_args=OK.model_dump_json(), call_tools=[])
+    )
+    assert isinstance(config.agent.history.store, HistoryStore)
+    with pytest.raises(LookupError):
+        follow_up_sync(config, FollowUp(text=PromptText("Second."), after=RunId("never-run")))
 
 
 @pytest.mark.usefixtures("bare_environment")
@@ -716,8 +798,8 @@ def test_a_configured_model_is_acquired_for_each_crossing_and_released(
     lifecycle = acquisitions(monkeypatch)
     with Endpoint(CHAT_COMPLETION, "application/json") as served:
         config = served_by(monkeypatch, served)
-        assert run_sync(config, COIN) == OK
-        assert run_sync(config, COIN) == OK
+        assert run_sync(config, COIN).answer == OK
+        assert run_sync(config, COIN).answer == OK
     assert served.paths == ["/v1/chat/completions"] * 2
     assert lifecycle == ["acquired", "released", "acquired", "released"]
 
@@ -728,8 +810,8 @@ def test_a_model_the_library_builds_is_acquired_for_each_crossing_and_released(
 ) -> None:
     held = Held()
     config = scripted(monkeypatch, held)
-    assert run_sync(config, COIN) == OK
-    assert asyncio.run(run(config, COIN)) == OK
+    assert run_sync(config, COIN).answer == OK
+    assert asyncio.run(run(config, COIN)).answer == OK
     assert held.held == ["acquired", "released", "acquired", "released"]
 
 
@@ -827,9 +909,13 @@ def test_the_configured_provider_answers(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
     monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
-    answer = run_sync(config, Prompt(text=PromptText("Reply with one word.")))
-    assert isinstance(answer, Answer)
-    assert answer.text.root
+    reply = run_sync(config, Opening(text=PromptText("Reply with one word.")))
+    assert isinstance(reply, Reply)
+    assert reply.answer.text.root
+    recalled = follow_up_sync(
+        config, FollowUp(text=PromptText("Repeat the word you just said."), after=reply.run)
+    )
+    assert reply.answer.text.root.strip(".!").lower() in recalled.answer.text.root.lower()
 
 
 @pytest.mark.asyncio
@@ -841,9 +927,9 @@ async def test_the_configured_provider_answers_async(
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
     monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
-    answer = await run(config, Prompt(text=PromptText("Reply with one word.")))
-    assert isinstance(answer, Answer)
-    assert answer.text.root
+    reply = await run(config, Opening(text=PromptText("Reply with one word.")))
+    assert isinstance(reply, Reply)
+    assert reply.answer.text.root
 
 
 def test_the_configured_provider_works_in_its_workspace(
@@ -854,12 +940,12 @@ def test_the_configured_provider_works_in_its_workspace(
     monkeypatch.setenv(KIND, "local")
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
     monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
-    asked = Prompt(
+    asked = Opening(
         text=PromptText(
             "Read the file NOTE.md in your workspace, write the one word it contains to a "
             "new file REPLY.md beside it, and reply with only that word."
         )
     )
-    answer = run_sync(AgentConfig(), asked)  # pyright: ignore[reportCallIssue]
-    assert "pomegranate" in answer.text.root.lower()
+    reply = run_sync(AgentConfig(), asked)  # pyright: ignore[reportCallIssue]
+    assert "pomegranate" in reply.answer.text.root.lower()
     assert "pomegranate" in (tmp_path / "REPLY.md").read_text().lower()
