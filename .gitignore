@@ -16,3 +16,6 @@ logs/
 
 # The TCA agent's recorded runs, local to each deployment.
 /tca-agent.sqlite*
+
+# The working handoff, never committed.
+/HANDOFF.md
