@@ -14,6 +14,7 @@ from type_construction.agent.integration.pydantic_ai.interpreter import (
 )
 from type_construction.agent.integration.pydantic_ai.model import (
     AgentName,
+    DatabasePath,
     LocalKind,
     ModelName,
     SandboxKind,
@@ -21,6 +22,7 @@ from type_construction.agent.integration.pydantic_ai.model import (
 )
 from type_construction.agent.integration.pydantic_ai.provider import (
     AgentProvider,
+    History,
     Local,
     Sandboxed,
     Workspace,
@@ -34,6 +36,8 @@ __all__ = (
     "AnswerInterpreter",
     "AnswerText",
     "ChatInterpreter",
+    "DatabasePath",
+    "History",
     "Local",
     "LocalKind",
     "ModelName",

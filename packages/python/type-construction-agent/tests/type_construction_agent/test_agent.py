@@ -41,6 +41,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.workspaces import WorkspaceUnavailableError
+from pydantic_ai_harness.step_persistence import SqliteStepStore, continue_run
 
 import type_construction.agent
 from type_construction.agent import (
@@ -50,6 +51,8 @@ from type_construction.agent import (
     Answer,
     AnswerInterpreter,
     AnswerText,
+    DatabasePath,
+    History,
     Local,
     LocalKind,
     ModelName,
@@ -66,6 +69,7 @@ from type_construction.agent import (
 MODEL = "TCA_AGENT__MODEL"
 KIND = "TCA_AGENT__WORKSPACE__KIND"
 WORKSPACE = "TCA_AGENT__WORKSPACE__PATH"
+DATABASE = "TCA_AGENT__HISTORY__DATABASE"
 SKILLS = Path(__file__).parents[5] / ".agents" / "skills"
 README = Path(type_construction.agent.__file__).parents[3] / "README.md"
 COIN = Prompt(text=PromptText("Model a coin toss."))
@@ -347,6 +351,15 @@ def test_the_deployment_names_the_model_and_the_workspace_and_nothing_else(
             Local(kind=LocalKind("local"), path=WorkspacePath(str(bare_environment)))
         ),
     )
+    assert config.agent.history == History(database=DatabasePath("tca-agent.sqlite"))
+    monkeypatch.setenv(DATABASE, "runs/agent.sqlite")
+    assert AgentConfig().agent.history == History(  # pyright: ignore[reportCallIssue]
+        database=DatabasePath("runs/agent.sqlite")
+    )
+    monkeypatch.setenv(DATABASE, "")
+    with pytest.raises(ValidationError):
+        AgentConfig()  # pyright: ignore[reportCallIssue]
+    monkeypatch.delenv(DATABASE)
     monkeypatch.setenv(KIND, "sandbox")
     assert AgentConfig().agent.workspace == Workspace(  # pyright: ignore[reportCallIssue]
         Sandboxed(kind=SandboxKind("sandbox"), path=WorkspacePath(str(bare_environment)))
@@ -607,6 +620,34 @@ def test_a_sandboxed_workspace_keeps_the_agent_s_commands_and_its_check_inside(
 
 
 @pytest.mark.usefixtures("bare_environment")
+def test_every_run_is_recorded_in_the_database_the_deployment_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    database = tmp_path / "runs" / "agent.sqlite"
+    database.parent.mkdir()
+    monkeypatch.setenv(DATABASE, str(database))
+    config = scripted(
+        monkeypatch,
+        TestModel(custom_output_args=OK.model_dump_json(), call_tools=["list_directory"]),
+    )
+    assert not database.exists()
+    assert run_sync(config, COIN) == OK
+    assert run_sync(config, Prompt(text=PromptText("Model a die."))) == OK
+    store = SqliteStepStore(database=database)
+    runs = asyncio.run(store.list_runs())
+    assert [r.agent_name for r in runs] == [AgentName.TCA_AGENT] * 2
+    assert len({r.conversation_id for r in runs}) == 2
+    history = asyncio.run(continue_run(store, run_id=runs[0].run_id))
+    assert "Model a coin toss." in str(history[0])
+    assert any(
+        part.tool_name == "list_directory"
+        for message in history
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+
+
+@pytest.mark.usefixtures("bare_environment")
 def test_a_workspace_that_does_not_exist_is_refused_in_the_library_s_words(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -772,6 +813,7 @@ def test_the_configured_provider_answers(tmp_path: Path, monkeypatch: pytest.Mon
     shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
     monkeypatch.setenv(KIND, "local")
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
+    monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
     answer = run_sync(config, Prompt(text=PromptText("Reply with one word.")))
     assert isinstance(answer, Answer)
@@ -785,6 +827,7 @@ async def test_the_configured_provider_answers_async(
     shutil.copytree(SKILLS, tmp_path / ".agents" / "skills")
     monkeypatch.setenv(KIND, "local")
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
+    monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     config = AgentConfig()  # pyright: ignore[reportCallIssue]
     answer = await run(config, Prompt(text=PromptText("Reply with one word.")))
     assert isinstance(answer, Answer)
@@ -798,6 +841,7 @@ def test_the_configured_provider_works_in_its_workspace(
     (tmp_path / "NOTE.md").write_text("pomegranate\n")
     monkeypatch.setenv(KIND, "local")
     monkeypatch.setenv(WORKSPACE, str(tmp_path))
+    monkeypatch.setenv(DATABASE, str(tmp_path / "agent.sqlite"))
     asked = Prompt(
         text=PromptText(
             "Read the file NOTE.md in your workspace, write the one word it contains to a "

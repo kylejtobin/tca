@@ -57,6 +57,19 @@ class WorkspacePath(RootModel[str]):
     root: str = Field(min_length=1)
 
 
+class DatabasePath(RootModel[str]):
+    """The SQLite file the agent's runs are recorded in, as the library's store takes it, relative
+    to where the program runs: made when it is missing, used when it is there."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(min_length=1)
+
+
 class ModelName(RootModel[str]):
     """A model as pydantic_ai names it, its provider first: `anthropic:claude-opus-5-5`,
     `openai-chat:gpt-5`; `test` is the library's own offline model. That provider reads its own

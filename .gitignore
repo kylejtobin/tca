@@ -13,3 +13,6 @@ logs/
 
 # The directory the TCA agent models in, named by .env; local to each deployment.
 /workspace/
+
+# The TCA agent's recorded runs, local to each deployment.
+/tca-agent.sqlite*
