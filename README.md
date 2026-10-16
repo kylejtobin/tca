@@ -7,15 +7,18 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSL 1.1"></a>
 </p>
 
+
 <p align="center"><strong>A program is a set of types. Constructing them is the only operation.</strong></p>
+
+TCA is declarative and schema-first. A program is the types it declares, and the only thing that happens at runtime is a type being constructed: from what crosses a boundary, or from a type already held. Every effect is a transition from one declared state to the next, performed by a library, never by a step of ours. There is no procedural flow to write, and no place for one to hide.
 
 ---
 
+**Contents** · [The same feature, twice](#the-same-feature-twice) · [What happened to each line](#what-happened-to-each-line) · [Each fact holds the one before it](#each-fact-holds-the-one-before-it) · [Three questions](#three-questions) · [The shapes](#the-shapes) · [Built for the agent that writes your code](#built-for-the-agent-that-writes-your-code) · [Adopt it](#adopt-it) · [The TCA agent](#the-tca-agent) · [Why this, why now](#why-this-why-now)
+
 ## The same feature, twice
 
-A trading desk has to know what every account holds, and the clearing house is the record it answers to. When a venue reports a fill, the program updates the account's position, records it with the clearing house, and tells the desk what happened.
-
-Here is the version everyone writes, and every coding agent writes by default:
+A trading desk must know what every account holds, and the clearing house is the record it answers to. A venue reports a fill; the program updates the position, records it, and tells the desk. Here is the version everyone writes, and every coding agent writes by default:
 
 ```python
 positions = {}
@@ -174,9 +177,7 @@ Nothing was caught. The refusal was constructed, carried, and published like any
 
 ## Each fact holds the one before it
 
-That is the picture at the top of this page, and it is the whole method.
-
-A procedure says: do this, then that. TCA says: the later thing holds the earlier thing. A reply holds the outcome. The outcome holds the position. The position holds the fill and the position before it, down to the flat position at the start. Order is depth, and Pydantic's constructors run it. You never write the sequence, so you cannot write it wrong. And a position is its own history: its fields are the trades that made it, back to flat.
+That is the picture at the top of this page, and it is the whole method. A procedure says *do this, then that*. TCA says *the later thing holds the earlier thing*: the reply holds the outcome, the outcome holds the position, the position holds the fill and the position before it, down to flat. Order is depth, and Pydantic's constructors run it, so the sequence cannot be written wrong. A position is its own history.
 
 Every step you are about to type is a thing you have not named yet:
 
@@ -216,35 +217,35 @@ Every type sits on one level, and its fields hold only types from the levels abo
 Scalar → Value → Thing → Alternative → Crossing
 ```
 
-A whole program is built from these declarations, in the order its files depend on each other. Each one replaces a habit.
+Each construct has a page in the skill with its description and its code. Each one replaces a habit:
 
-| Construct | What it is | Lives in | What it replaces |
-|---|---|---|---|
-| [Semantic scalar](.agents/skills/python-dev-tca/semantic-scalar.md) | One atomic meaning over a primitive, a closed vocabulary or a library's vocabulary, constrained so an invalid value cannot be constructed | `type.py`, or `integration/<system>/model.py` where its meaning is that system's | The bare `str` and `Decimal` |
-| [Ordered union](.agents/skills/python-dev-tca/ordered-union.md) | A strong alternative whose only failure to construct means the fallback, which admits only what the strong one does not | `type.py` | `try/except` and `.get()` returning `None` |
-| [Collection](.agents/skills/python-dev-tca/collection.md) | Several of one thing, with a meaning of their own, as a frozen tuple at its members' level; its cardinality a constraint, an invariant across its members a rejection predicate | `type.py`, `value.py` | The mutable list |
-| [Foreign model](.agents/skills/python-dev-tca/foreign-model.md) | Another system's thing, under its names, parsed from what it sends and serialized to what it accepts | `integration/<system>/model.py` | The mapper, the adapter, the DTO |
-| [Format type](.agents/skills/python-dev-tca/format-type.md) | Another system's thing in a format no maintained library reads: a foreign record this program reads and writes itself, with whatever procedure the format needs, returning the record or a validation failure | `parser/<format>.py` | The hand parser scattered through the code |
-| [Value object](.agents/skills/python-dev-tca/value-object.md) | A composite part with no standing of its own, equal when its fields are equal | `value.py` | The tuple or dict of parts |
-| [Provider](.agents/skills/python-dev-tca/provider.md) | What the program needs to reach another system, as the deployment names it and the library does not read for itself; its one derivation is a client that keeps nothing between crossings | `integration/<system>/provider.py` | The client built at import time and passed around |
-| [Union](.agents/skills/python-dev-tca/union.md) | Closed alternatives on one axis, each a class holding its own facts, at its variants' level; every input constructs exactly one | `<concept>.py` | The `if/elif` ladder and the `bool` |
-| [Concept model](.agents/skills/python-dev-tca/concept-model.md) | A full domain thing or durable fact, including the one that holds the fact before it | `<concept>.py` | The `kind` field and the registry |
-| [Action](.agents/skills/python-dev-tca/action.md) | One intended external effect, as a thing that performs nothing, carrying every rule its effect must follow | `<concept>.py` | The side effect performed in place |
-| [Contract model](.agents/skills/python-dev-tca/contract-model.md) | This program's published request or reply | `api.py` | The hand-built response dict |
-| [Config](.agents/skills/python-dev-tca/config.md) | Deployment input: the providers the program reaches and the value objects a deployment may set, constructed from the environment by name; the config is the program | `config.py` | The scattered `os.environ` read |
-| [Transformation](.agents/skills/python-dev-tca/transformation.md) | A domain thing in another system's terms: what this program asks of it, or what it said back; its derivations are the foreign model it sends or the domain's next fact | `integration/<system>/<meaning>.py` | The helper function and the service method |
-| [Effect interpreter](.agents/skills/python-dev-tca/effect-interpreter.md) | The one place an action's external effect exists, acquiring the provider's client for its one crossing; what it returns is the next fact | `integration/<system>/interpreter.py` | The client call inside domain code |
-| [Route](.agents/skills/python-dev-tca/route.md) | One transport crossing, in or out | `api/<context>.py` | The handler that parses by hand |
-| [Composition root](.agents/skills/python-dev-tca/composition-root.md) | The callbacks whose returned expression is the whole program for one message, over the deployment's config; the config is the program | `main.py`, or a package's `__init__.py` | The wiring spread through the code |
+| Construct | Replaces |
+|---|---|
+| [Semantic scalar](.agents/skills/python-dev-tca/semantic-scalar.md) | the bare `str` and `Decimal` |
+| [Ordered union](.agents/skills/python-dev-tca/ordered-union.md) | `try/except`, and `.get()` returning `None` |
+| [Collection](.agents/skills/python-dev-tca/collection.md) | the mutable list |
+| [Foreign model](.agents/skills/python-dev-tca/foreign-model.md) | the mapper, the adapter, the DTO |
+| [Format type](.agents/skills/python-dev-tca/format-type.md) | the hand parser scattered through the code |
+| [Value object](.agents/skills/python-dev-tca/value-object.md) | the tuple or dict of parts |
+| [Provider](.agents/skills/python-dev-tca/provider.md) | the client built at import time and passed around |
+| [Union](.agents/skills/python-dev-tca/union.md) | the `if/elif` ladder and the `bool` |
+| [Concept model](.agents/skills/python-dev-tca/concept-model.md) | the `kind` field and the registry |
+| [Action](.agents/skills/python-dev-tca/action.md) | the side effect performed in place |
+| [Contract model](.agents/skills/python-dev-tca/contract-model.md) | the hand-built response dict |
+| [Config](.agents/skills/python-dev-tca/config.md) | the scattered `os.environ` read |
+| [Transformation](.agents/skills/python-dev-tca/transformation.md) | the helper function and the service method |
+| [Effect interpreter](.agents/skills/python-dev-tca/effect-interpreter.md) | the client call inside domain code |
+| [Route](.agents/skills/python-dev-tca/route.md) | the handler that parses by hand |
+| [Composition root](.agents/skills/python-dev-tca/composition-root.md) | the wiring spread through the code |
 
-Succession is a [concept model](.agents/skills/python-dev-tca/concept-model.md) with a self-typed `prior`, as `Position` is above.
+Succession is a [concept model](.agents/skills/python-dev-tca/concept-model.md) with a self-typed `prior`, as `Position` is above. The whole example world, every union and derivation, is in [the whole program](.agents/skills/python-dev-tca/whole-program.md).
 
 ## Built for the agent that writes your code
 
-A coding agent can recite all of the above and will still write the procedural version, because reciting is recall and writing code is habit. TCA is delivered as a system that works against that, not as a document to be remembered.
+A coding agent can recite all of the above and still write the procedural version, because reciting is recall and writing code is habit. TCA ships as a system that works against that, not as a document to remember.
 
-- **The skill meets the agent at the moment.** [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) is read just before the agent writes Python. It holds the three questions, the levels, the rules and one whole program; each construct page is that construct's description and its code.
-- **The smell check does not negotiate.** [`smell-check`](.agents/skills/smell-check/SKILL.md) scans for the free function, `isinstance`, the loop, the conditional, the dict, and the parse method. Every hit is a violation. A build is complete when it exits 0.
+- **The skill meets the agent at the moment.** [`python-dev-tca`](.agents/skills/python-dev-tca/SKILL.md) is read just before the agent writes Python: the three questions, the levels, the rules, a page per construct, and [one whole program](.agents/skills/python-dev-tca/whole-program.md).
+- **The smell check does not negotiate.** [`smell-check`](.agents/skills/smell-check/SKILL.md) scans for the free function, `isinstance`, the loop, the conditional, the dict and the parse method. Every hit is a violation; a build is complete at exit 0.
 
   ```text
   CONDITIONAL   src/venue/position.py:12:    if position is None:
@@ -252,12 +253,12 @@ A coding agent can recite all of the above and will still write the procedural v
   DICT          src/venue/fill.py:21:    return {"sequence": sequence}
   ```
 
-- **The reviewer assumes bad faith.** [`code-review-tca`](.agents/agents/code-review-tca.md) reads the work as written by someone looking for a way around the standard: tests that pass by construction, exceptions used as the normal path, compliance with a rule's wording that defeats its purpose.
+- **The reviewer assumes bad faith.** [`code-review-tca`](.agents/agents/code-review-tca.md) reads the work as written by someone looking for a way around the standard: tests that pass by construction, exceptions as the normal path, compliance with a rule's wording that defeats its purpose.
 - **The environment is modeled too.** [`docker-infra-tca`](.agents/skills/docker-infra-tca/SKILL.md) holds the image, the service and the recipes a TCA project is built, checked and run in, in the same shape.
 
 ## Adopt it
 
-1. Copy the skill directories in [`.agents/skills/`](.agents/skills/) into your repository's `.agents/skills/`, and [`.agents/agents/`](.agents/agents/) into its `.agents/agents/`.
+1. Copy [`.agents/skills/`](.agents/skills/) into your repository's `.agents/skills/`, and [`.agents/agents/`](.agents/agents/) into its `.agents/agents/`.
 2. Bind your agent to it, in `AGENTS.md`:
 
    ```text
@@ -274,11 +275,9 @@ A coding agent can recite all of the above and will still write the procedural v
        - id: smell-check
    ```
 
-The example world every page of the skill is written in, with every union and derivation: [A whole program](.agents/skills/python-dev-tca/SKILL.md#a-whole-program).
-
 ## The TCA agent
 
-Install it from this repository:
+The agent that models a domain under TCA, itself built under TCA on Pydantic AI. Install it from this repository:
 
 ```sh
 pip install "git+https://github.com/kylejtobin/tca.git#subdirectory=packages/python/type-construction-agent"
@@ -291,7 +290,7 @@ answer = run_sync(AgentConfig(), Prompt(text="Model a checkout domain."))
 print(answer.text.root)
 ```
 
-The deployment names the model in the environment, and the model's provider reads its own credentials there, as listed in [`.env.example`](.env.example) and in [its README](packages/python/type-construction-agent/README.md).
+A deployment names three things in the environment: the model, whose provider reads its own credentials there; the workspace the agent models in, local or sandboxed; and the SQLite file its runs are recorded in. [`.env.example`](.env.example) lists them and [the package README](packages/python/type-construction-agent/README.md) explains each. Next for it: the [eval](packages/python/type-construction-eval/README.md) that baselines it, then the loop as a durable flow of typed steps on Temporal.
 
 To work on this repository, install Docker, [just](https://github.com/casey/just), [uv](https://docs.astral.sh/uv/) and [pre-commit](https://pre-commit.com), copy `.env.example` to `.env`, and run:
 
@@ -306,10 +305,8 @@ The commit gate asks Claude Code's two review agents whether the staged change r
 
 ## Why this, why now
 
-The procedural version was always the cheap one on day one and the expensive one for the life of the system. Teams took that trade because modeling first looked slow.
+A model that can read your field names, your variants and your type structure removes the reason the procedural shortcut was ever taken. The modeled design now arrives at the speed the shortcut used to, without the bugs listed at the top of this page.
 
-A model that can read your field names, your variants, and your type structure removes the reason for the trade. The modeled design now arrives at the speed the shortcut used to, without the bugs listed at the top of this page.
-
-And a type is an instruction. The same declaration that stops an invalid value from existing tells a model what is allowed to exist. One structure does both jobs, so requirements, design, code, and documentation stop being four copies of the same intent.
+And a type is an instruction. The declaration that stops an invalid value from existing tells a model what is allowed to exist. One structure does both jobs, so requirements, design, code and documentation stop being four copies of the same intent.
 
 None of the ideas are new. This is the good half of typed functional programming and domain-driven design, held to one test and delivered in a form an agent cannot talk its way around.
