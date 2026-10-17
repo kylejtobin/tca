@@ -1,13 +1,8 @@
-import logfire
+from opentelemetry.distro import OpenTelemetryConfigurator
 
 from type_construction.agent import AgentConfig, chat
-from type_construction.agent.integration.pydantic_ai.model import AgentName
 
-telemetry = logfire.configure(
-    send_to_logfire="if-token-present",
-    service_name=AgentName.TCA_AGENT,
-    console=False,
-)
+telemetry = OpenTelemetryConfigurator().configure()  # pyright: ignore[reportUnknownMemberType]
 
 
 def main() -> None:

@@ -934,7 +934,12 @@ def test_an_operator_has_the_agent_s_spans_exported_by_naming_a_collector(tmp_pa
         unnamed = conversed(served, tmp_path, "Model a coin toss.")
         assert collector.paths == []
         named = conversed(
-            served, tmp_path, "Model a coin toss.", OTEL_EXPORTER_OTLP_ENDPOINT=collector.url
+            served,
+            tmp_path,
+            "Model a coin toss.",
+            OTEL_TRACES_EXPORTER="otlp",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_EXPORTER_OTLP_ENDPOINT=collector.url,
         )
     assert unnamed.returncode == named.returncode == 0, named.stderr
     assert "/v1/traces" in collector.paths

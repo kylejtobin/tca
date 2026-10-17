@@ -21,7 +21,8 @@ dependencies = [
     "pydantic-settings>=2.6,<3",
     "pydantic-ai-slim[openai,anthropic,bedrock,spec,cli]>=2.54,<3",
     "pydantic-ai-harness[skills]>=0.54",
-    "logfire>=4",
+    "opentelemetry-distro>=0.58b0",
+    "opentelemetry-exporter-otlp-proto-http>=1.37",
 ]
 import-names = ["type_construction.agent"]
 import-namespaces = ["type_construction"]

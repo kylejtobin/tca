@@ -74,10 +74,10 @@ tca-agent
 
 ## Watching it in traces
 
-Every run is traced by Pydantic AI's own instrumentation: a span per run, per model request and per tool call, with tokens, latency and the words. The words, every prompt, answer and tool result, are always in the spans, and nothing turns that off: whatever receives them holds application data. `tca-agent` exports its spans only when told where: `OTEL_EXPORTER_OTLP_ENDPOINT` names any OpenTelemetry collector, and `LOGFIRE_TOKEN` names Logfire. With neither, nothing leaves the process.
+Every run is traced by Pydantic AI's own instrumentation: a span per run, per model request and per tool call, with tokens, latency and the words. The words, every prompt, answer and tool result, are always in the spans, and nothing turns that off: whatever receives them holds application data. `tca-agent` exports its spans as the standard OpenTelemetry variables say: `OTEL_TRACES_EXPORTER=otlp` names the exporter and `OTEL_EXPORTER_OTLP_ENDPOINT` any OpenTelemetry collector, with `OTEL_EXPORTER_OTLP_PROTOCOL` and `OTEL_SERVICE_NAME` beside them. With no exporter named, nothing leaves the process.
 
 ```sh
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 tca-agent
+OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 tca-agent
 ```
 
-A program that runs the agent itself configures its own process once at startup, by `logfire.configure(send_to_logfire="if-token-present", console=False)`, or by running under `opentelemetry-instrument`. The repository's `compose.yaml` points the dev service at its Jaeger service, whose UI is at `http://localhost:16686`.
+A program that runs the agent itself configures its own process once at startup, as `main.py` does with the OpenTelemetry SDK's configurator reading those variables, or by running under `opentelemetry-instrument`. The repository's `compose.yaml` points the dev service at its Jaeger service, whose UI is at `http://localhost:16686`.

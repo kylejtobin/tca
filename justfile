@@ -14,6 +14,10 @@ default:
 build:
     docker compose build
 
+# Resolve the declared dependencies into the lockfile.
+lock:
+    {{dev}} uv lock
+
 # Run the tests.
 test:
     {{dev}} pytest
