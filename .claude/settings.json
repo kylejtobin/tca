@@ -3,12 +3,31 @@
     "allow": [
       "Edit",
       "Write",
-      "Read(*)",
+      "Agent(*)",
       "WebFetch(*)",
       "WebSearch(*)",
-      "Agent(*)",
+      "Bash(just *)",
       "Bash(uv add *)",
-      "Bash(uv remove *)"
-    ]
+      "Bash(uv remove *)",
+      "Bash(uv lock *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "deny": [
+      "Bash(pip *)",
+      "Bash(pip3 *)"
+    ],
+    "blockReadsOutsideWorkingDirectories": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        "."
+      ]
+    }
   }
 }
