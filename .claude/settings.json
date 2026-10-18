@@ -17,17 +17,10 @@
       "Bash(pip *)",
       "Bash(pip3 *)"
     ],
-    "additionalDirectories": [
-      "~/.claude/projects/-home-kyle-src-tca"
-    ],
     "blockReadsOutsideWorkingDirectories": true
   },
   "sandbox": {
     "enabled": true,
-    "filesystem": {
-      "denyRead": ["~/src"],
-      "allowRead": ["."]
-    },
     "excludedCommands": [
       "just *",
       "git commit *",
@@ -37,4 +30,3 @@
     ]
   }
 }
-
