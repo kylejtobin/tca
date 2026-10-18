@@ -20,6 +20,10 @@
   },
   "sandbox": {
     "enabled": true,
+    "filesystem": {
+      "denyRead": ["~/", "/mnt", "/media", "/run/media", "/srv"],
+      "allowRead": ["."]
+    },
     "excludedCommands": [
       "just *",
       "git commit *",
