@@ -3,6 +3,8 @@ type: Construct
 description: "Another system's thing, under its names, in a format no maintained library reads: a foreign record whose reading and writing this program holds itself, with whatever procedure the format needs, returning the typed record or a validation failure. Its restrictions are the format's, on its own scalars. Holds semantic scalars and format types. Lives in parser/<format>.py, and only a foreign model holds it."
 ---
 
+A PARSER STANDS ONLY AT A CROSSING, FOR ARRIVING TEXT NO LIBRARY READS INTO A PYTHON OBJECT, A DICT OR JSON. NOTHING ALREADY HELD IS PARSED.
+
 ```python
 # parser/receipt.py
 import re
