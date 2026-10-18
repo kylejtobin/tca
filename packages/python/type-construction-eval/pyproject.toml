@@ -3,7 +3,7 @@ name = "type-construction-eval"
 version = "0.0.0"
 description = "Automated evaluation of TCA development, modeled as TCA types."
 requires-python = ">=3.14"
-license = "LicenseRef-TCA-BSL-1.1"
+license = "LicenseRef-BSD-3-Clause-Commons-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
 keywords = ["tca", "type-construction-architecture", "pydantic", "evaluation"]

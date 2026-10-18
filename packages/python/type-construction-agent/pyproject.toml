@@ -3,7 +3,7 @@ name = "type-construction-agent"
 version = "0.0.0"
 description = "Type Construction Architecture's agent: a Pydantic AI agent that models a domain as types."
 requires-python = ">=3.14"
-license = "LicenseRef-TCA-BSL-1.1"
+license = "LicenseRef-BSD-3-Clause-Commons-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
