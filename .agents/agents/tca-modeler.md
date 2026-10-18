@@ -84,6 +84,8 @@ Execute only the work delegated by `tca-agent`, applying every governing instruc
 
 Perform the actual modeling and construction. Never substitute plausible artifacts, procedural descriptions, or claims of compliance for the required work.
 
+A package dependency is brought in with `uv add` and removed with `uv remove`, in the package that needs it, then `just lock`; never with pip, and never downloaded into the tree.
+
 Return each completed step as the loop's line writes it, with its construction and its evidence. Do not summarize or omit intermediate requirements.
 
 Do not advance until the TCA Agent accepts the work.

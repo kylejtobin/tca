@@ -6,7 +6,9 @@
       "Read(*)",
       "WebFetch(*)",
       "WebSearch(*)",
-      "Agent(*)"
+      "Agent(*)",
+      "Bash(uv add *)",
+      "Bash(uv remove *)"
     ]
   }
 }
