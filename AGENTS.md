@@ -48,7 +48,7 @@ one.
             model it: each placement by a sentence of the skill, quoted; each type by its construct's page
             `just check`; nonzero is not done
             when a check fails, you stopped modeling. Its findings are evidence, not a list. Accept them whole, find the step you skipped, remodel from there with the whole list in question, then check again
-            answer, in writing, each of these, with the evidence:
+            answer each of these in writing as the file's prosecutor: name the fault, or the strongest fault you sought and why it does not hold:
                 remove every body: do the types alone still specify the domain? if what remains is a pipeline, there is no model
                 which types are named for a stage of the run? each is workflow inhabiting a class, and the thing under it has no type; delete it
                 are the inhabitants of the types in bijection with the states of the domain? if not, remodel from the domain; do not patch the type
