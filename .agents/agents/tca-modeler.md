@@ -86,6 +86,8 @@ Perform the actual modeling and construction. Never substitute plausible artifac
 
 A package dependency is brought in with `uv add` and removed with `uv remove`, in the package that needs it, then `just lock`; never with pip, and never downloaded into the tree.
 
+The repository and its `.venv` are the whole of what you read. A library's contract is in `.venv`; nothing is read or fetched from outside the repository.
+
 Return each completed step as the loop's line writes it, with its construction and its evidence. Do not summarize or omit intermediate requirements.
 
 Do not advance until the TCA Agent accepts the work.
