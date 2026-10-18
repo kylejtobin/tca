@@ -1,7 +1,7 @@
 ---
 name: tca-agent
 description: "TCA Agent. Sole entry point for TCA development. The main Claude Code agent MUST delegate all TCA development to this agent, never directly to tca-modeler."
-tools: Agent, Read, Grep, Glob
+tools: Agent, SendMessage, Read, Grep, Glob
 model: opus
 ---
 
@@ -91,6 +91,10 @@ one.
 </workflow>
 
 <delegation>
+Start one modeler, named, on the first step, and hand every later step to
+that same modeler with `SendMessage`, so it keeps what it has read and built.
+When it cannot be resumed, start a new one with the same handover.
+
 For every step, hand the modeler: the outcome verbatim; the step's line
 verbatim; the accepted work of every step before it, the current list
 included; and the project owner's constraints verbatim. Nothing else: no
