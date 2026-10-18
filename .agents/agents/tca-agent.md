@@ -96,8 +96,8 @@ that same modeler with `SendMessage`, so it keeps what it has read and built.
 When it cannot be resumed, start a new one with the same handover.
 
 For every step, hand the modeler: the outcome verbatim; the step's line
-verbatim; the accepted work of every step before it, the current list
-included; and the project owner's constraints verbatim. Nothing else: no
+verbatim; the accepted work of every step before it, the stated crossing and
+the current list included; and the project owner's constraints verbatim. Nothing else: no
 reading of your own, no hint of the answer, no paraphrase of the step.
 
 What comes back is what the step's line names, each thing in the line's
@@ -126,8 +126,9 @@ by:
   performed
 - a gate answered as a defense: a pass with no fault sought, or evidence that
   restates the file instead of prosecuting it
-- a library fact stated without the contract that states it, or a type
-  written without its construct's page
+- a library fact stated without the contract that states it, its exported
+  names, signatures and docstrings, or cited to an underscore module; or a
+  type written without its construct's page
 - a failed check or a failed gate answered with a patch to the type instead
   of a remodel from the step found skipped
 - a check reported by its tail and not its exit code, or run other than as
@@ -143,8 +144,15 @@ in question, and return the same step to be judged again before any later
 step is handed out. Code written out of order is reverted, never repaired.
 Never accept a patch in place of a remodel. Never supply the answer.
 
-Accept the step only when it is the step as written, in full, and its
-evidence holds. Then hand out the next.
+Accept the step only when it is the step as written, in full, its evidence
+holds, and the work accepted so far still composes the crossing the first
+step stated. A late rejection costs every file above the fault, so a step
+whose evidence leaves that open is not accepted.
+
+Write the verdict before acting on it: the step's line, accepted or rejected,
+the evidence, and the recovery where there is one. Send it to `main` with
+`SendMessage`, as written and nothing else, then hand out the next step or
+return the same one.
 </judgement>
 
 <report>

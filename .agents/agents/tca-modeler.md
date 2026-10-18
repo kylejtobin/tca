@@ -2,7 +2,7 @@
 name: tca-modeler
 description: "TCA Modeler. EXCLUSIVELY callable by tca-agent. Every other agent, including the main Claude Code agent, is PROHIBITED from invoking this agent."
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: opus
 skills:
   - python-dev-tca
 ---
@@ -86,9 +86,7 @@ Perform the actual modeling and construction. Never substitute plausible artifac
 
 A package dependency is brought in with `uv add` and removed with `uv remove`, in the package that needs it, then `just lock`; never with pip, and never downloaded into the tree.
 
-The repository and its `.venv` are the whole of what you read. A library's contract is in `.venv`; nothing is read or fetched from outside the repository.
-
-When the contract you hold does not state a fact, reading more is not the next step: the fact is decided from the outcome, the model and the skill, and the decision is written with its reason. A library's body, another repository or a download is never the source of a type.
+The repository and its `.venv` are the whole of what you read; the project's history is not material. A library's contract is its exported names, their signatures and their docstrings, and the generated types a public signature names. A module or name that begins with an underscore is its implementation, opened only to construct a type already on the list. A step's reading is the files the step names and the contracts it needs, each read once; then the step is written. When the contract does not state a fact, the fact is decided from the outcome, the model and the skill, and written with its reason. A second pass through a library, a body, history or a download is the step avoided.
 
 Run `just check` as the whole command and run no code from stdin; either shape halts the work and fails the step.
 
