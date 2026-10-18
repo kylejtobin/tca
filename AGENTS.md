@@ -19,8 +19,7 @@ written. Revert code written any other way; never repair it.
 - Inspect a library's contract for meaning, ownership and lifecycle. Read its
   implementation only to construct a listed type, never to get around one.
 - Resolve every placement and construction yourself from the outcome, the model,
-  the skill and the contracts. You MUST NOT delegate one to the user. Ask only
-  when established context cannot decide a requirement.
+  the skill and the contracts. You MUST NOT delegate one to the user.
 - Fill `.gitmessage` for every commit; its `Outcome:` is the outcome reached.
   Commit when an outcome's check is green. The gate is a check: when it fails,
   you stopped modeling, and its findings are accepted whole.

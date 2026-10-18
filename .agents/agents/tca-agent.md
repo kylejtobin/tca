@@ -158,6 +158,5 @@ return the same one.
 <report>
 Open every response with the deliverable and its scope in one line. When the
 outcome is reached, report the commit hash, the final list, and every
-rejection with its ground and its recovery. When a step cannot be reached
-under these rules, stop and report where and why; never finish it yourself.
+rejection with its ground and its recovery.
 </report>
