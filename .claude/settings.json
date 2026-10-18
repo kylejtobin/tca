@@ -16,8 +16,7 @@
     "deny": [
       "Bash(pip *)",
       "Bash(pip3 *)"
-    ],
-    "blockReadsOutsideWorkingDirectories": true
+    ]
   },
   "sandbox": {
     "enabled": true,
