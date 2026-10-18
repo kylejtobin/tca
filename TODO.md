@@ -1,40 +1,81 @@
 # TODO
 
-The remaining work on the eval, grouped by outcome and sequenced B to G; A is built. An outcome is one thing a party outside the system can newly do; each is reached under the loop in `AGENTS.md`, every file checked by `just check`, every decision naming the sentence of the skill it follows. The modeling is A through E, A done; F is environment and verification over what A through E built; G is rendering over all of it. The decisions each item rests on are in `packages/python/type-construction-eval/docs/decisions.md`.
+The outcome: a stranger or a program can state a change to any system a dataset can exercise, run it step by step against the record, and know from validated verdicts, in two viewers and one call, whether the change made that system better at the next right step. The outcomes below achieve it, in this order.
 
-## B. A dataset is authored from a folder, its judged form is derived, and the first dataset exists
+Each outcome is one thing a party outside the system can newly do across one crossing, reached under the loop in `AGENTS.md`: the crossing stated first, what crosses, the contract that owns it, the domain type it is; then its nouns, by name and kind. An item names the decision it rests on, in `packages/python/type-construction-eval/docs/decisions.md`, and says no more. A is built, with one placement to remodel first.
 
-- **The judged form is derived, never authored.** `integration/python/` reads a directory's `.py` files through the standard library's `ast` into `Definitions`, one per class as `file: Name`, sorted, rendered as the `JudgedForm`. The same derivation runs on a reference at authoring and on a production at capture, so the diff is between like things. The authored type list stays as content for later criteria on layer and kind.
-- **Authoring from a folder.** A folder with `problem.md` and `reference/` is read into a `Dataset` document, its judged form derived as above, and registered. Datasets live in the record root; the package ships the first one as its example.
-- **The first dataset.** From `problem.md`, the framing, the type list and the reference program's own sources in this repository, authored by the folder reader.
+The outcomes are cuts through one graph, and four nodes carry its edges. The record, one system under one root: A runs it and reads its logs, B reads its folders, F exports traces into it, C writes scores into its logs, D reads the workspace left under it, H reads its traces as the transcript, E reads its logs across runs, G folds and bundles them. The case: B decides its shape, H's step case has a prior and a next step, E's judge case has a step and a verdict. The version: C adds `role`, D `entrypoint`, E `lineage`, and identity by content (D20) reads the version whole, so each addition changes what identity is, by design. The trace: A records it, and C's evaluate span, D's capture span and H's step history hang off its ids. A change to a node is made at the node and walked along every edge before anything else is built.
 
-## C. Every run is scored three ways, and the oracle scores 1.0
+Rules A established, binding every item (D22): the eval writes no file of its own, so every crossing is a library call whose reply is the fact; a span's attributes are given at its acquisition; a union's variants are each decided by a fact the others refuse. The loop's own rule, skipped twice and never again: each file's types, fields and valid states are stated before it is written, one file per step, the check between.
 
-- **Score, criterion, evaluator.** `Criterion(id, description, kind)` and `Score(address, trace, criterion, evaluator, label, value, confidence, explanation)` in the domain. Evaluators are versions of system `eval` with role `evaluator`, their parts the package's digest.
-- **The first criterion is generic.** `matches-expectation`: the produced judged form equals the expected one. Every dataset has it, so the oracle scores 1.0 before any subject-specific criterion exists.
-- **Where a score is written.** An evaluator is an interpreter in `integration/evaluator/`; its span `evaluate <criterion>` is opened as a child of the run's root through a remote context built from the trace's recorded ids, and the evaluation event is written on it. The scorer Inspect calls is a composition-root callback composing the evaluator, the log's `Score` validated from our score's JSON, and the Phoenix annotation on the root span's id through an `integration/phoenix/` provider, with the project's description and one annotation configuration per criterion.
-- **Rescoring.** Inspect's own `score` over a log with `action="append"`, written back, every score carrying its evaluator's version.
+## 0. Traces are read before any criterion is written
 
-## D. The agent is evaluated as deployed
+A person's act, outside this package, needing nothing built: the agent runs on the case in its own environment; its traces are read; each failure mode is written in observable terms; each criterion is derived with an authored passing and a failing example. It yields the criteria C and H construct. The criteria the README names are hypotheses until then.
 
-- **The agent variant.** With a second system, `Run.version` admits a `Version` or the dataset's `Oracle`, `Version` regains `role`, `entrypoint` and `lineage` as they are read, and `EntrypointInterpreter` is the union construction chooses by entrypoint, `RunAgentInterpreter` behind the action `RunAgent` beside the oracle's. It builds `AgentConfig` from the version's parts, places the workspace in the record, calls the agent's `run` inside the root span so its spans are children through the SDK's own context, takes the transcript from the run's result, captures the workspace and derives its judged form.
-- **The boundary.** Bubblewrap in the image's system layer, so the agent's commands and its check run inside its own boundary within the eval's process.
-- **In parallel, outside this package.** Run the agent on the case a handful of times in its own environment, read the traces, write the failure modes in observable terms, and derive the criteria with their authored passing and failing examples. The criteria named in the eval README are hypotheses until this is done.
+## A'. The record is one system
 
-## E. An experiment is stated, run and decided from one document
+Crossing: none new; a placement of A remodeled. The record is one system the deployment states once, `Record(root, model)`, reached as runner and as logs, each a derivation of the one statement; a `Run` crosses as before and the same `RunOutcome` returns.
 
-- **Statement and decision.** Both documents in the domain, each written once: the statement before the run names dataset version, baseline, candidates, the one part that differs, the deciding criterion, the guardrails, the repetitions and the threshold rule; the decision after names the results, kept or rejected or inconclusive, and the reason.
-- **The statement is a message.** The process runs baseline and candidates on the dataset version as one Inspect eval set, then `decide` reads each log's per-scorer metrics, applies the rule and writes the decision.
-- **Validation is an experiment.** An evaluator counts only after a statement over a `judge-<criterion>` dataset, whose cases are the authored examples, was kept.
+Nouns: the `record` integration, holding what `inspect` and `record/registry` held; the log reader over the root, the dataset's logs a derivation; the `inspect` integration gone. Nothing new is read, so nothing new is added; D's and B's folders arrive when something reads them.
 
-## F. A stranger runs it from the README and opens two viewers
+Rests on D20, D22.
 
-- **The process.** `main.py`: settings under `EVAL_` naming the record root, the model binding and one message, `RunMessage(dataset, version, repetitions)` or `ExperimentMessage(statement)`, a union picked by shape; the OpenTelemetry SDK configured from the standard variables with the baggage processor at module level; one callback that performs the message and prints where the record put it.
-- **The services.** `eval`, `collector`, `phoenix` and `viewer` in `compose.yaml` with pinned images, under the infrastructure skill; the collector maps `eval.input`, `eval.output` and `eval.span.kind` to OpenInference, sets the project from the root span's dataset, exports to Phoenix and streams the trace into the record root; `just` recipes to start them.
-- **Leveled and verified.** `.env.example`, the eval README and its documents say what A through F built; the first run is verified from the README end to end: the oracle's traces in Phoenix under the dataset's project, its log in the viewer, its score of 1.0.
+## B. A dataset is authored from a folder, and the first dataset exists
+
+Crossing: a dataset's name crosses from a program; the record owns the folder under its root; the domain type is `IdentifiedDataset`.
+
+Nouns: `DatasetFolder`, `CaseFolder`, the layout, shaped for every case the graph names, a problem with files and an expectation, a prefix with a next step, a step with a verdict; `AuthorDataset`, `AuthorCase`, `ReadTree`, the actions; `FileEntry | DirectoryEntry`, an entry by its kind; `Folders`, the record's third derivation from its one statement; in the record integration, the derivation of a judged form from what folders yield, `PythonSource | OtherSource` a file by its place, `ClassDefinition | OtherStatement` a statement by its own fields, what `ast` yields validated by attributes, never a parser, `Definition`, `Sources`, folded to one line per class, `file: Name`, sorted. The domain holds `JudgedForm` and nothing of Python, classes or any one subject; D reuses the derivation at capture.
+
+The judged form is the subject's own noun list, so it is the step unit H judges. The first dataset is `datasets/registrar`, content shipped by the package; its reference is the registrar's own sources; the framing and the type list stay beside it as content.
+
+Rests on D15, D20, D22, and a decision for the folder's shape and the judged form.
+
+## F. A stranger runs the oracle from the README and opens two viewers
+
+Crossing: one message crosses from the environment; the process owns it; `RunMessage(dataset, repetitions)` is the domain's `Run`, and what the process prints is where the record put the log.
+
+Nouns: `main.py`, the composition root, the OpenTelemetry SDK and the baggage processor configured at module level; the services `eval`, `collector`, `phoenix`, `viewer`, pinned images under the infrastructure skill; the collector's mapping of `eval.*` to OpenInference and its export into the record root; `just` recipes.
+
+Verified from the README end to end: the oracle's traces in Phoenix under the dataset's project, its log in the viewer. Every outcome after this is verified the same way.
+
+Rests on D8, D18, D21.
+
+## C. Every run is scored, by code and by a judge, three ways, and the oracle scores 1.0
+
+Crossing: a run's log crosses to the scorer Inspect calls; the log owns the score; the domain type is `Score`.
+
+Nouns: `Criterion(id, description, kind)`; `Score(address, trace, criterion, evaluator, label, value, confidence, explanation)`; the evaluator as a `Version`, which regains `role`; `matches-expectation`, the code criterion every dataset has; the first judge criterion from item 0, a version of a model and a prompt through Inspect's model-graded scoring, counted only after E validates it; `EvaluateInterpreter`, whose span `evaluate <criterion>` is a child of the run's root through the recorded ids, its verdict among its attributes at acquisition; the scorer as a composition-root callback Inspect names by registry, as the solver is; the Phoenix provider, its annotation, project description and annotation configuration, each kept by the reply Phoenix gives; rescoring as Inspect's own `score`, which returns the log.
+
+Rests on D5, D6, D7, D13, D17, D22.
+
+## D. The agent runs as deployed
+
+Crossing: a version a program defines crosses in `Run`; the agent's own public surface owns the production; the domain type is `Trace`.
+
+Nouns: `Version` regains `entrypoint`; `Run.version` is `Version | Oracle`, and `IdentifiedRun` admits either; `RunAgent`, the action, and `EntrypointInterpreter`, the union construction chooses by entrypoint; `AgentConfig` from the version's parts; the workspace the agent leaves under the artifact's address, which the record reads back as the capture, its judged form derived as in B, announced on the `capture workspace` span, a child of the root through the recorded ids; the case's input files reach the workspace by the agent's or Inspect's contract, never by a write of the eval's; bubblewrap in the image; the step judge the agent consults as a part of its version, so E can compare.
+
+Rests on D3, D4, D15, D18, D19.
+
+## H. Each step of a run is judged as the next right thing
+
+Crossing one: a recorded run's transcript crosses to the capture; the trace owns it; the domain type is the judged form's history, file by file, each step scored by the step criterion.
+
+Crossing two: a step case crosses as a `Case` whose input is a recorded run's prefix and whose expectation is the next step, cut from the traces; `Input.prior` as the schema has it.
+
+Rests on D14.
+
+## E. An experiment is stated by a person, run and decided in one message
+
+Crossing: a `Statement` crosses as the process's message; the eval set's logs own the results; the domain types are `Statement` and `Decision`.
+
+Nouns: `Statement`, naming dataset version, baseline, candidates, the one part that differs, the deciding criterion, the guardrails, the repetitions and the threshold rule; `Version` regains `lineage`; `Decision`, kept or rejected or inconclusive with its reason, recorded where a library's reply is the fact, which amends D10; validation as an experiment over a `judge-<criterion>` dataset of the authored examples; the first experiment, the agent with the step judge against the agent without it, decided by the step criterion.
+
+Rests on D10, D12, D13.
 
 ## G. The record reads itself to a person
 
-- **Listing.** `list` folds the datasets' logs, read through Inspect, into datasets, versions and runs, newest first; a version's display name resolves here, from the logs, to the newest version run under it.
-- **The table.** A per-dataset table of versions against criteria from the logs' metrics, as text, as soon as scores exist.
-- **The front door and the bundle.** One generated page, the story in chapters, the best version per dataset and how to read the rest, over Inspect's static bundle of the viewer and the logs.
+Crossing: a listing, a table and a page cross to a person; the logs own what they show.
+
+Nouns: `list`, the datasets, versions and runs folded from the logs, newest first, where a display name resolves to the newest version run under it; the per-dataset table of versions against criteria from the logs' metrics; the front door over Inspect's bundle, served or written through a library whose reply is the fact, which amends D11.
+
+Rests on D9, D11, D16.
