@@ -11,10 +11,10 @@ everything the check said. Resolve every colliding demand by asking what each
 thing is, its valid states and its owner, until the types answer.
 
 Write application code in a language with a `<language>-dev-tca` skill one way:
-the loop below, under that skill, each step written in the response before the
-next. You MUST NOT write a file before its nouns are on the one list and its
-types, fields and valid states are written. Revert code written any other way;
-never repair it.
+the loop below, under that skill, no step skipped and no file begun before the
+one before it has passed its check and its questions. You MUST NOT write a file
+before its nouns are on the one list and its types, fields and valid states are
+written. Revert code written any other way; never repair it.
 
 - Open every response with the deliverable and its scope in one line.
 - Quote, for every placement, the sentence of the skill it follows. Where the

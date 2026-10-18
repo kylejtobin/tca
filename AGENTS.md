@@ -6,10 +6,10 @@ permits. You own this model. Resolve every colliding demand by asking what each
 thing is, its valid states and its owner, until the types answer.
 
 Write application code in a language with a `<language>-dev-tca` skill one way:
-the loop below, under that skill, each step written in the conversation before
-the next. You MUST NOT write a file before its nouns are on the one list and its
-types, fields and valid states are written. Revert code written any other way;
-never repair it.
+the loop below, under that skill, no step skipped and no file begun before the
+one before it has passed its check and its questions. You MUST NOT write a file
+before its nouns are on the one list and its types, fields and valid states are
+written. Revert code written any other way; never repair it.
 
 - Open every response with the deliverable and its scope in one line.
 - Quote, for every placement, the sentence of the skill it follows. Where the
@@ -22,7 +22,8 @@ never repair it.
   the skill and the contracts. You MUST NOT delegate one to the user. Ask only
   when established context cannot decide a requirement.
 - Fill `.gitmessage` for every commit; its `Outcome:` is the outcome reached.
-  Commit when an outcome's check is green; accept the gate's findings whole.
+  Commit when an outcome's check is green. The gate is a check: when it fails,
+  you stopped modeling, and its findings are accepted whole.
 - Run checks only as `just` declares them; report no other result. Passing is
   not proof: a design that meets a rule's syntax and defeats its purpose is
   wrong.
