@@ -17,6 +17,13 @@ from type_construction.eval.domain.evaluation.type import (
 from type_construction.eval.domain.evaluation.value import Address, DatasetRef, VersionRef
 
 
+class RecordFolder(StrEnum):
+    """Where each kind of record lives under the record root, by the name the map gives it:
+    one log directory per dataset, holding every log ever made on it."""
+
+    LOGS = "logs"
+
+
 class RecordPath(RootModel[str]):
     """The directory the record lives in, as the deployment names it: every log, and later
     every authored dataset and experiment, is under it. The deployment names it once; every
@@ -192,8 +199,8 @@ class SampleMetadata(BaseModel):
     system: VersionRef
 
 
-class SampleSpec(BaseModel):
-    """A case as Inspect's sample receives it: the case's name as the sample's id, its input,
+class CaseSample(BaseModel):
+    """A case as Inspect's sample: the case's name as the sample's id, its input,
     its expected judged form as the target, and its metadata."""
 
     model_config = ConfigDict(
@@ -224,8 +231,8 @@ class TargetRecord(BaseModel):
     text: JudgedForm
 
 
-class Arrival(BaseModel):
-    """What Inspect hands the solver for one repetition, read once from its state: the
+class SampleState(BaseModel):
+    """Inspect's state of one sample at the solver, read once: the
     sample's id, which is the case's, its input, its target, its metadata and the epoch; its
     derivations are the repetition's address and its production."""
 
@@ -338,8 +345,21 @@ class SampleOutput(BaseModel):
     metadata: Trace
 
 
-class OutputRecord(BaseModel):
-    """A logged sample's output, read back: the trace it carries as metadata."""
+class NoCompletion(RootModel[str]):
+    """Inspect's completion of an output no model produced: the empty text."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    root: str = Field(max_length=0)
+
+
+class UnproducedOutput(BaseModel):
+    """A logged sample's output when its repetition produced nothing: an empty completion,
+    which refuses every produced output."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -349,6 +369,22 @@ class OutputRecord(BaseModel):
         revalidate_instances="never",
         from_attributes=True,
     )
+    completion: NoCompletion
+
+
+class OutputRecord(BaseModel):
+    """A logged sample's output when its repetition produced: its completion, the judged
+    form, and the trace it carries as metadata; it refuses an unproduced output."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+        from_attributes=True,
+    )
+    completion: JudgedForm
     metadata: Trace
 
 
@@ -385,8 +421,8 @@ class SampleError(BaseModel):
 
 
 class ErroredSample(BaseModel):
-    """A logged sample whose repetition failed: Inspect recorded its error, and no trace;
-    known by its sample's id, its epoch and its metadata."""
+    """A logged sample whose repetition failed before it produced: Inspect recorded its error
+    and an unproduced output; known by its sample's id, its epoch and its metadata."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -399,6 +435,7 @@ class ErroredSample(BaseModel):
     id: CaseId
     epoch: Repetition
     metadata: SampleMetadata
+    output: UnproducedOutput
     error: SampleError
 
     @property

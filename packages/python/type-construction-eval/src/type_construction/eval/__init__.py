@@ -10,7 +10,6 @@ from type_construction.eval.domain.evaluation.dataset import (
     Dataset,
     IdentifiedDataset,
 )
-from type_construction.eval.domain.evaluation.record import DatasetLogs
 from type_construction.eval.domain.evaluation.run import (
     Execute,
     Failed,
@@ -41,7 +40,6 @@ from type_construction.eval.domain.evaluation.type import (
     Invariant,
     JudgedForm,
     PartName,
-    RecordFolder,
     RelativePath,
     Repetition,
     Repetitions,
@@ -65,14 +63,14 @@ from type_construction.eval.domain.evaluation.value import (
     VersionRef,
 )
 from type_construction.eval.domain.evaluation.version import IdentifiedVersion, Version
-from type_construction.eval.integration.inspect.interpreter import (
+from type_construction.eval.integration.record.identity import RunIdentity
+from type_construction.eval.integration.record.interpreter import (
     ExecuteInterpreter,
     ReadLogInterpreter,
 )
-from type_construction.eval.integration.inspect.model import Arrival, ModelBinding, RecordPath
-from type_construction.eval.integration.inspect.provider import LogReader, Record
-from type_construction.eval.integration.inspect.task import TracedOutput
-from type_construction.eval.integration.record.registry import Identification
+from type_construction.eval.integration.record.model import ModelBinding, RecordPath, SampleState
+from type_construction.eval.integration.record.provider import Logs, Record
+from type_construction.eval.integration.record.task import TracedOutput
 from type_construction.eval.integration.subject.interpreter import OracleProduceInterpreter
 from type_construction.eval.integration.subject.provider import Tracing
 
@@ -83,7 +81,6 @@ __all__ = (
     "CaseId",
     "Cases",
     "Dataset",
-    "DatasetLogs",
     "DatasetName",
     "DatasetRef",
     "DatasetVersion",
@@ -106,7 +103,7 @@ __all__ = (
     "InputText",
     "Invariant",
     "JudgedForm",
-    "LogReader",
+    "Logs",
     "ModelBinding",
     "OracleProduce",
     "Part",
@@ -114,7 +111,6 @@ __all__ = (
     "Parts",
     "ReadLog",
     "Record",
-    "RecordFolder",
     "RecordPath",
     "RecordedRun",
     "RelativePath",
@@ -155,7 +151,7 @@ async def produce(state: TaskState, generate: Generate) -> TaskState:  # noqa: A
         output=ModelOutput.model_validate_json(
             TracedOutput(
                 trace=await OracleProduceInterpreter(
-                    action=Arrival.model_validate(state, from_attributes=True).produce,
+                    action=SampleState.model_validate(state, from_attributes=True).produce,
                     provider=Tracing(),
                 ).interpret()
             ).output.model_dump_json()
@@ -178,7 +174,7 @@ async def run(config: EvalConfig, action: Run) -> RunOutcome:
     return await ReadLogInterpreter(
         action=ReadLog(
             log=await ExecuteInterpreter(
-                action=Execute(run=Identification(run=action).identified),
+                action=Execute(run=RunIdentity(run=action).identified),
                 provider=config.record,
             ).interpret()
         ),

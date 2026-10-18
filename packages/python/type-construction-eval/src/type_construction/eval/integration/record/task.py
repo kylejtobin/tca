@@ -2,7 +2,6 @@ from inspect_ai import Task
 from inspect_ai.dataset import Sample
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from type_construction.eval.domain.evaluation.record import DatasetLogs
 from type_construction.eval.domain.evaluation.run import (
     FinishedLog,
     IdentifiedRun,
@@ -16,24 +15,44 @@ from type_construction.eval.domain.evaluation.run import (
     UnfinishedRun,
 )
 from type_construction.eval.domain.evaluation.type import DatasetName, Description, RelativePath
-from type_construction.eval.integration.inspect.model import (
+from type_construction.eval.integration.record.model import (
     AssistantMessage,
+    CaseSample,
     Choice,
     Choices,
     ErroredSample,
     FinishedHeader,
     LogDir,
     LogLocation,
+    RecordFolder,
     RecordPath,
     SampleMetadata,
     SampleOutput,
-    SampleSpec,
     TracedSample,
     UnfinishedHeader,
 )
 
 
-class TaskSpec(BaseModel):
+class DatasetLogs(BaseModel):
+    """Where every log ever made on one dataset lives: one directory under the record root,
+    named by the dataset, so two versions are found in one place and told apart by a
+    column."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        strict=True,
+        validate_default=True,
+        revalidate_instances="never",
+    )
+    dataset: DatasetName
+
+    @property
+    def path(self) -> RelativePath:
+        return RelativePath(f"{RecordFolder.LOGS}/{self.dataset.root}")
+
+
+class RunTask(BaseModel):
     """A run in Inspect's terms: one task named by the dataset, one sample per case carrying
     its input, its expected judged form and its references, as many epochs as repetitions,
     and a description that tells a stranger what a sample, an epoch and a score are here."""
@@ -51,7 +70,7 @@ class TaskSpec(BaseModel):
     def samples(self) -> tuple[Sample, ...]:
         return tuple(
             Sample.model_validate_json(
-                SampleSpec(
+                CaseSample(
                     id=case.id,
                     input=case.input.text,
                     target=case.expectation.judged_form,
@@ -229,7 +248,7 @@ class TracedOutput(BaseModel):
         )
 
 
-class FinishedLogRead(BaseModel):
+class FinishedLogContents(BaseModel):
     """A finished run's log as read: every sample carries a trace; its derivation is the
     recorded run."""
 
@@ -253,7 +272,7 @@ class FinishedLogRead(BaseModel):
         )
 
 
-class ShortLogRead(BaseModel):
+class ShortLogContents(BaseModel):
     """A short run's log as read, whatever its samples carry; its derivation is the
     unfinished run, with what each repetition the runner reached left."""
 
@@ -278,7 +297,7 @@ class ShortLogRead(BaseModel):
         )
 
 
-class Log(RootModel[FinishedLogRead | ShortLogRead]):
+class Log(RootModel[FinishedLogContents | ShortLogContents]):
     """A log as read, finished or short, which the log decides; its derivation is what
     became of the run."""
 

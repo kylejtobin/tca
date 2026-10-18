@@ -2,21 +2,21 @@ from inspect_ai.solver import SolverSpec
 from pydantic import BaseModel, ConfigDict
 
 from type_construction.eval.domain.evaluation.run import Execute, ReadLog, RunLog, RunOutcome
-from type_construction.eval.integration.inspect.model import (
+from type_construction.eval.integration.record.model import (
     LoggedSample,
     LogHeader,
     LogHeaders,
     SolverName,
 )
-from type_construction.eval.integration.inspect.provider import LogReader, Record
-from type_construction.eval.integration.inspect.task import (
+from type_construction.eval.integration.record.provider import Logs, Record
+from type_construction.eval.integration.record.task import (
     HeadedLog,
     Log,
     LogContents,
     LogDirectory,
     LogFile,
     RunHeader,
-    TaskSpec,
+    RunTask,
 )
 
 
@@ -45,7 +45,7 @@ class ExecuteInterpreter(BaseModel):
                     tuple(
                         LogHeader.model_validate(log, from_attributes=True).header
                         for log in await self.provider.client(
-                            TaskSpec(action=self.action.run).task,
+                            RunTask(action=self.action.run).task,
                             log_dir=LogDirectory(
                                 root=self.provider.root,
                                 dataset=self.action.run.dataset.dataset.name,
@@ -71,7 +71,7 @@ class ReadLogInterpreter(BaseModel):
         revalidate_instances="never",
     )
     action: ReadLog
-    provider: LogReader
+    provider: Logs
 
     async def interpret(self) -> RunOutcome:
         return Log.model_validate(

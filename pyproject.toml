@@ -110,7 +110,7 @@ forbidden_modules = [
 name = "The eval's domain files import those above them"
 type = "layers"
 containers = ["type_construction.eval.domain.evaluation"]
-layers = ["run", "dataset", "record | version", "value", "type"]
+layers = ["run", "dataset", "version", "value", "type"]
 
 [[tool.importlinter.contracts]]
 name = "The eval imports inward, file by file"
@@ -122,7 +122,6 @@ layers = ["config", "integration", "domain"]
 name = "The eval's integrations import none of each other"
 type = "independence"
 modules = [
-    "type_construction.eval.integration.inspect",
     "type_construction.eval.integration.record",
     "type_construction.eval.integration.subject",
 ]
@@ -134,10 +133,10 @@ containers = ["type_construction.eval.integration.subject"]
 layers = ["interpreter", "production", "provider", "model"]
 
 [[tool.importlinter.contracts]]
-name = "The eval's Inspect files import those above them"
+name = "The eval's record files import those above them"
 type = "layers"
-containers = ["type_construction.eval.integration.inspect"]
-layers = ["interpreter", "task", "provider", "model"]
+containers = ["type_construction.eval.integration.record"]
+layers = ["interpreter", "task | identity", "provider", "model"]
 
 [[tool.importlinter.contracts]]
 name = "The registrar imports inward, file by file"

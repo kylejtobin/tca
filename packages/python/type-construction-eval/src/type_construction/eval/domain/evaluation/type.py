@@ -258,13 +258,6 @@ class ErrorMessage(RootModel[str]):
     root: str = Field(min_length=1)
 
 
-class RecordFolder(StrEnum):
-    """Where each kind of record lives under the record root, by the name the map gives it:
-    one log directory per dataset, holding every log ever made on it."""
-
-    LOGS = "logs"
-
-
 class Invariant(StrEnum):
     """A rule of evaluation that construction enforces, in evaluation's words."""
 

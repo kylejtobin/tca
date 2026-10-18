@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from type_construction.eval.integration.inspect.provider import Record
+from type_construction.eval.integration.record.provider import Record
 
 
 class EvalConfig(BaseSettings):

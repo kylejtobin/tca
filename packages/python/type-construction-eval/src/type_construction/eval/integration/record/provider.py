@@ -5,10 +5,10 @@ from inspect_ai import eval_async  # pyright: ignore[reportUnknownVariableType]
 from inspect_ai.log import EvalLog, EvalSample, read_eval_log_samples
 from pydantic import BaseModel, ConfigDict
 
-from type_construction.eval.integration.inspect.model import ModelBinding, RecordPath
+from type_construction.eval.integration.record.model import ModelBinding, RecordPath
 
 
-class LogReader(BaseModel):
+class Logs(BaseModel):
     """The record read back: Inspect's logs under the record root. Constructed from the one
     statement the deployment made of the record; its one derivation is the library's reader
     of a log's samples, which yields them one by one and keeps nothing."""
@@ -48,5 +48,5 @@ class Record(BaseModel):
         return partial(eval_async, model=self.model.root, log_header_only=True)
 
     @property
-    def logs(self) -> LogReader:
-        return LogReader(root=self.root)
+    def logs(self) -> Logs:
+        return Logs(root=self.root)

@@ -9,7 +9,7 @@ from type_construction.eval.domain.evaluation.value import DatasetRef, VersionRe
 from type_construction.eval.domain.evaluation.version import IdentifiedVersion, Version
 
 
-class DatasetEntry(BaseModel):
+class DatasetIdentity(BaseModel):
     """A dataset as the record identifies it: by the digest of its cases in order, so a case
     added later is a new version and a decision taken on this one never moves."""
 
@@ -37,7 +37,7 @@ class DatasetEntry(BaseModel):
         return IdentifiedDataset(dataset=self.dataset, ref=self.ref)
 
 
-class VersionEntry(BaseModel):
+class VersionIdentity(BaseModel):
     """A version as the record identifies it: by the digest of its name and its parts, so the
     display name identifies nothing."""
 
@@ -67,7 +67,7 @@ class VersionEntry(BaseModel):
         return IdentifiedVersion(version=self.version, ref=self.ref)
 
 
-class Identification(BaseModel):
+class RunIdentity(BaseModel):
     """A run as a program stated it, as the record identifies it: the dataset by its content,
     and the oracle the identified dataset derives; its derivation is the run with its
     identities assigned."""
@@ -83,12 +83,12 @@ class Identification(BaseModel):
 
     @property
     def dataset(self) -> IdentifiedDataset:
-        return DatasetEntry(dataset=self.run.dataset).identified
+        return DatasetIdentity(dataset=self.run.dataset).identified
 
     @property
     def identified(self) -> IdentifiedRun:
         return IdentifiedRun(
             dataset=self.dataset,
-            version=VersionEntry(version=self.dataset.oracle).identified,
+            version=VersionIdentity(version=self.dataset.oracle).identified,
             repetitions=self.run.repetitions,
         )

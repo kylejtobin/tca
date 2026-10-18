@@ -64,17 +64,19 @@ from type_construction.eval import (
     UnfinishedRun,
     run_sync,
 )
-from type_construction.eval.integration.inspect.interpreter import (
+from type_construction.eval.integration.record.identity import RunIdentity, VersionIdentity
+from type_construction.eval.integration.record.interpreter import (
     ExecuteInterpreter,
     ReadLogInterpreter,
 )
-from type_construction.eval.integration.inspect.model import (
+from type_construction.eval.integration.record.model import (
     ErroredSample,
+    NoCompletion,
     SampleError,
     SampleMetadata,
+    UnproducedOutput,
 )
-from type_construction.eval.integration.inspect.task import Log, LogContents
-from type_construction.eval.integration.record.registry import Identification, VersionEntry
+from type_construction.eval.integration.record.task import Log, LogContents
 
 EXPORTED = InMemorySpanExporter()
 PROVIDER = TracerProvider()
@@ -189,7 +191,7 @@ def test_a_run_whose_system_fails_is_logged_short_and_read_as_unfinished(
     config: EvalConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(type_construction.eval, "produce", fall_over)
-    registered = Identification(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
+    registered = RunIdentity(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
     log = asyncio.run(
         ExecuteInterpreter(action=Execute(run=registered), provider=config.record).interpret()
     )
@@ -216,7 +218,7 @@ def test_a_run_whose_system_fails_is_logged_short_and_read_as_unfinished(
 
 
 def test_a_finished_log_with_a_repetition_that_did_not_produce_is_refused() -> None:
-    registered = Identification(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
+    registered = RunIdentity(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
     with pytest.raises(ValidationError):
         Log.model_validate(
             LogContents(
@@ -230,6 +232,7 @@ def test_a_finished_log_with_a_repetition_that_did_not_produce_is_refused() -> N
                         metadata=SampleMetadata(
                             dataset=registered.dataset.ref, system=registered.version.ref
                         ),
+                        output=UnproducedOutput(completion=NoCompletion("")),
                         error=SampleError(message=ErrorMessage("x")),
                     ),
                 ),
@@ -238,8 +241,8 @@ def test_a_finished_log_with_a_repetition_that_did_not_produce_is_refused() -> N
 
 
 def test_a_run_is_of_its_dataset_s_own_oracle_and_no_other_version() -> None:
-    registered = Identification(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
-    other = VersionEntry(
+    registered = RunIdentity(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
+    other = VersionIdentity(
         version=registered.version.version.model_copy(update={"name": SystemName("other")})
     ).identified
     with pytest.raises(ValidationError):
@@ -247,7 +250,7 @@ def test_a_run_is_of_its_dataset_s_own_oracle_and_no_other_version() -> None:
 
 
 def test_a_recorded_run_holds_a_trace_at_each_address_the_run_names_and_no_other() -> None:
-    registered = Identification(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
+    registered = RunIdentity(run=Run(dataset=DATASET, repetitions=Repetitions(1))).identified
     elsewhere = Trace(
         address=registered.addresses[0].model_copy(update={"repetition": Repetition(2)}),
         trace=TraceId("a" * 32),
