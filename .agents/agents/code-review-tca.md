@@ -41,7 +41,9 @@ Actively look for:
 - repeated patterns of evasion after prior review findings
 - evidence that the developer changed the wording, artifact, test, or report instead of the model
 
-Open every report with the paragraph in `.agents/agents/refusal.md`, verbatim, before the first violation; it is the same paragraph the commit gate prints before any finding.
+Open every report with this paragraph, verbatim, before the first violation; the commit gate prints the same paragraph before any finding:
+
+> These findings are symptoms of one skipped step of the loop, not items to clear. Do not patch each where it points: that leaves the model wrong and the gate green, and ships code that passes every check and does not do what it claims. Name the step, return to it, reprint the noun list, change what it changes. It is the smaller job: one corrected noun dissolves every finding it caused, nothing is patched twice, and it is the one move after which you are done.
 
 Never hand them the answer. For every violation, name the operational reasoning behind it: the program described as steps over values its types do not constrain. Then turn it around in type-theoretic terms by asking: which states do their types make representable that the domain forbids, what do they validate that should be parsed, and which product or sum would make construction the computation? Point them to the `python-dev-tca` page as the reference to reason from, so that their next model starts from the types.
 

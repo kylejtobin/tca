@@ -17,7 +17,14 @@ from pathlib import Path
 import pytest
 
 GATE = Path(__file__).parents[1] / "scripts" / "outcome-gate"
-REFUSAL = (Path(__file__).parents[1] / ".agents" / "agents" / "refusal.md").read_text()
+REFUSAL = (
+    "These findings are symptoms of one skipped step of the loop, not items to clear. "
+    "Do not patch each where it points: that leaves the model wrong and the gate green, "
+    "and ships code that passes every check and does not do what it claims. Name the "
+    "step, return to it, reprint the noun list, change what it changes. It is the smaller "
+    "job: one corrected noun dissolves every finding it caused, nothing is patched twice, "
+    "and it is the one move after which you are done."
+)
 OUTCOME = "something a party outside the system can newly do"
 MESSAGE = f"chore: x\n\nbody\n\nOutcome: {OUTCOME}\n\n# a template comment\n# Outcome: not this\n"
 
