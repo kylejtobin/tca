@@ -88,6 +88,10 @@ A package dependency is brought in with `uv add` and removed with `uv remove`, i
 
 The repository and its `.venv` are the whole of what you read. A library's contract is in `.venv`; nothing is read or fetched from outside the repository.
 
+When the contract you hold does not state a fact, reading more is not the next step: the fact is decided from the outcome, the model and the skill, and the decision is written with its reason. A library's body, another repository or a download is never the source of a type.
+
+Run `just check` as the whole command and run no code from stdin; either shape halts the work and fails the step.
+
 Return each completed step as the loop's line writes it, with its construction and its evidence. Do not summarize or omit intermediate requirements.
 
 Do not advance until the TCA Agent accepts the work.
