@@ -1809,6 +1809,20 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-processor-baggage"
+version = "0.58b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/a8/63d23ab3a3e2b5ae7aa4237396f75dbd1330dfaf890ec8dbab16e2dac329/opentelemetry_processor_baggage-0.58b0.tar.gz", hash = "sha256:a99a656d4867f9b96e0da31e2f9ef0d1c6136c0122472411618936c5e6205c77", size = 7562, upload-time = "2025-09-11T11:43:03.246Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/d7/b2f4367ad487bfbd95dd4e2a9cf037b63b3af216f84a030f9e35605664b9/opentelemetry_processor_baggage-0.58b0-py3-none-any.whl", hash = "sha256:eacad51f9f3714a76daccb2a94dde0402838c97479d6848283a1f06457cb6ce4", size = 8875, upload-time = "2025-09-11T11:42:06.74Z" },
+]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "1.37.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3009,13 +3023,19 @@ version = "0.0.0"
 source = { editable = "packages/python/type-construction-eval" }
 dependencies = [
     { name = "inspect-ai" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-processor-baggage" },
     { name = "pydantic" },
+    { name = "pydantic-ai-slim" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "inspect-ai", specifier = ">=0.3,<0.4" },
+    { name = "opentelemetry-api", specifier = ">=1.37,<2" },
+    { name = "opentelemetry-processor-baggage", specifier = ">=0.58b0,<0.59" },
     { name = "pydantic", specifier = ">=2.9,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.54,<3" },
 ]
 
 [[package]]

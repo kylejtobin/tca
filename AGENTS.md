@@ -27,7 +27,7 @@ An outcome is one thing a party outside the system can newly do across one cross
             state its types, fields and valid states; for every resource, establish who acquires it, who owns it, who releases it, and over what lifetime; a need below changes now, a need above is listed
             model it: each placement by a sentence of the skill, each type by its construct's page
             `just check`; nonzero is not done
-            a failing check is corrected in the artifact whose contract is wrong, including tests and documentation; check again
+            when a check fails, you stopped modeling. Its findings are evidence, not a list. Accept them whole, find the step you skipped, remodel from there with the whole list in question, then check again
             ask the skill's three questions, then question the whole list, none of it settled: a noun missing, redundant, misnamed, misplaced, wrongly structured or wrongly owned; ask a no again from another angle
             on a finding: reprint the whole list; at or below, change now; above, list it
     verify the outcome in tests that cross as its contract's owner would, including every applicable ending and resource release; execute its documented example where it exposes a public interface; a miss is a crossing missing or wrong

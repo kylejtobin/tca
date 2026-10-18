@@ -66,7 +66,7 @@ confidence = "LOW"
 severity = "LOW"
 
 [tool.importlinter]
-root_packages = ["type_construction.agent", "type_construction.registrar"]
+root_packages = ["type_construction.agent", "type_construction.eval", "type_construction.registrar"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -91,6 +91,53 @@ forbidden_modules = [
     "pydantic_ai_harness",
     "pydantic_settings",
 ]
+
+[[tool.importlinter.contracts]]
+name = "The eval's domain imports nothing outside itself"
+type = "forbidden"
+source_modules = ["type_construction.eval.domain"]
+forbidden_modules = [
+    "type_construction.agent",
+    "type_construction.eval.integration",
+    "type_construction.eval.config",
+    "inspect_ai",
+    "pydantic_ai",
+    "opentelemetry",
+    "pydantic_settings",
+]
+
+[[tool.importlinter.contracts]]
+name = "The eval's domain files import those above them"
+type = "layers"
+containers = ["type_construction.eval.domain.evaluation"]
+layers = ["run", "dataset", "record | version", "value", "type"]
+
+[[tool.importlinter.contracts]]
+name = "The eval imports inward, file by file"
+type = "layers"
+containers = ["type_construction.eval"]
+layers = ["config", "integration", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "The eval's integrations import none of each other"
+type = "independence"
+modules = [
+    "type_construction.eval.integration.inspect",
+    "type_construction.eval.integration.record",
+    "type_construction.eval.integration.subject",
+]
+
+[[tool.importlinter.contracts]]
+name = "The eval's subject files import those above them"
+type = "layers"
+containers = ["type_construction.eval.integration.subject"]
+layers = ["interpreter", "production", "provider", "model"]
+
+[[tool.importlinter.contracts]]
+name = "The eval's Inspect files import those above them"
+type = "layers"
+containers = ["type_construction.eval.integration.inspect"]
+layers = ["interpreter", "task", "provider", "model"]
 
 [[tool.importlinter.contracts]]
 name = "The registrar imports inward, file by file"
