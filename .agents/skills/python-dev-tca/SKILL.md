@@ -51,3 +51,5 @@ An action carries every rule its effect must follow; the system it calls enforce
 ```
 
 The table is the order you model in. Imports follow ownership, whatever a file's position: a domain file imports only domain files above it, and nothing outside the domain; an integration file imports the domain, its library and its own system's files above it, never another system's, and a foreign model imports from `parser/` the format type that reads its records; a format type imports the domain's scalars and nothing of an integration; the application imports what it composes. Nothing imports in a cycle; a type that holds itself does so within its own file. Each construct is on the page beside its file. The shop, every class in its group, is drawn one crossing at a time in `whole-program.md`.
+
+If you believe this skill is missing the instruction your case needs, you are wrong: you have stopped modeling. Ask again what the thing is, its valid states and its owner, until the types answer. The answer is a construction, and it is on these pages because every construction is.

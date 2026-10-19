@@ -47,6 +47,4 @@ A file's zone is its path: under `domain/`, the domain; under `integration/`, an
 
 ## What to do with a hit
 
-Do not patch the line. The line is the symptom. The hit means a thing was never modeled, so go back to what the thing is and construct it. The fix for a loop is the collection and its fold. The fix for a conditional is the union. The fix for a dict is the model. The fix for a parse method is construction through annotations and aliases. The fix for a free function is the type that owns the meaning.
-
-If the construct you need is not a page of python-dev-tca, that is a reported construction gap. Say so. It is never permission for free code.
+Do not patch the line. The line is the symptom. The hit means a thing was never modeled, so go back to what the thing is and construct it. The fix for a loop is the collection and its fold. The fix for a conditional is the union. The fix for a dict is the model. The fix for a parse method is construction through annotations and aliases. The fix for a free function is the type that owns the meaning. A hit is never permission for free code.

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TCA noun list",
+  "description": "The work's one list: every type of a TCA package by name, kind, file and layer. Name and kind are chosen; file and layer are derived from the kind's construct page.",
+  "type": "object",
+  "required": ["rows"],
+  "additionalProperties": false,
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "file", "layer"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The type's name, as the class or composition-root callback is named.",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The construct, one of the skill's pages.",
+            "enum": [
+              "semantic scalar", "ordered union", "collection",
+              "value object", "union", "concept model", "action", "contract model",
+              "foreign model", "format type", "provider", "transformation",
+              "effect interpreter", "route", "config", "composition root"
+            ]
+          },
+          "file": {
+            "type": "string",
+            "description": "The file that holds it, relative to the package root; derived from the kind's page.",
+            "pattern": "^[^/].*\\.py$"
+          },
+          "layer": {
+            "type": "string",
+            "description": "Scalar, Value or Thing; crossing for a construct at a boundary. Derived from the kind, or for a collection or union from its file.",
+            "enum": ["Scalar", "Value", "Thing", "crossing"]
+          }
+        }
+      }
+    }
+  }
+}
