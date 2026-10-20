@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""new-package: create one Python package in this workspace, in the shape every package here has.
+
+Usage: new-package <name> <description>
+
+    <name>         the short name: lower-case words joined by hyphens, as in `shop` or `noun-list`.
+                   The distribution is type-construction-<name>, the module type_construction.<name>
+                   with hyphens as underscores, and the tests package type_construction_<name>.
+    <description>  one sentence, for pyproject.toml and the README.
+
+It writes the package's files, copies the root LICENSE, adds the module to the import-linter
+root packages and the package's pyproject.toml to the Dockerfile, and prints what it wrote. It
+refuses if the package directory exists. Dependencies start empty: `uv add` them afterwards, then
+`just lock`.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+PACKAGES = ROOT / "packages" / "python"
+
+PYPROJECT = """\
+[project]
+name = "{distribution}"
+version = "0.0.0"
+description = "{description}"
+requires-python = ">=3.14"
+license = "LicenseRef-BSD-3-Clause-Commons-Clause"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }}]
+keywords = ["tca", "type-construction-architecture", "pydantic"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = []
+import-names = ["{module}"]
+import-namespaces = ["type_construction"]
+
+[project.urls]
+Homepage = "https://github.com/kylejtobin/tca"
+Repository = "https://github.com/kylejtobin/tca"
+Issues = "https://github.com/kylejtobin/tca/issues"
+
+[build-system]
+requires = ["uv_build>=0.12.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "{module}"
+"""
+
+README = """\
+# {distribution}
+
+{description}
+"""
+
+DOCKER_COPY = (
+    "COPY --chown=dev:dev packages/python/{distribution}/pyproject.toml"
+    " packages/python/{distribution}/\n"
+)
+
+
+def fail(message: str) -> None:
+    print(f"new-package: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def main(argv: list[str]) -> None:
+    if len(argv) != 3:
+        fail("usage: new-package <name> <description>")
+    name, description = argv[1], argv[2].strip()
+    if not re.fullmatch(r"[a-z][a-z0-9]*(-[a-z0-9]+)*", name):
+        fail("the name is lower-case words joined by hyphens, as in `shop` or `noun-list`")
+    if not description or '"' in description:
+        fail("the description is one sentence with no double quotes")
+
+    distribution = f"type-construction-{name}"
+    short = name.replace("-", "_")
+    module = f"type_construction.{short}"
+    package = PACKAGES / distribution
+    if package.exists():
+        fail(f"{package.relative_to(ROOT)} exists")
+
+    license_text = (ROOT / "LICENSE").read_text()
+    root_pyproject = ROOT / "pyproject.toml"
+    dockerfile = ROOT / "Dockerfile"
+    root_text = root_pyproject.read_text()
+    docker_text = dockerfile.read_text()
+
+    roots = re.search(r"^root_packages = \[(.*)\]$", root_text, flags=re.MULTILINE)
+    if roots is None:
+        fail("pyproject.toml has no root_packages line under [tool.importlinter]")
+    copies = list(re.finditer(r"^COPY --chown=dev:dev packages/python/.*?/pyproject\.toml .*\n", docker_text, flags=re.MULTILINE))
+    if not copies:
+        fail("Dockerfile has no package pyproject.toml COPY line to insert after")
+
+    files = {
+        package / "pyproject.toml": PYPROJECT.format(distribution=distribution, description=description, module=module),
+        package / "README.md": README.format(distribution=distribution, description=description),
+        package / "LICENSE": license_text,
+        package / "src" / "type_construction" / short / "__init__.py": "",
+        package / "src" / "type_construction" / short / "py.typed": "",
+        package / "tests" / f"type_construction_{short}" / "__init__.py": "",
+    }
+    for path, text in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    members = [m.strip() for m in roots.group(1).split(",") if m.strip()]
+    members.append(f'"{module}"')
+    root_text = root_text[: roots.start(1)] + ", ".join(members) + root_text[roots.end(1) :]
+    root_pyproject.write_text(root_text)
+
+    last = copies[-1]
+    docker_text = docker_text[: last.end()] + DOCKER_COPY.format(distribution=distribution) + docker_text[last.end() :]
+    dockerfile.write_text(docker_text)
+
+    for path in files:
+        print(path.relative_to(ROOT))
+    print(f"pyproject.toml: {module} added to root_packages")
+    print(f"Dockerfile: {distribution}/pyproject.toml copied for the build")
+    print("next: uv add what it depends on, then just lock")
+
+
+if __name__ == "__main__":
+    main(sys.argv)

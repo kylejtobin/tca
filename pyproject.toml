@@ -66,19 +66,8 @@ confidence = "LOW"
 severity = "LOW"
 
 [tool.importlinter]
-root_packages = ["type_construction.agent", "type_construction.eval", "type_construction.registrar"]
+root_packages = ["type_construction.agent", "type_construction.eval", "type_construction.demo", "type_construction.http", "type_construction.cli"]
 include_external_packages = true
-
-[[tool.importlinter.contracts]]
-name = "The registrar's domain imports nothing outside itself"
-type = "forbidden"
-source_modules = ["type_construction.registrar.domain"]
-forbidden_modules = [
-    "type_construction.registrar.integration",
-    "type_construction.registrar.config",
-    "httpx",
-    "pydantic_settings",
-]
 
 [[tool.importlinter.contracts]]
 name = "The agent's domain imports nothing outside itself"
@@ -91,70 +80,6 @@ forbidden_modules = [
     "pydantic_ai_harness",
     "pydantic_settings",
 ]
-
-[[tool.importlinter.contracts]]
-name = "The eval's domain imports nothing outside itself"
-type = "forbidden"
-source_modules = ["type_construction.eval.domain"]
-forbidden_modules = [
-    "type_construction.agent",
-    "type_construction.eval.integration",
-    "type_construction.eval.config",
-    "inspect_ai",
-    "pydantic_ai",
-    "opentelemetry",
-    "pydantic_settings",
-]
-
-[[tool.importlinter.contracts]]
-name = "The eval's domain files import those above them"
-type = "layers"
-containers = ["type_construction.eval.domain.evaluation"]
-layers = ["run", "dataset", "version", "value", "type"]
-
-[[tool.importlinter.contracts]]
-name = "The eval imports inward, file by file"
-type = "layers"
-containers = ["type_construction.eval"]
-layers = ["config", "integration", "domain"]
-
-[[tool.importlinter.contracts]]
-name = "The eval's integrations import none of each other"
-type = "independence"
-modules = [
-    "type_construction.eval.integration.record",
-    "type_construction.eval.integration.subject",
-]
-
-[[tool.importlinter.contracts]]
-name = "The eval's subject files import those above them"
-type = "layers"
-containers = ["type_construction.eval.integration.subject"]
-layers = ["interpreter", "production", "provider", "model"]
-
-[[tool.importlinter.contracts]]
-name = "The eval's record files import those above them"
-type = "layers"
-containers = ["type_construction.eval.integration.record"]
-layers = ["interpreter", "task | identity", "provider", "model"]
-
-[[tool.importlinter.contracts]]
-name = "The registrar imports inward, file by file"
-type = "layers"
-containers = ["type_construction.registrar"]
-layers = ["config", "integration", "domain"]
-
-[[tool.importlinter.contracts]]
-name = "The registrar's domain files import those above them"
-type = "layers"
-containers = ["type_construction.registrar.domain.registration"]
-layers = ["name", "value", "type"]
-
-[[tool.importlinter.contracts]]
-name = "The registrar's integration files import those above them"
-type = "layers"
-containers = ["type_construction.registrar.integration.registrar"]
-layers = ["interpreter", "attempt | check | query", "provider", "model"]
 
 [[tool.importlinter.contracts]]
 name = "The agent imports inward, file by file"

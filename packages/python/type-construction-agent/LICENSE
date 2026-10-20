@@ -1,8 +1,8 @@
 Type Construction Architecture
 Copyright (c) 2026 Kyle J. Tobin
 
-This license applies to this repository and to the type-construction-agent,
-type-construction-eval and type-construction-registrar packages, except the
+This license applies to this repository and to the type-construction-agent
+and type-construction-eval packages, except the
 .agents directory and the .claude/agents and .claude/skills links into it,
 which are licensed under the Apache License, Version 2.0; see .agents/LICENSE.
 

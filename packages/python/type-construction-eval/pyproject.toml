@@ -38,3 +38,8 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "type_construction.eval"
 source-include = ["tests/**"]
+
+[dependency-groups]
+dev = [
+    "arize-phoenix>=20.6.0",
+]

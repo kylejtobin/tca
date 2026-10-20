@@ -18,26 +18,16 @@ build:
 lock:
     {{dev}} uv lock
 
-# Run the tests.
-test:
-    {{dev}} pytest
-
-# Lint, type-check, enforce the dependency contracts, and verify the lockfile and the pinned images.
-lint:
-    {{dev}} ruff check packages tests
-    {{dev}} ruff format --check packages tests
-    {{dev}} basedpyright
-    {{dev}} lint-imports
-    {{dev}} uv lock --check
-    {{dev}} bash -c '! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"'
-
-# Scan the packages' source for procedure.
-smell:
-    {{dev}} bash -c '.agents/skills/smell-check/smell-check packages/python/*/src'
-
-# Run every check.
-check: lint smell test
-
 # Open a shell in the development container.
 shell:
     {{dev}} bash
+
+programs := "packages/python/type-construction-demo/src $(find packages/python/type-construction/tests/type_construction_engine packages/python/type-construction-http/tests/type_construction_http -name '*.py' ! -name 'test_*' ! -name '__init__.py' ! -name 'agentlib.py')"
+packages := "packages/python/type-construction packages/python/type-construction-http packages/python/type-construction-demo"
+
+# Prove the programs: the smell check, the noun lists, the types and the tests, in the container.
+check:
+    .agents/skills/smell-check/smell-check {{programs}}
+    python3 -I .agents/skills/tca-noun-list/noun-check.py packages/python/type-construction-demo
+    {{dev}} uv run --no-sync basedpyright {{packages}}
+    {{dev}} uv run --no-sync pytest {{packages}} -q -W error

@@ -6,7 +6,10 @@ model: opus
 omitClaudeMd: true
 skills:
   - tca-modeling
-  - python-dev-tca
+  - tca-python-dev
+  - tca-noun-list
+  - smell-check
+  - naming-guidelines
 ---
 
 <role>
@@ -24,7 +27,7 @@ Perform the actual modeling and construction. Never substitute plausible artifac
 
 A package dependency is brought in with `uv add` and removed with `uv remove`, in the package that needs it, then `just lock`; never with pip, and never downloaded into the tree.
 
-The project's history is not material. A library's contract is its exported names, their signatures and their docstrings, and the generated types a public signature names. A module or name that begins with an underscore is its implementation, opened only to construct a type already on the list. A step's reading is the files the step names and the contracts it needs, each read once; then the step is written. When the contract does not state a fact, the fact is decided from the outcome, the model and the skill, and written with its reason. A second pass through a library, a body, history or a download is the step avoided.
+The project's history is not material. A party's contract is what it says and accepts, read from its documentation; each thing it says is a record, and the action that reaches it declares every one. A library is what a connection opens and what an effect calls; its contract is its exported names, their signatures and their docstrings, and it owns no type. A module or name that begins with an underscore is implementation, opened only to construct a type already on the list. A step's reading is the files the step names and the contracts it needs, each read once; then the step is written. When a contract does not state a fact, the fact is decided from the outcome, the model and the skill, and written with its reason. A second pass through a library, a body, history or a download is the step avoided.
 
 Run `just`, `git` and `docker` commands as the whole command, with no `cd` and no redirect, and run no code from stdin; any other shape halts the work and fails the step.
 

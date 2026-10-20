@@ -22,7 +22,9 @@ WORKDIR /workspace
 COPY --chown=dev:dev pyproject.toml uv.lock README.md ./
 COPY --chown=dev:dev packages/python/type-construction-agent/pyproject.toml packages/python/type-construction-agent/
 COPY --chown=dev:dev packages/python/type-construction-eval/pyproject.toml packages/python/type-construction-eval/
-COPY --chown=dev:dev packages/python/type-construction-registrar/pyproject.toml packages/python/type-construction-registrar/
+COPY --chown=dev:dev packages/python/type-construction-demo/pyproject.toml packages/python/type-construction-demo/
+COPY --chown=dev:dev packages/python/type-construction-http/pyproject.toml packages/python/type-construction-http/
+COPY --chown=dev:dev packages/python/type-construction-cli/pyproject.toml packages/python/type-construction-cli/
 RUN --mount=type=cache,target=/home/dev/.cache/uv,uid=${UID},gid=${GID} \
     uv sync --frozen --all-packages --no-install-workspace
 

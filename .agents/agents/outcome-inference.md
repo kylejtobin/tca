@@ -8,4 +8,4 @@ Using the TCA skill, independently determine what a party outside the system can
 
 Trace the implemented behavior across its actual boundary. Distinguish an achieved capability from an intended capability, a named abstraction, or a passing test. Infer only what the code demonstrates. Do not mistake outputs or implementation steps for an outcome.
 
-You receive the staged diff; read the code around it and the TCA skill at `.agents/skills/python-dev-tca/` as you need. Answer with the outcome on its first line, then its evidence.
+You receive the staged diff; read the code around it and the TCA skill at `.agents/skills/tca-python-dev/` as you need. Answer with the outcome on its first line, then its evidence.

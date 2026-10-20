@@ -13,7 +13,7 @@ Rendered inside a code block so the frame holds.
 
 1. Health: do I need to act. The dot is the only saturated colour in the frame.
 2. Where the work is: a kanban of the loop's steps, to do, doing, done.
-3. How far: nouns written over nouns listed; crossings built; files of the current crossing.
+3. How far: rows written over rows listed; files written over files the list names.
 4. How it is going: tries per accepted step as a sparkline; every verdict in order as small marks.
 5. Verdict counts: since the last board, and for the whole run.
 
@@ -22,7 +22,8 @@ Rendered inside a code block so the frame holds.
 - 🟢 running, 🟡 needs you or stuck (a prompt waiting, or the same step rejected three times on one ground), 🔴 stopped.
 - Health alone carries saturated colour. History marks are `✓` and `×`, never ✅ ❌.
 - Columns flow left to right: to do, doing, done. One card is one step of the
-  loop; a crossing's file steps are its cards; at most one card is doing.
+  loop; the file steps are one card per file the list names; at most one card
+  is doing.
 - Bars are twenty cells of `■` and `□`, one scale, labelled.
 - Every icon has one lowercase word; every section has a one-line caption.
 - Fixed positions. New information never reorders the board.
@@ -32,10 +33,10 @@ Rendered inside a code block so the frame holds.
 
 ## Where each number comes from
 
-- Cards: step 2's derivation gives the crossings; the accepted list gives each crossing's files in order; `verify outcome` and `commit` close the queue.
+- Cards: the loop's lines in order: `outcome`, `chain`, `gate`, one card per file in the list's file order, `verify`, `commit`.
 - Tries on a done card, and the sparkline: verdicts per accepted step, from the coordinator's verdict messages to `main`.
-- Nouns: on the latest accepted list, rows written over rows total for the crossings listed so far.
-- Crossings: built when a crossing's last file step is accepted; files from the accepted list's file order.
+- Rows: on the latest accepted `nouns.json`, rows whose class exists over rows listed.
+- Files: a file is written when its step is accepted; files from the list's file order.
 - Verdict marks and counts: every verdict message in order; `red check` is a `just check` that exited nonzero and was recovered by the loop; `revert` is code written out of order and removed; `exit` is work handed back, which never happens.
 - Elapsed: from the coordinator's first verdict. Last: from its last accepted verdict.
 - Since last board: deltas against the previous board posted.
@@ -48,7 +49,7 @@ Placeholders in braces. Lines beginning `#` are section rules.
  {🟢|🟡|🔴} {running|needs you|stopped} · {what, if anything, waits on the owner}     ⏰ elapsed {h}h{mm}m    ✅ last {m}m ago
    {one line: why the dot is this colour}
 #
- WHERE THE WORK IS   one card = one step of the loop; a crossing's files are its steps
+ WHERE THE WORK IS   one card = one step of the loop; one card per file the list names
  ⬜ to do · {n}              ⏳ doing · {0|1}            ✅ done · {n}
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  {next card}                {doing card}               {first done card  ·tries if >1}
@@ -56,13 +57,13 @@ Placeholders in braces. Lines beginning `#` are section rules.
  {…}                                                   {…}
 #
  HOW FAR
- 📋 nouns       {bar}   {pct}%    {written} / {listed} listed
-                types already written, over every type the one list names so far
- 🔀 crossings   {bar}   {built} / {derived} built · C{k} 📄 {done} / {files} files
-                the outcome's crossings fully built; the current one's files done
+ 📋 rows        {bar}   {pct}%    {written} / {listed} listed
+                classes already written, over every row the list names
+ 📄 files       {bar}   {written} / {files} written
+                files of the list written, in its file order
 #
  HOW IT IS GOING
- 🔁 tries     s1 {▇}   s2 {▂}   C1 {▁▃▁…}   C{k} {…}        last {n}   worst {n}
+ 🔁 tries     outcome {▇}   chain {▂}   gate {▁}   files {▁▃▁…}        last {n}   worst {n}
               submissions each accepted step took; a tall bar was a fight
  🧾 verdicts  {×✓… in order}                                 ✅ {n}   ❌ {n}
               every verdict in order, × rejected ✓ accepted; clustered × = trouble
@@ -80,40 +81,35 @@ one less per emoji in the cell. The title bar reads `─ 🟦 TCA · outcome {n}
 ## Rendered example
 
 ```
-┌─ 🟦 TCA · outcome 2 ─────────────────────────────────────────────────────────────────┐
-│ 🟢 running · nothing needs you                 ⏰ elapsed 2h07m    ✅ last 9m ago    │
+┌─ 🟦 TCA · outcome 1 ─────────────────────────────────────────────────────────────────┐
+│ 🟢 running · nothing needs you                 ⏰ elapsed 0h41m    ✅ last 4m ago    │
 │   green: the loop is running and no prompt or decision is waiting on you             │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ WHERE THE WORK IS   one card = one step of the loop; a crossing's files are its steps│
-│ ⬜ to do · 10              ⏳ doing · 1               ✅ done · 11                   │
+│ WHERE THE WORK IS   one card = one step of the loop; one card per file the list names│
+│ ⬜ to do · 4               ⏳ doing · 1               ✅ done · 6                    │
 │ ─────────────────────────  ─────────────────────────  ─────────────────────────      │
-│ C2 record/model.py         C2 record/identity.py      s1 state  ·7 tries             │
-│ C2 record/score.py            🔁 try 2   ⏰ 1m        s2 derive ·2                   │
-│ C2 __init__.py                                        C1 compose · list              │
-│ C2 task.py                                            C1 6 files                     │
-│ C2 verify · 2 tests                                   C2 compose · list ·4           │
-│ C3 read the log                                       C2 value.py                    │
-│ C4 rescore                                            C2 evaluator/model.py          │
-│ C5 Phoenix writes                                     C2 evaluator/provider.py       │
-│ 🧪 verify outcome                                     C2 score.py                    │
-│ 💾 commit                                             C2 dataset.py                  │
-│                                                       C2 run.py                      │
+│ checkout/order.py          checkout/connections.py    outcome  ·2 tries              │
+│ api/checkout.py               🔁 try 1   ⏰ 3m        chain    ·3                    │
+│ config.py                                             gate                           │
+│ 🧪 verify · 3 tests                                   checkout/type.py               │
+│ 💾 commit                                             checkout/value.py              │
+│                                                       checkout/record.py             │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │ HOW FAR                                                                              │
-│ 📋 nouns       ■■■■■■■■■■■■□□□□□□□□   59%    37 / 63 listed                          │
-│                types already written, over every type the one list names so far      │
-│ 🔀 crossings   ■■■■□□□□□□□□□□□□□□□□   1 / 5 built · C2 📄 6 / 11 files               │
-│                the outcome's crossings fully built; the current one's files done     │
+│ 📋 rows        ■■■■■■■■■■■□□□□□□□□□   56%    14 / 25 listed                          │
+│                classes already written, over every row the list names                │
+│ 📄 files       ■■■■■■■■■□□□□□□□□□□□   3 / 7 written                                  │
+│                files of the list written, in its file order                          │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │ HOW IT IS GOING                                                                      │
-│ 🔁 tries     s1 ▇   s2 ▂   C1 ▁▃▁▁▁▁▁▁   C2 ▂▄▁▁▁▁▁▁▁▂       last 2   worst 7        │
+│ 🔁 tries     outcome ▂   chain ▃   gate ▁   files ▁▁▁                 last 1   worst 3 │
 │              submissions each accepted step took; a tall bar was a fight             │
-│ 🧾 verdicts  ×××××××✓×✓✓××✓✓✓×✓✓✓✓✓×✓×✓✓××✓✓✓✓✓✓✓×          ✅ 21   ❌ 16            │
+│ 🧾 verdicts  ×✓××✓✓✓✓✓                                     ✅ 6    ❌ 3             │
 │              every verdict in order, × rejected ✓ accepted; clustered × = trouble    │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │ VERDICT COUNTS        ✅ accepted  ❌ rejected  🔧❌ red check  🔙 revert  🚪 exit   │
-│ ▲ since last board         +0          1            0          0        0            │
-│ Σ whole run                21         16            5          1        0            │
+│ ▲ since last board         +1          0            0          0        0            │
+│ Σ whole run                 6          3            1          0        0            │
 │   red check: a just check that failed and was recovered by the loop, not patched     │
 │   revert: code written out of order, removed · exit: work handed back; never allowed │
 └──────────────────────────────────────────────────────────────────────────────────────┘

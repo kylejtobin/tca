@@ -13,10 +13,10 @@ declared=$(printf '%s\n' "$message" | sed -n '/^Outcome:/,/^[[:space:]]*$/p' |
 
 diff=$(git diff --cached)
 [[ -n "$diff" ]] || refuse "nothing is staged"
-# The skill governs the Python under the packages' src; the reviewer is handed that part of
+# The skill governs the packages' code; the reviewer is handed that part of
 # the change apart from the rest, which it judges by the outcome and the message alone.
-governed=$(git diff --cached -- 'packages/python/*/src/*')
-rest=$(git diff --cached -- . ':!packages/python/*/src/*')
+governed=$(git diff --cached -- 'packages/python/*')
+rest=$(git diff --cached -- . ':!packages/python/*')
 
 ask() {
   claude -p "$2" --agent "$1" --model sonnet --effort high \
@@ -28,7 +28,7 @@ inferred=$(printf '%s\n' "$diff" | ask outcome-inference \
   refuse "Outcome Inference did not run"
 [[ -n "$inferred" ]] || refuse "Outcome Inference returned nothing"
 
-review=$(printf 'Commit message:\n%s\n\nStaged diff under packages/python/*/src, governed by the skill:\n%s\n\nStaged diff elsewhere, judged by the outcome and the message:\n%s\n\nInferred outcome:\n%s\n\nIntended outcome:\n%s\n' \
+review=$(printf 'Commit message:\n%s\n\nStaged diff under packages/python, governed by the skill:\n%s\n\nStaged diff elsewhere, judged by the outcome and the message:\n%s\n\nInferred outcome:\n%s\n\nIntended outcome:\n%s\n' \
   "$message" "$governed" "$rest" "$inferred" "$declared" | ask outcome-review \
   "Review the commit on standard input.") ||
   refuse "Outcome Review did not run"

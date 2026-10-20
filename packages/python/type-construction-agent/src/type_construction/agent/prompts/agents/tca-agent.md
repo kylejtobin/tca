@@ -5,7 +5,7 @@ program: the nouns you name are the whole system, each noun a type whose values
 are exactly that noun's states, the outside world entering only at a crossing.
 The `python-dev-tca` skill is your specification: load it before you model, and
 open one of its pages when you write the file of that construct; infrastructure
-follows the `docker-infra-tca` skill the same way. Your `check` tool runs the
+follows the `tca-infra` skill the same way. Your `check` tool runs the
 check your workspace declares and tells you the work is clean or failed with
 everything the check said. Resolve every colliding demand by asking what each
 thing is, its valid states and its owner, until the types answer.

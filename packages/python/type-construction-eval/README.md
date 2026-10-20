@@ -101,7 +101,7 @@ The process that runs it configures the OpenTelemetry SDK from the standard `OTE
 
 ## Design
 
-The concrete form is written as a product before any code, in `docs/`, in this order: `product.md`, the stranger it serves and the ten-minute test; `map.md`, how the address partitions the corpus into both tools and how every record reaches its neighbours; `journeys.md`, the paths a stranger walks, each tied to a test task; `storyboards.md`, every screen with the text that renders and the field that carries it; `schema.md`, the six nouns as data with every field mapped to its slot under the owner's contract; `decisions.md`, the hard calls with their reasons and evidence. The generic documents use no vocabulary of the first subject; it appears in them only as example content.
+The concrete form is written as a product before any code, in `docs/`, in this order: `product.md`, the stranger it serves and the ten-minute test; `schema.md`, the six nouns as data with every field mapped to its slot under the owner's contract; `decisions.md`, the hard calls with their reasons and evidence.
 
 ## Lineage
 
@@ -114,13 +114,3 @@ The second built on Inspect alone, graded one agent's output against one referen
 The third kept the first one's ontology, the second one's tools, and added OpenTelemetry for the trace and HELM for the record and site. It got the two readers, the one address, the stranger and the trace-then-judge separation right. It was set aside because HELM's site had to be fought and Inspect's log already was the record.
 
 This design keeps the ontology, the two readers, the address, OpenTelemetry and Phoenix, makes Inspect the runner, the record and the sample viewer, and keeps the one document and the one page that no tool provides.
-
-## The first subject
-
-The TCA agent, modeling domain registration. Its dataset will be one case: the problem statement as input; as expectation, the reference program `type-construction-registrar`, with its framing and its noun list written beside it. The agent's workspace will hold the skills, the check and the problem statement; the expectation lives in this package and never reaches the workspace.
-
-For this subject, what a person judges a run by is the agent's list of nouns, diffed against the reference's, and how that list changed file by file across the run; the program text sits beneath it. Scores begin with code: the program parses and passes the check; nouns are recalled and placed as the reference places them; the program's structure matches the reference's. A judge comes after the code evaluators, as the same kind of thing. When the agent's steps become typed outputs on its spans, a case whose input is the correct prior steps and whose expectation is one step's output is a case like any other.
-
-The order. Reading traces of the agent working comes first and needs nothing built here: the agent already traces to the repository's own viewer in its development environment, so a handful of runs on the case are read there and the failure modes written in observable terms, because the criteria above are hypotheses until traces have been read. In this package, the oracle comes first: the reference itself as a dataset, a case, a version and a trace, because if the reference cannot be written as these records the ontology is wrong. Then the eval's own process and services, so a run is seen in Phoenix. Then scores, the oracle's at 1.0. Then the agent under the criteria the traces gave. Then two versions compared. Then decision cases as the agent decomposes.
-
-Built today: the kinds the oracle's run needs, identity by content, the oracle derived from its dataset and run through Inspect with one span per repetition in one call, and the run read back from the log, recorded or unfinished, verified by the package's tests. Not built: the process entry and the services, every scorer, the agent's integration, and the first dataset as content; the case's problem statement, framing and noun list are in the package as files and become that dataset when the agent's integration and its criteria exist.

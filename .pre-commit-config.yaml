@@ -25,9 +25,7 @@ repos:
         language: script
         pass_filenames: false
         types: [python]
-        args:
-          - packages/python/type-construction-agent/src
-          - packages/python/type-construction-eval/src
+        args: [packages/python]
 
   - repo: local
     hooks:

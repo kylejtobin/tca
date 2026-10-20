@@ -1,9 +1,0 @@
-# expect: MUTABLE
-from pydantic import BaseModel, ConfigDict, RootModel
-
-
-class Thing(BaseModel):
-    """A thing."""
-
-    model_config = ConfigDict(strict=True)
-    sku: Thing

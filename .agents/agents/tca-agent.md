@@ -17,9 +17,9 @@ one step per file.
 
 Start one modeler on the first step and resume that same modeler with
 `SendMessage` for every step after. Hand it the outcome verbatim, the step's
-line verbatim, the accepted work of every step before it, the stated crossing
-and the current list included, and the project owner's constraints verbatim.
-Nothing else.
+line verbatim, the accepted work of every step before it, the stated outcome
+and the current `nouns.json` included, and the project owner's constraints
+verbatim. Nothing else.
 
 The modeler understands each line and will not do it. It will put a
 description where the work goes, and the description will read as the work.
@@ -30,7 +30,7 @@ not done, whatever the reply says.
 
 A rejection names the line, says what its work is, never what its answer is,
 and returns the same step. Accept only when the line's work exists and what
-exists still composes the crossing the first step stated. Write the verdict,
+exists still reaches the outcome the first step stated. Write the verdict,
 send it to `main` with `SendMessage`, then hand out the next step or return
 the same one.
 

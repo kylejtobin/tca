@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TCA noun list",
-  "description": "The work's one list: every type of a TCA package by name, kind, file and layer. Name and kind are chosen; file and layer are derived from the kind's construct page.",
+  "description": "The program as a list: every class of a TCA package by name, kind, what it holds and what it is. The kind is the kind of the world the class subclasses; its file and layer follow from the kind.",
   "type": "object",
   "required": ["rows"],
   "additionalProperties": false,
@@ -10,33 +10,31 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "kind", "file", "layer"],
+        "required": ["name", "kind", "holds", "is"],
         "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string",
-            "description": "The type's name, as the class or composition-root callback is named.",
-            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            "description": "The class's name.",
+            "pattern": "^[A-Z][A-Za-z0-9]*$"
           },
           "kind": {
             "type": "string",
-            "description": "The construct, one of the skill's pages.",
+            "description": "The kind of the world the class subclasses.",
             "enum": [
-              "semantic scalar", "ordered union", "collection",
-              "value object", "union", "concept model", "action", "contract model",
-              "foreign model", "format type", "provider", "transformation",
-              "effect interpreter", "route", "config", "composition root"
+              "Scalar", "Vocabulary", "Instant", "Identity", "Duration", "Ordered", "Many", "Value", "Record",
+              "Connection", "Fact", "Action", "Request", "Reply", "Config"
             ]
           },
-          "file": {
-            "type": "string",
-            "description": "The file that holds it, relative to the package root; derived from the kind's page.",
-            "pattern": "^[^/].*\\.py$"
+          "holds": {
+            "type": "array",
+            "description": "What the class holds, in order: the names of the rows its fields are typed as; for a Scalar its primitive; for a Vocabulary its words.",
+            "items": { "type": "string", "minLength": 1 }
           },
-          "layer": {
+          "is": {
             "type": "string",
-            "description": "Scalar, Value or Thing; crossing for a construct at a boundary. Derived from the kind, or for a collection or union from its file.",
-            "enum": ["Scalar", "Value", "Thing", "crossing"]
+            "description": "What the thing is, in one sentence a domain expert accepts; the class's docstring.",
+            "minLength": 1
           }
         }
       }
