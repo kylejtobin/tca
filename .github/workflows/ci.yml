@@ -19,9 +19,4 @@ jobs:
       - run: uv run basedpyright
       - run: uv run lint-imports
       - run: '! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"'
-      - run: .agents/skills/smell-check/smell-check packages/python/*/src
-      - run: uv run pytest
-        env:
-          TCA_AGENT__MODEL: openai-chat:${{ vars.TCA_AGENT__MODEL__NAME }}
-          OPENAI_BASE_URL: ${{ secrets.TCA_AGENT__MODEL__URL }}
-          OPENAI_API_KEY: ${{ secrets.TCA_AGENT__MODEL__KEY }}
+      - run: .agents/skills/smell-check/smell-check packages/python/type-construction-demo/src

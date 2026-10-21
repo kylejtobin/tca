@@ -18,8 +18,8 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28,<1",
-    "type-construction",
     "type-construction-http",
+    "type-construction-world",
 ]
 import-names = ["type_construction.demo"]
 import-namespaces = ["type_construction"]
@@ -37,5 +37,5 @@ build-backend = "uv_build"
 module-name = "type_construction.demo"
 
 [tool.uv.sources]
-type-construction = { workspace = true }
 type-construction-http = { workspace = true }
+type-construction-world = { workspace = true }

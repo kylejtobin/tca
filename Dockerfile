@@ -25,6 +25,8 @@ COPY --chown=dev:dev packages/python/type-construction-eval/pyproject.toml packa
 COPY --chown=dev:dev packages/python/type-construction-demo/pyproject.toml packages/python/type-construction-demo/
 COPY --chown=dev:dev packages/python/type-construction-http/pyproject.toml packages/python/type-construction-http/
 COPY --chown=dev:dev packages/python/type-construction-cli/pyproject.toml packages/python/type-construction-cli/
+COPY --chown=dev:dev packages/python/type-construction-world/pyproject.toml packages/python/type-construction-world/
+COPY --chown=dev:dev packages/python/type-construction-engine/pyproject.toml packages/python/type-construction-engine/
 RUN --mount=type=cache,target=/home/dev/.cache/uv,uid=${UID},gid=${GID} \
     uv sync --frozen --all-packages --no-install-workspace
 

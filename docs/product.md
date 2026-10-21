@@ -1,21 +1,72 @@
 # TCA
 
-TCA exists so that a developer can write down the things their world is made of, as types that say what each one holds and what it can be, and have that list be the running application: proven whole before it runs, refusing what the world cannot say, readable as the business by anyone who knows the business, and written reliably by a person or a model because there is nothing to write but the world. The engine owns every piece of procedure once so no program ever does; the kinds are the one closed vocabulary every architecture is an instance of; and the measure of every decision in it is whether a developer says less, says it once, and says only their world.
+A Python framework. The developer writes an application as Pydantic classes and nothing else. The engine constructs them and does four things. This document states who it is for, what it promises, how the work is divided, and the checks that say the promise was kept.
 
-## The world
+## The customer
 
-A program is its ontology: every class is one kind, named for the thing it is, holding what that thing is made of, existing only when valid. The thing is the thing: the models are the live program, not records a loop fills and reads. A fact holds what made it and what came before. An action holds the fact that intends it and declares what the party says. A connection is a party as the deployment names it. An ordered alternative is a noun, named as the business names it. A record is another party's thing under its names. A reply is what happened, seen from outside. Nothing is said twice, nothing is present for the engine's sake, and nothing is a stage of the run.
+- An application developer writing a service that talks to external parties over HTTP, a database, or a queue.
+- That developer on day one, with the classes written and no server, who wants to run the program from the shell and see it answer.
+- An operator who needs to run one route by hand: replay a checkout against staging, requote a sku, confirm a party is reachable.
+- An integrator reading the OpenAPI document, who sees the field descriptions the developer wrote on the classes and nothing written separately for them.
+- A model writing that service, given the classes to write and the checker that judges them.
+- A reader who knows the business and not the code, reading the program to confirm it says the business.
 
-## The engine
+## The division of responsibility
 
-The engine reads the world and does only what types cannot: it constructs each next fact from what arrived and what came before, by type; performs each action by its one call and reads what the party said as the records declared; opens every connection once and closes it at stop; holds the current fact of each context and delivers each arrival in order; answers each reply from the chain the context walked; and proves, before anything runs, that every arrival has a fact, every fact is reached, every fact at rest answers one reply, every fault at once in the developer's names. It owns no protocol; a transport adapts one library to it. It is itself written in the discipline: parts that refuse, procedure in four named places.
+The developer writes classes:
 
-## Decided
+| the developer declares | as |
+|---|---|
+| what arrives | a `Request` |
+| what an external party says | a `Record`, with the party's field names as aliases |
+| what the business concludes | a `Fact` whose fields are the things it was concluded from |
+| what the business asks a party | an `Action` whose fields are the fact that intends it |
+| what the caller receives | a `Reply[F]` made from the fact `F`, whose computed fields are its words |
+| each party | a `Connection` |
+| each thing the program does | a `Route[Request, Reply]` |
+| the deployment | a `Config` |
 
-- A fact offers its successor what it concludes, never what it was handed.
-- A reply binds each field by type from what the chain concluded and what arrived, exactly once.
-- An ordered alternative is a kind with a name and a docstring, in the file where its facts are.
-- A kind's default parameter is its bound and declares nothing.
-- An effect is handed what it names by type; nothing is carried on a fact for the engine's sake.
-- The entry is one call that serves the config from the environment.
-- Done is the developer's page and the engine held to the same gate, green.
+The engine does four things: deserialize the request; perform each action and deserialize its response; serialize the reply; open and close clients at startup and shutdown. It constructs the developer's classes in the order their field annotations require. It has no classes and no state of its own.
+
+A class or field on a page that exists for the engine is a defect. A behavior in the engine that the developer should have declared is a defect.
+
+## The promise
+
+- No invalid state is constructible. A rule is a constrained `Scalar` or a union member, so a value the business does not have has no type.
+- basedpyright in strict mode checks every reference in the program.
+- A broken program fails at startup, naming the record no action hears, the field no class produces, or the cycle.
+- A unit test is constructing an instance, or asserting `ValidationError`.
+- There is one failure path: `ValidationError` for input and rules, the client's exception for a party that did not answer.
+- The developer says each thing once, and says only their business.
+- The interface is defined once. `class Checkout(Route[PlaceOrder, OrderPaid])`, with the fields and descriptions on those two classes, is the whole definition. The command line is derived from it by pydantic-settings: `shop checkout --sku tea --quantity 3` constructs `PlaceOrder` and prints `OrderPaid`'s computed fields as JSON; `shop --help` lists routes by docstring and `shop checkout --help` lists fields by description. The HTTP endpoint is derived from it by FastAPI: `POST /checkout` validates the body as `PlaceOrder`, returns 422 with Pydantic's errors, serializes `OrderPaid`, and publishes the OpenAPI document with the same descriptions. Connections come from the environment, `PAYMENTS__URL` and `PAYMENTS__KEY`, for both. Running as CLI, HTTP or both is a deployment choice that changes no class. The developer writes no parser, handler, help string, schema, entry point or output formatter.
+- The documentation is the program. Help text is the field descriptions and class docstrings; the same classes produce the reference for every route, record and configuration variable. Documentation cannot drift from the code because it is read from the code.
+
+## The acceptance test
+
+Kept when each of these holds on the demo program and on any program written against the framework.
+
+| # | Check | Pass |
+|---|---|---|
+| P1 | Search the program for `def`. | Every hit is under `@property` or `@computed_field`. |
+| P2 | Run `basedpyright --strict` on the program. | Zero errors. |
+| P3 | Delete the action that hears one record. Start the program. | Startup fails naming that record. |
+| P4 | Give a developer who has read the Pydantic docs and the demo a second route to write. | They write it without opening the engine. |
+| P5 | Give a reader who knows the business the program. | They name what each class is from its name and docstring. |
+| P6 | Count the engine's public classes. | None of its own; one entry function per server kind. |
+| P7 | Run the program with `--help`, then one route with `--help`. | Every route appears with its docstring; every request field appears with its description; every connection field appears with its environment variable. |
+| P8 | Run one route from the shell against mock parties, and post the same request over HTTP. | The shell's output equals the HTTP response body. |
+| P9 | Give an operator the program and a staging environment. | They replay a request from the shell without reading the code. |
+| P10 | Open `/docs` on the served program and run `shop checkout --help`. | Every field and description in one appears in the other. |
+| P11 | Send a value outside a `Scalar` constraint on the command line and in an HTTP body. | Both fail with `ValidationError` naming the field; nothing else is reported. |
+| P12 | Run `shop docs`. | A reference for every route, record and configuration variable, assembled from the class docstrings and field descriptions. |
+
+A failed check is a defect in the framework, not in the program.
+
+## What it refuses to be
+
+- Not a validation framework. Validation is Pydantic's; the framework adds no validator.
+- Not a workflow engine. There is no step, stage, state machine or plan; the order is the annotations.
+- Not a DSL. Every construct is a documented Pydantic feature.
+- Not a handler framework. There is no function between the request and the reply.
+- Not a CLI framework. There is no command to write; a route is the command, and the command line is derived from the request.
+- No escape hatch inside a program. `perform` in a library kind is the only Python that calls a client; anything else that cannot be expressed is a missing class or a missing library kind.

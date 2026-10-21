@@ -1,0 +1,23 @@
+# 0045. A connection opens once at startup and closes once at shutdown, holding its client outside validation
+
+Status: accepted
+
+## Context
+
+A party is reached through a client, an `httpx.AsyncClient`, that must be opened once per process and closed once, and the engine holds no state.
+
+## Rejected
+
+An engine class holding opened clients. A module-level client. A client parameter on `perform`. A client per call.
+
+## Decision
+
+`Connection` declares `open` and `close` as abstract methods, so a connection with no library kind cannot be constructed. The library kind's `open` creates the client and holds it in a `PrivateAttr`, outside validation and outside the frozen fields; `close` closes it; `perform` reads it from the party it is given. The engine's `opened(config)` opens every connection once before its body and closes every one once after, last opened first; a server kind runs inside it.
+
+## Evidence
+
+On a frozen `Connection`, `self._client = httpx.AsyncClient(...)` succeeded after construction, a field assignment was refused as `frozen_instance`, `model_dump_json` excluded the client, and `hash` still worked. Two answers inside one `opened` produced `open:Catalog, open:Payments, perform ×4, close:Payments, close:Catalog`, four performs using two clients. A direct `Connection` subclass with no library kind raised `TypeError` at construction.
+
+## Consequences
+
+The engine passes a `Connection` to `perform` and never sees a client. Refuted by nothing.

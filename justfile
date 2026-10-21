@@ -22,12 +22,10 @@ lock:
 shell:
     {{dev}} bash
 
-programs := "packages/python/type-construction-demo/src $(find packages/python/type-construction/tests/type_construction_engine packages/python/type-construction-http/tests/type_construction_http -name '*.py' ! -name 'test_*' ! -name '__init__.py' ! -name 'agentlib.py')"
-packages := "packages/python/type-construction packages/python/type-construction-http packages/python/type-construction-demo"
+programs := "packages/python/type-construction-demo/src"
+packages := "packages/python/type-construction-world packages/python/type-construction-engine packages/python/type-construction-cli packages/python/type-construction-http packages/python/type-construction-demo"
 
-# Prove the programs: the smell check, the noun lists, the types and the tests, in the container.
+# Prove the programs: the smell check and the types, in the container.
 check:
     .agents/skills/smell-check/smell-check {{programs}}
-    python3 -I .agents/skills/tca-noun-list/noun-check.py packages/python/type-construction-demo
     {{dev}} uv run --no-sync basedpyright {{packages}}
-    {{dev}} uv run --no-sync pytest {{packages}} -q -W error

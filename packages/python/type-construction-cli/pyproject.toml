@@ -16,7 +16,9 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = []
+dependencies = [
+    "type-construction-engine",
+]
 import-names = ["type_construction.cli"]
 import-namespaces = ["type_construction"]
 
@@ -31,3 +33,6 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "type_construction.cli"
+
+[tool.uv.sources]
+type-construction-engine = { workspace = true }

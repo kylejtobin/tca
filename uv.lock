@@ -13,12 +13,13 @@ resolution-markers = [
 [manifest]
 members = [
     "tca-workspace",
-    "type-construction",
     "type-construction-agent",
     "type-construction-cli",
     "type-construction-demo",
+    "type-construction-engine",
     "type-construction-eval",
     "type-construction-http",
+    "type-construction-world",
 ]
 
 [[package]]
@@ -4333,21 +4334,6 @@ wheels = [
 ]
 
 [[package]]
-name = "type-construction"
-version = "0.0.0"
-source = { editable = "packages/python/type-construction" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = ">=2.13,<3" },
-    { name = "pydantic-settings", specifier = ">=2.6,<3" },
-]
-
-[[package]]
 name = "type-construction-agent"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction-agent" }
@@ -4374,6 +4360,12 @@ requires-dist = [
 name = "type-construction-cli"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction-cli" }
+dependencies = [
+    { name = "type-construction-engine" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "type-construction-engine", editable = "packages/python/type-construction-engine" }]
 
 [[package]]
 name = "type-construction-demo"
@@ -4381,15 +4373,30 @@ version = "0.0.0"
 source = { editable = "packages/python/type-construction-demo" }
 dependencies = [
     { name = "httpx" },
-    { name = "type-construction" },
     { name = "type-construction-http" },
+    { name = "type-construction-world" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "type-construction", editable = "packages/python/type-construction" },
     { name = "type-construction-http", editable = "packages/python/type-construction-http" },
+    { name = "type-construction-world", editable = "packages/python/type-construction-world" },
+]
+
+[[package]]
+name = "type-construction-engine"
+version = "0.0.0"
+source = { editable = "packages/python/type-construction-engine" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "type-construction-world" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-api", specifier = ">=1.37,<2" },
+    { name = "type-construction-world", editable = "packages/python/type-construction-world" },
 ]
 
 [[package]]
@@ -4428,16 +4435,35 @@ name = "type-construction-http"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction-http" }
 dependencies = [
+    { name = "httpx" },
     { name = "starlette" },
-    { name = "type-construction" },
+    { name = "type-construction-engine" },
+    { name = "type-construction-world" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "starlette", specifier = ">=1.7,<2" },
-    { name = "type-construction", editable = "packages/python/type-construction" },
+    { name = "type-construction-engine", editable = "packages/python/type-construction-engine" },
+    { name = "type-construction-world", editable = "packages/python/type-construction-world" },
     { name = "uvicorn", specifier = ">=0.54,<1" },
+]
+
+[[package]]
+name = "type-construction-world"
+version = "0.0.0"
+source = { editable = "packages/python/type-construction-world" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13,<3" },
+    { name = "pydantic-settings", specifier = ">=2.6,<3" },
 ]
 
 [[package]]

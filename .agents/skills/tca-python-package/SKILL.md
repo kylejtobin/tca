@@ -27,6 +27,6 @@ packages/python/type-construction-<name>/
 
 and makes the two root edits the workspace glob does not: the module joins `root_packages` under `[tool.importlinter]` in `pyproject.toml`, and the package's `pyproject.toml` gets its `COPY` line in the `Dockerfile` after the last one there. It refuses if the package directory exists and changes nothing.
 
-Afterwards: `uv add` the dependencies from inside the package directory, then `just lock`. A program package is then written by the loop in `tca-modeling`, starting with its `nouns.json`.
+Afterwards: `uv add` the dependencies from inside the package directory, then `just lock`..
 
-Tests are not included in the wheel. The engine package is the one exception to the naming, `type-construction` with module `type_construction.engine`, and stays so.
+Tests are not included in the wheel. The world and the engine are `type-construction-world` and `type-construction-engine`, named like every other package.

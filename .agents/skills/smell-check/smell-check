@@ -1,302 +1,74 @@
 #!/usr/bin/env python3
-"""smell-check: find procedure where TCA requires construction, by reading Python's syntax tree.
+"""smell-check: six line patterns that mark procedure on a TCA page, each with the type to write instead.
 
-Usage: smell-check <path>...   Prints one line per hit; exit 1 if anything is found, 0 if clean.
-Every hit is a violation of the tca-python-dev skill. A clean scan is necessary, never sufficient:
-whether the types mean the domain is the noun list's to establish, not this checker's.
+Usage: smell-check <path>...   Per hit: LABEL file:line: text, then the instruction. Exit 1 on any hit.
 """
 
-import ast
+import re
 import sys
 from pathlib import Path
 
-OWN_ROOTS = {"type_construction", "domain", "api", "config"}
-BASES = {
-    "Scalar", "Vocabulary", "Instant", "Identity", "Duration", "Ordered", "Many", "Value", "Record", "Request",
-    "Reply", "Connection", "Fact", "Action", "Config",
+PROCEDURE = {
+    "if": "a branch is a union: write the members that construct in each case and hold `A | B`",
+    "for": "a loop is a tuple: hold `tuple[T, ...]` and put what the whole knows in a @computed_field",
+    "while": "a loop is a tuple: hold `tuple[T, ...]` and put what the whole knows in a @computed_field",
+    "try": "a failure is a refusal: delete the handler and let ValidationError or the client's exception propagate",
+    "except": "a failure is a refusal: delete the handler and let ValidationError or the client's exception propagate",
+    "raise": "a rule is a type: put the constraint in a Scalar's Field(...) or split the cases into union members",
+    "None": "an absence is a class: name the absent case and hold it as a union member",
 }
-PRIMITIVES = {"str", "int", "float", "bool", "bytes", "complex", "Decimal", "date", "datetime", "time", "UUID"}
-SHAPES = {
-    "dict": "DICT", "Mapping": "DICT", "MutableMapping": "DICT", "OrderedDict": "DICT",
-    "defaultdict": "DICT", "TypedDict": "DICT", "ChainMap": "DICT", "JsonValue": "DICT", "Json": "DICT",
-    "list": "LIST", "set": "SET", "frozenset": "SET", "Any": "ANY", "TypeAdapter": "TYPEADAPTER",
-    "Optional": "NONE",
+REFLECTION = {
+    "lambda": "a function with no name: write the @computed_field or the field it stands for",
+    "getattr": "a lookup by name: the field annotation already declares what is held; read it as a field",
+    "setattr": "mutation: instances are frozen; construct the next fact holding this one",
+    "hasattr": "a question about shape: the class declares its fields; hold the class that has the field",
+    "vars": "a model read as a dict: use the fields",
+    "isinstance": "a question about type: the union already chose the member; hold the member",
+    "issubclass": "a question about type: declare the kind as a generic parameter and read it from the class",
+    "create_model": "a class built at runtime: write the class",
+    "TypeAdapter": "validation outside a model: every kind is a model; call model_validate_json on it",
+    "**": "a dict nobody proved: write the fields, or the config keys, out in full",
 }
-BYPASS = {
-    "model_construct", "model_copy", "PrivateAttr", "cached_property", "lru_cache", "cache",
-    "model_post_init", "SkipValidation", "__setattr__",
-}
-REFLECTION = {"getattr", "setattr", "hasattr", "delattr", "eval", "exec", "vars", "globals", "locals", "__import__", "type"}
-VALIDATORS = {"field_validator", "model_validator", "validator", "root_validator",
-              "AfterValidator", "BeforeValidator", "WrapValidator", "PlainValidator"}
-PREDICATE_CALLS = {"len", "all", "any", "sum", "set"}
-PREDICATE_NODES = (
-    ast.Attribute, ast.Name, ast.Load, ast.Store, ast.Compare, ast.Call, ast.Constant, ast.BinOp, ast.UnaryOp,
-    ast.BoolOp, ast.GeneratorExp, ast.SetComp, ast.comprehension, ast.Subscript, ast.Tuple,
-    ast.operator, ast.cmpop, ast.boolop, ast.unaryop,
-)
-
-
-class Checker(ast.NodeVisitor):
-    def __init__(self, path: Path, tree: ast.Module) -> None:
-        self.path, self.tree, self.hits = path, tree, []
-        self.own = {n.name for n in tree.body if isinstance(n, ast.ClassDef)}
-        self.exempt: set[int] = set()
-        self.signature: set[int] = set()
-        for node in tree.body:
-            if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] in OWN_ROOTS):
-                self.own |= {a.asname or a.name for a in node.names}
-
-    def hit(self, label: str, node: ast.AST, why: str) -> None:
-        self.hits.append(f"{label:<15}{self.path}:{getattr(node, 'lineno', 0)}: {why}")
-
-    # module: imports, classes, a docstring, __all__, and a Route; main.py, one call that serves the config
-    def check_module(self) -> None:
-        for node in self.tree.body:
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("type_construction.engine") and node.module != "type_construction.engine.parties":
-                self.hit("ENGINE", node, "a program imports the world and the engine's parties; the engine is not its to reach")
-            if isinstance(node, (ast.Import, ast.ImportFrom, ast.ClassDef)):
-                continue
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                continue
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self.hit("FREE-FUNCTION", node, f"`{node.name}` is a function; a program is classes")
-                continue
-            if isinstance(node, ast.Assign) and [getattr(t, "id", "") for t in node.targets] == ["__all__"]:
-                continue
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and self.is_route(node.value.func):
-                continue
-            if self.path.name == "main.py" and isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-                continue
-            self.hit("MODULE-STATE", node, "a module holds state outside a value")
-
-    @staticmethod
-    def is_route(func: ast.expr) -> bool:
-        """A route's declaration: `Route[Request, Reply, ...](name=RouteName(...))`."""
-        head = func.value if isinstance(func, ast.Subscript) else func
-        return getattr(head, "id", "") == "Route"
-
-    # classes
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        bases = {getattr(b, "id", None) or getattr(getattr(b, "value", None), "id", None) for b in node.bases}
-        if not bases & (BASES | self.own):
-            self.hit("BASE", node, f"`{node.name}` is not one of the engine's kinds")
-        self.kind = self.kind_of(node)
-        for item in node.body:
-            if isinstance(item, ast.AnnAssign):
-                self.check_field(item)
-            elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self.check_method(item)
-            elif isinstance(item, (ast.Assign, ast.Pass)) or (isinstance(item, ast.Expr) and isinstance(item.value, ast.Constant)):
-                continue
-            else:
-                self.hit("BODY", item, f"`{node.name}` holds a statement that is not a field, a member or a derivation")
-        self.generic_visit(node)
-
-    def kind_of(self, node: ast.ClassDef) -> str:
-        """The kind of the world a class is, through its own classes in this module."""
-        classes = {n.name: n for n in self.tree.body if isinstance(n, ast.ClassDef)}
-        seen: set[str] = set()
-        while True:
-            base = node.bases[0] if node.bases else None
-            name = getattr(base, "id", None) or getattr(getattr(base, "value", None), "id", "")
-            if name in BASES or name not in classes or name in seen:
-                return name
-            seen.add(name)
-            node = classes[name]
-
-    def check_field(self, item: ast.AnnAssign) -> None:
-        if getattr(item.target, "id", "") in ("root", "model_config"):
-            return
-        head = item.annotation.value if isinstance(item.annotation, ast.Subscript) else item.annotation
-        if getattr(head, "id", "") == "ClassVar":
-            if not (self.kind == "Connection" and getattr(item.target, "id", "") == "unanswered"):
-                self.hit("MODULE-STATE", item, "a class variable is state outside a value; a connection's `unanswered` is the one")
-            return
-        if getattr(head, "id", "") == "Literal":
-            if self.kind != "Record":
-                self.hit("PRIMITIVE", item, "a Literal is a tag a party sends; only a record holds one")
-            return
-        for name in ast.walk(item.annotation):
-            if isinstance(name, ast.Constant) and name.value is None:
-                self.hit("NONE", item, "a field's absence has no name: the empty case is a class")
-            elif isinstance(name, ast.Name):
-                if name.id in PRIMITIVES:
-                    self.hit("PRIMITIVE", item, f"a field typed `{name.id}`: a primitive is only a root")
-                elif name.id not in self.own and name.id not in SHAPES and name.id not in ("tuple", "Annotated"):
-                    self.hit("HELD", item, f"a field holds `{name.id}`, which is not one of your classes")
-
-    # methods: a property, an effect, an open, or a rejection predicate
-    def check_method(self, fn: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        decorators = [self.decorator_name(d) for d in fn.decorator_list]
-        if fn.name == "__init__":
-            self.hit("BYPASS", fn, "construction replaced by __init__")
-        if "staticmethod" in decorators or "classmethod" in decorators:
-            self.hit("PARSE-METHOD", fn, "a static or class method is procedure hung on a type")
-        if "model_validator" in decorators:
-            self.check_predicate(fn)
-        elif any(d in VALIDATORS for d in decorators):
-            self.hit("PARSE-METHOD", fn, "a validator other than a rejection predicate")
-        elif "property" in decorators:
-            if "computed_field" in decorators and self.kind != "Fact":
-                self.hit("PARSE-METHOD", fn, "a computed field outside a fact sends what no one asked for; it is a property")
-            elif "computed_field" not in decorators and self.kind == "Fact":
-                self.hit("PARSE-METHOD", fn, "a fact's derivation is a computed field, so what follows it can bind it")
-            self.check_callable(fn, "property")
-        elif fn.name in ("effect", "open", "stream"):
-            self.check_callable(fn, fn.name)
-        else:
-            self.hit("PARSE-METHOD", fn, f"`{fn.name}` is a method; a class knows only derivations")
-
-    @staticmethod
-    def decorator_name(d: ast.expr) -> str:
-        d = d.func if isinstance(d, ast.Call) else d
-        return getattr(d, "id", None) or getattr(d, "attr", "")
-
-    def check_callable(self, fn: ast.FunctionDef | ast.AsyncFunctionDef, kind: str) -> None:
-        a = fn.args
-        if a.vararg or a.kwarg:
-            self.hit("LAMBDA", fn, "an untyped parameter list")
-        allowed = {"stream": ["self", "client"]}.get(kind, ["self"])
-        if [p.arg for p in [*a.posonlyargs, *a.args]] != allowed:
-            self.hit("PARSE-METHOD", fn, f"`{fn.name}` takes parameters other than {', '.join(allowed)}")
-        if a.kwonlyargs and kind not in ("effect", "open"):
-            self.hit("PARSE-METHOD", fn, f"`{fn.name}` takes keyword parameters")
-        if any(d is not None for d in a.kw_defaults) or a.defaults:
-            self.hit("PARSE-METHOD", fn, f"`{fn.name}` gives a parameter a default")
-        for p in a.kwonlyargs:
-            if p.annotation is None:
-                self.hit("PARSE-METHOD", p, f"`{p.arg}` names a connection without its client's type")
-            else:
-                self.signature |= {id(n) for n in ast.walk(p.annotation)}
-        if fn.returns is not None:
-            self.signature |= {id(n) for n in ast.walk(fn.returns)}
-        body = [s for s in fn.body if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
-        if not (len(body) == 1 and isinstance(body[0], ast.Return) and body[0].value is not None):
-            self.hit("BODY", fn, f"`{fn.name}` is not one returned expression")
-        elif kind in ("effect", "stream"):
-            self.check_reach(fn, body[0], {p.arg for p in [*a.args[1:], *a.kwonlyargs]})
-
-    def check_reach(self, fn: ast.FunctionDef | ast.AsyncFunctionDef, ret: ast.Return, clients: set[str]) -> None:
-        """An effect or a stream calls only the client it names, a class of the program, and
-        `model_dump_json`: the party is reached and nothing else is done."""
-        for node in ast.walk(ret):
-            if not isinstance(node, ast.Call):
-                continue
-            f = node.func
-            root = f
-            while isinstance(root, (ast.Attribute, ast.Call, ast.Subscript, ast.Await)):
-                root = root.value if not isinstance(root, ast.Call) else root.func
-            if isinstance(f, ast.Attribute) and f.attr == "model_dump_json":
-                continue
-            if isinstance(f, ast.Name) and f.id in self.own:
-                continue
-            if isinstance(f, ast.Attribute) and getattr(root, "id", None) in clients:
-                continue
-            self.hit("BODY", node, f"`{fn.name}` calls `{ast.unparse(f)}`; it reaches the party through its client and does nothing else")
-
-    def check_predicate(self, fn: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        d = next((d for d in fn.decorator_list if self.decorator_name(d) == "model_validator"), None)
-        after = isinstance(d, ast.Call) and any(k.arg == "mode" and getattr(k.value, "value", "") == "after" for k in d.keywords)
-        body = [s for s in fn.body if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
-        shaped = (
-            after and [p.arg for p in fn.args.args] == ["self"] and len(body) == 2
-            and isinstance(body[0], ast.If) and not body[0].orelse
-            and isinstance(body[0].test, ast.UnaryOp) and isinstance(body[0].test.op, ast.Not)
-            and len(body[0].body) == 1 and isinstance(body[0].body[0], ast.Raise)
-            and isinstance(body[0].body[0].exc, ast.Call) and getattr(body[0].body[0].exc.func, "id", "") == "ValueError"
-            and len(body[0].body[0].exc.args) == 1 and isinstance(body[0].body[0].exc.args[0], ast.Attribute)
-            and isinstance(body[0].body[0].exc.args[0].value, ast.Name)
-            and isinstance(body[1], ast.Return) and getattr(body[1].value, "id", "") == "self"
-        )
-        if not shaped:
-            self.hit("PREDICATE", fn, "a rejection predicate is `if not <expression>: raise ValueError(<Invariant.MEMBER>)`, then `return self`")
-            return
-        test = body[0].test.operand
-        for node in ast.walk(test):
-            if not isinstance(node, PREDICATE_NODES):
-                self.hit("PREDICATE", node, f"a predicate's expression holds `{type(node).__name__}`")
-            elif isinstance(node, ast.Call) and getattr(node.func, "id", None) not in PREDICATE_CALLS:
-                self.hit("PREDICATE", node, "a predicate calls only len, all, any, sum and set")
-        self.exempt |= {id(n) for n in ast.walk(body[0])}
-
-    # expressions, everywhere
-    def generic_check(self) -> None:
-        for node in ast.walk(self.tree):
-            if id(node) in self.exempt:
-                continue
-            if isinstance(node, ast.Call):
-                self.check_call(node)
-            if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
-                self.hit("LOOP", node, "a fold with no name")
-            elif isinstance(node, (ast.If, ast.IfExp, ast.Match, ast.BoolOp)):
-                self.hit("CONDITIONAL", node, "a branch; the only branch is construction choosing a variant")
-            elif isinstance(node, ast.comprehension) and node.ifs:
-                self.hit("CONDITIONAL", node, "a filtered fold")
-            elif isinstance(node, (ast.Try, ast.TryStar, ast.Raise)):
-                self.hit("CATCH", node, "a failure handled by procedure")
-            elif isinstance(node, (ast.With, ast.AsyncWith)):
-                self.hit("BODY", node, "a context; the engine holds every resource")
-            elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.NamedExpr, ast.Delete)) and self.inside_function(node):
-                self.hit("BODY", node, "a step inside a derivation")
-            elif isinstance(node, (ast.Dict, ast.DictComp)):
-                self.hit("DICT", node, "a shape nobody proved")
-            elif isinstance(node, (ast.List, ast.ListComp)):
-                self.hit("LIST", node, "a list; a many is a Many over a tuple")
-            elif isinstance(node, (ast.Set, ast.SetComp)):
-                self.hit("SET", node, "a set outside a rejection predicate")
-            elif isinstance(node, ast.Lambda):
-                self.hit("LAMBDA", node, "a function with no name")
-            elif isinstance(node, (ast.Global, ast.Nonlocal)):
-                self.hit("BYPASS", node, "state kept outside a value")
-            elif isinstance(node, ast.Name) and node.id in SHAPES:
-                self.hit(SHAPES[node.id], node, f"`{node.id}` is a shape that is not one of your classes")
-            elif isinstance(node, (ast.Name, ast.Attribute)) and (getattr(node, "id", None) or getattr(node, "attr", None)) in BYPASS:
-                self.hit("BYPASS", node, "construction skipped or state kept outside a value")
-            elif isinstance(node, ast.Constant) and node.value is None and id(node) not in self.signature:
-                self.hit("NONE", node, "an absence with no name")
-
-    def inside_function(self, target: ast.AST) -> bool:
-        for fn in ast.walk(self.tree):
-            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(n is target for n in ast.walk(fn)):
-                return True
-        return False
-
-    def check_call(self, node: ast.Call) -> None:
-        name = getattr(node.func, "id", None)
-        if name in ("isinstance", "issubclass"):
-            self.hit("ISINSTANCE", node, "asking a value what it is; it said, by existing as its variant")
-        elif name in REFLECTION:
-            self.hit("REFLECTION", node, f"`{name}` reaches past the type")
-        elif name == "str":
-            self.hit("PARSE-METHOD", node, "a str() conversion; a scalar constructs its own words")
-        if isinstance(node.func, ast.Attribute) and getattr(node.func.value, "id", None) == "json" and node.func.attr in ("loads", "dumps"):
-            self.hit("JSON", node, "parsing or building by hand")
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "model_dump":
-            self.hit("DICT", node, "model_dump yields a dict; a model serialises itself with model_dump_json")
-        if any(k.arg is None for k in node.keywords):
-            self.hit("DICT", node, "keyword unpacking passes a dict nobody proved")
+RULES = [
+    ("VALIDATOR", re.compile(r"\b(model_validator|field_validator|AfterValidator|BeforeValidator|WrapValidator|PlainValidator)\b"),
+     lambda m: "a validator checks a value that already exists and returns the same type; the rule is a Scalar constraint, Field(gt=..., min_length=...), or two scalars with disjoint constraints held by two facts in a union"),
+    ("WEAKENED", re.compile(r"\bAny\b|\bcast\(|#\s*type:\s*ignore|:\s*object\b|\[object\]"),
+     lambda m: "the checker refused a type and the refusal is the specification; read basedpyright's message and write the type it names"),
+    ("REFLECTION", re.compile(r"\b(lambda)\b|\b(getattr|setattr|hasattr|vars|isinstance|issubclass|create_model|TypeAdapter)\(|(\*\*)\w"),
+     lambda m: REFLECTION[next(g for g in m.groups() if g)]),
+    ("PROCEDURE", re.compile(r"^\s*(if|for|while|try|except|raise)\b|\b(None)\b"),
+     lambda m: PROCEDURE[next(g for g in m.groups() if g)]),
+    ("PRIMITIVE", re.compile(r"^\s+(?!root\b)(\w+):\s*(str|int|float|bool|bytes|Decimal|datetime|date|UUID|timedelta)\b"),
+     lambda m: f"`{m.group(1)}` has a meaning and a range the primitive does not carry: write `class {m.group(1).title().replace('_', '')}(Scalar[{m.group(2)}])` with its constraint in Field(...) and hold that"),
+]
+DEF = re.compile(r"^\s*(async\s+)?def\s+(\w+)")
+DERIVATION = re.compile(r"^\s*@(property|computed_field)\b")
+DECORATOR = re.compile(r"^\s*@")
+METHOD = "`{name}` is a computation hung on a type: what a thing knows is a @computed_field reading self; what an action does is a @property the library kind declared; anything else is a class not yet written"
 
 
 def scan(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(), filename=str(path))
-    checker = Checker(path, tree)
-    checker.check_module()
-    checker.visit(tree)
-    checker.generic_check()
-    return list(dict.fromkeys(checker.hits))
+    lines = path.read_text().splitlines()
+    hits: list[str] = []
+    for index, line in enumerate(lines, 1):
+        if match := DEF.match(line):
+            above = index - 2
+            derived = False
+            while above >= 0 and DECORATOR.match(lines[above]):
+                derived = derived or bool(DERIVATION.match(lines[above]))
+                above -= 1
+            if not derived:
+                hits.append(f"METHOD      {path}:{index}: {line.strip()}\n            {METHOD.format(name=match.group(2))}")
+        for label, rule, advise in RULES:
+            if match := rule.search(line):
+                hits.append(f"{label:<11} {path}:{index}: {line.strip()}\n            {advise(match)}")
+    return hits
 
 
 def main(argv: list[str]) -> int:
-    if not argv:
-        print("usage: smell-check <path>...", file=sys.stderr)
-        return 2
-    files = sorted(
-        f for a in map(Path, argv) for f in ([a] if a.is_file() else a.rglob("*.py"))
-        if "__pycache__" not in f.parts
-    )
+    files = sorted(f for a in map(Path, argv) for f in ([a] if a.is_file() else a.rglob("*.py")))
     hits = [h for f in files for h in scan(f)]
-    print("\n".join(hits)) if hits else None
+    print("\n".join(hits))
     return 1 if hits else 0
 
 

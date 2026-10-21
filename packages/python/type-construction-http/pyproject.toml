@@ -17,8 +17,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
+    "httpx>=0.28,<1",
     "starlette>=1.7,<2",
-    "type-construction",
+    "type-construction-engine",
+    "type-construction-world",
     "uvicorn>=0.54,<1",
 ]
 import-names = ["type_construction.http"]
@@ -37,4 +39,5 @@ build-backend = "uv_build"
 module-name = "type_construction.http"
 
 [tool.uv.sources]
-type-construction = { workspace = true }
+type-construction-engine = { workspace = true }
+type-construction-world = { workspace = true }
