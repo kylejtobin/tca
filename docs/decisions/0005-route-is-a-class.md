@@ -12,12 +12,12 @@ A program declares what it accepts and what it answers.
 
 ## Decision
 
-`class Checkout(Route[PlaceOrder, OrderPaid]): ...` with no fields. The class name is the business's name; a server kind derives the address or the subcommand from it.
+`class Checkout(Route[PlaceOrder, OrderPaid]): ...` with no fields of its own. The class name is the business's name; a server kind derives the address or the subcommand from it. The kind holds `request: Q` and `reply: A` (0048), so the request class is read from the field annotation, not from generic metadata.
 
 ## Evidence
 
-`Checkout.__mro__` contains a parametrized base whose `__pydantic_generic_metadata__["args"]` is `(PlaceOrder, OrderPaid | OrderUnpaid)`. `Checkout.__pydantic_generic_metadata__` itself is `{"origin": None, "args": (), "parameters": ()}`; the arguments are read from the base.
+`Checkout.model_fields["request"].annotation is PlaceOrder`. `Checkout.__pydantic_generic_metadata__` is `{"origin": None, "args": (), "parameters": ()}`, so a route is found among a module's classes as one with no origin and no open parameters.
 
 ## Consequences
 
-Unwritable: `RouteName`, a `name` field, a route instance. A reader finds routes by walking a package for `Route` subclasses. Refuted by one contract needing two names; that is two routes.
+Unwritable: `RouteName`, a `name` field, a route instance on a page. A reader finds routes by walking a module for `Route` subclasses. Refuted by one contract needing two names; that is two routes.

@@ -20,13 +20,13 @@ The developer writes classes:
 | what arrives | a `Request` |
 | what an external party says | a `Record`, with the party's field names as aliases |
 | what the business concludes | a `Fact` whose fields are the things it was concluded from |
-| what the business asks a party | an `Action` whose fields are the fact that intends it |
+| what the business asks a party | an `Action` whose fields are the fact that intends it; the kind holds the party |
 | what the caller receives | a `Reply[F]` made from the fact `F`, whose computed fields are its words |
 | each party | a `Connection` |
 | each thing the program does | a `Route[Request, Reply]` |
 | the deployment | a `Config` |
 
-The engine does four things: deserialize the request; perform each action and deserialize its response; serialize the reply; open and close clients at startup and shutdown. It constructs the developer's classes in the order their field annotations require. It has no classes and no state of its own.
+The engine does four things: deserialize the request; perform each action and deserialize its response; serialize the reply; open and close clients at startup and shutdown. It constructs the developer's classes as their fields become fillable, asking Pydantic for each class and keeping what constructs, until the route itself constructs. It has no classes, no order and no state of its own.
 
 A class or field on a page that exists for the engine is a defect. A behavior in the engine that the developer should have declared is a defect.
 

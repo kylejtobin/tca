@@ -8,16 +8,16 @@ A fact's field names a class the run must produce. The request is given, a recor
 
 ## Rejected
 
-The engine searching constructed instances for a value of the needed class. The engine converting a value to the needed class by its root. A validator on the fact.
+The engine searching constructed instances for a value of the needed class. The engine converting a value to the needed class by its root. A validator on the fact. `Priced(total).root` on the page: basedpyright refuses a `Decimal` for a root typed as the union of two scalars.
 
 ## Decision
 
-A computed field whose return type names classes produces them. `Placed.amount -> LargeAmount | SmallAmount` returning `Priced(total).root` produces whichever member Pydantic chose. `produces(cls)` lists only the computed fields that name a class. The proof reads them as what a class produces, follows a needed class to its producer, and refuses a class with two producers as `producer`, the way it refuses a record with two hearers. After constructing a holder, the run keeps a computed field's value when `type(value)` is one of the declared classes; a fact that needs the member not produced is skipped (0003).
+A computed field whose return type names classes produces them. `LinePriced.amount -> LargeAmount | SmallAmount` returning `Priced.model_validate(total).root` produces whichever member Pydantic chose: `model_validate` takes the value, the union chooses, and `.root` is typed as the union. After constructing a holder, the run keeps a computed field's value under `type(value)` when it is one of the declared classes, so the fact that holds that member becomes constructible and the fact that holds the other stays `missing` and is never built. The proof reads the return classes as what a class brings with it, and `proven` refuses a class two computed fields produce as `producer`, the way it refuses a record with two hearers.
 
 ## Evidence
 
-`producers(shop)` mapped `LargeAmount` and `SmallAmount` to `Placed`. For quantity 3 the run held a `SmallAmount` and constructed `FullPrice`; for quantity 50 it held a `LargeAmount` and constructed `Discounted`; each run performed `Quote` once and `Charge` once. A route whose fact needed `Amount`, which `Discounted.total` and `FullPrice.total` both return, was refused at proof time with "2 computed fields produce Amount; exactly one must".
+For three teas at 2.50 the run held a `SmallAmount` and constructed `FullPrice`; for fifty gold it held a `LargeAmount` and constructed `Discounted`; a three-line order built one of each per line. A second fact whose computed field also returned `LargeAmount | SmallAmount` was refused at startup: "2 computed fields produce LargeAmount: LinePriced.amount, Twice.amount; exactly one must".
 
 ## Consequences
 
-A derived value with a rule is a computed field typed as a union of constrained scalars. A computed field that returns a class no fact needs is harmless until one does, and then it must be the only producer. Refuted by nothing.
+A derived value with a rule is a computed field typed as a union of constrained scalars, returning `Scalar.model_validate(value).root` over that union. A computed field that returns a class no fact needs is harmless until one does, and then it must be the only producer. Refuted by nothing.

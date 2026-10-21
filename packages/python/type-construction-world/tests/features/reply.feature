@@ -28,6 +28,8 @@ Feature: A reply holds one fact as its parameter and serializes only its compute
     When OrderPaid(of=Other(sku=Sku("x"))) is constructed
     Then ValidationError is raised with type model_type at loc ("of",)
 
-  Scenario: The reply's fact is read from its generic argument
-    When the __mro__ of OrderPaid is searched for a base whose __pydantic_generic_metadata__["args"] is non-empty
-    Then the args are (Paid,)
+  Scenario: A reply of a fact is a reply of Fact, so a route's bound admits it
+    Given class Checkout(Route[PlaceOrder, OrderPaid])
+    When basedpyright checks the module
+    Then it reports no error, because Reply's fact is a covariant TypeVar
+    And OrderPaid.model_fields["of"].annotation is Paid

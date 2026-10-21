@@ -25,10 +25,12 @@ Why eleven classes are enough: an application is data, control flow and I/O.
 Five shapes are used to write them: a field annotated with one of your classes,
 a ``Field(...)`` constraint, a union, a tuple, and a ``@computed_field``.
 
-The engine constructs your classes in the order their field annotations require,
-deserializes the request, performs each action and deserializes its response,
-serializes the reply, and opens and closes clients. It adds no class and holds no
-state. A class or field written for the engine's sake is a defect.
+The engine constructs your classes as their fields become fillable: each pass asks
+Pydantic for every class not yet constructed, from the instances its fields name, and
+a class whose fields are still missing waits for the next pass. It deserializes the
+request, performs each action and deserializes its response, serializes the reply, and
+opens and closes clients. It adds no class and holds no state. A class or field
+written for the engine's sake is a defect.
 
 Every configuration here is strict: no coercion, no undeclared fields, frozen
 instances, defaults validated. A value the business does not have has no type.
@@ -40,10 +42,10 @@ constructs ``Quantity``; the environment through ``Setting`` roots. The classes
 stay strict; the call chooses the mode.
 
 The interface is defined once. ``Route[Q, A]`` with the fields and docstrings on
-``Q`` and ``A`` is read by the command line (pydantic-settings) and by HTTP
-(FastAPI), which derive options, help, the request body, the response schema and
-the OpenAPI document from it. A docstring under a field is its description in
-both.
+``Q`` and ``A`` is read by the command line, which renders options and help from
+``Q``'s JSON schema, and by HTTP (FastAPI), which derives the request body, the
+response schema and the OpenAPI document from the same classes. A docstring under
+a field is its description in both.
 
 Example, a shop that prices an order and charges for it::
 
@@ -83,6 +85,7 @@ Example, a shop that prices an order and charges for it::
 from abc import abstractmethod
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from typing import Generic, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
@@ -373,21 +376,31 @@ class Action[P: Connection, T: Record](BaseModel):
             def resource(self) -> Resource:
                 return Resource("/charges")
 
-    The engine constructs the action when its fields' classes exist and calls
-    ``perform`` with the party's connection; the library kind's ``perform`` sends
-    and returns the record validated with ``T.model_validate_json``, or raises.
-    ``perform`` is abstract: an action with no library kind cannot be constructed.
-    Exactly one action hears each ``Record`` class.
+    The action holds its party as ``party``, the connection the deployment
+    configured for ``P``; the engine fills it like any other field, from the
+    config, so the action exists once the fact that intends it and the party
+    both exist. Then the engine awaits ``perform``, and the library kind's
+    ``perform`` sends through ``self.party`` and returns the record validated
+    with ``T.model_validate_json``, or raises. ``perform`` is abstract: an action
+    with no library kind cannot be constructed.
     """
 
     model_config = PRODUCT
+    party: P
+    """The connection this action goes through: the deployment's ``P``."""
 
     @abstractmethod
-    async def perform(self, party: P) -> T:
-        """Ask the party and return what it said as ``T``; the library kind's verb."""
+    async def perform(self) -> T:
+        """Ask ``self.party`` and return what it said as ``T``; the library kind's verb."""
 
 
-class Reply[F: Fact](BaseModel):
+F_co = TypeVar("F_co", bound=Fact, covariant=True)
+"""``Reply``'s fact, covariant: a ``Reply[Paid]`` is a ``Reply[Fact]``, so a route's bound
+``Reply[Fact]`` admits every reply. Declared the old way because the new syntax infers
+invariance for a field."""
+
+
+class Reply(BaseModel, Generic[F_co]):
     """What the caller receives: the one fact ``F`` it is made from, and its words.
 
     Subclass it with the fact as its parameter and a ``@computed_field`` for each
@@ -407,7 +420,9 @@ class Reply[F: Fact](BaseModel):
     """
 
     model_config = PRODUCT
-    of: F = Field(exclude=True, description="The fact this reply is made from; never serialized.")
+    of: F_co = Field(
+        exclude=True, description="The fact this reply is made from; never serialized."
+    )
 
 
 class Route[Q: Request, A: Reply[Fact]](BaseModel):
@@ -419,11 +434,19 @@ class Route[Q: Request, A: Reply[Fact]](BaseModel):
 
         class Checkout(Route[PlaceOrder, OrderPaid | OrderDeclined]): ...
 
-    At startup the engine reads ``A`` and checks that every class it needs is
-    reachable from ``Q`` and from the records the program's actions hear.
+    An instance is one answered request: ``request`` is what arrived and
+    ``reply`` is what the program made of it. The engine constructs the route
+    like any other class, once the reply exists, and that construction is the
+    end of the run. At startup the engine checks that every class of the
+    program can exist from some route's request and the deployment's
+    connections.
     """
 
     model_config = PRODUCT
+    request: Q
+    """What arrived."""
+    reply: A
+    """What the program answered."""
 
 
 class Config(BaseSettings):

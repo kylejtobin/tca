@@ -8,18 +8,18 @@ An order has lines; each line is quoted and charged; the order is paid when ever
 
 ## Rejected
 
-A loop on the page. An engine class for a batch, a mapping or a context. One run holding several instances of one class under one key.
+A loop on the page. An engine class for a batch, a mapping or a context. One run holding several instances of one class under one key. A scope map computed before the run that said, per class, which element it exists per, with `None` for once per run.
 
 ## Decision
 
-An element class is one a request or a record holds as `tuple[E, ...]`; `elements(program)` reads each with the class and field that hold it. A class whose field names an element, or a per-element class, exists once per element; a record exists per its action's element; a produced class per its producer's; a class that only collects in `tuple[X, ...]` fields exists once per run. The run constructs a per-element class in one child run per element, a `ChainMap` of the element's instance over the parent's instances, so a child sees everything the parent built. A level's actions are performed together across every child. A `tuple[X, ...]` field receives each child's `X` in element order, and Pydantic validates the tuple. The proof refuses a reply's fact that exists per element, and a tuple field that collects a once-per-run class. An element source is a field of the request or of a record; a tuple inside a `Value` is not one.
+When a request or a record enters the parent run, each `tuple[E, ...]` field it holds fans out: one child run per element, a `ChainMap` of the element's instance over the parent's instances, so a child sees everything the parent built. Each pass visits the parent first and then every child, and a class already present through the chain is not asked for again; so a class whose fields are fillable in the parent exists once, and a class that needs the element exists once per element, decided by construction and not by a map. The pass's actions are performed together across the parent and every child, and a record enters the run it was asked from. A `tuple[X, ...]` field of a parent-run class is supplied once every child holds an `X`, in element order, and Pydantic validates the tuple; until then the field is left out and the class is `missing`. An element source is a field of the request or of a record; a tuple inside a `Value` is not one, and a child's own records do not fan out again.
 
 This is `traverse`: a construction applied to each element and collected into one; `asyncio.gather` is the effect and `tuple[X, ...]` validation is the collection.
 
 ## Evidence
 
-A three-line order: `elements` gave `Line` from `PlaceOrder.lines`; `scopes` gave `Quote`, `Price`, `LinePriced`, `Charge`, `Charged`, `LinePaid` per `Line` and `Paid` once per run; three `Quote`s performed at 0.0 s and three `Charge`s at 0.2 s; the reply dumped `{"total":"15.00","charges":["ch_tea","ch_milk","ch_jam"]}`. With a per-line discount, one line constructed `FullPrice` and the other `Discounted`. A reply fact holding one `LinePaid` directly was refused: "Wrong exists once per Line; a reply's fact exists once per run". A fact collecting `tuple[Paid, ...]` was refused: "collects Paid, which exists once per run; hold it directly".
+A three-line order, tea 3, gold 50, jam 2 at 2.50 each: `Quote`, `LinePriced`, `Discounted` or `FullPrice`, `Charge` and `LinePaid` were constructed per line, `Paid` once, and the reply dumped `{"total":"125.000","charges":["ch_1","ch_1","ch_1"]}` with the lines holding `FullPrice`, `Discounted`, `FullPrice`. A one-line order dumped `{"total":"7.50","charges":["ch_1"]}`.
 
 ## Consequences
 
-A page writes `tuple[...]` on the request and on the collecting fact and nothing else. Refuted by an element that must come from inside a `Value`; then the `Value`'s field joins `elements`.
+A page writes `tuple[...]` on the request and on the collecting fact and nothing else. A reply's fact that holds an element directly exists only in the children, so the route never constructs and the first answer raises `missing` at `(Checkout, reply)`; the proof over classes does not see scope and does not refuse it at startup. Refuted by an element that must come from inside a `Value`; then the `Value`'s field fans out too.

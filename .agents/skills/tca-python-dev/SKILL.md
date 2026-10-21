@@ -30,10 +30,10 @@ From `type_construction.world`. Every class is strict, frozen and forbids undecl
 | `Request` | what arrives on a route | your contract | your classes; `tuple[E, ...]` for several |
 | `Record` | what a party says, read by alias only | the party | your classes; `Field(alias=...)` per party name, or `alias_generator=to_camel` on a subclass for the whole party; `AliasPath` for a nested value |
 | `Fact` | what the business concludes | you | the request, records, prior facts, values, produced scalars, an element |
-| `Action[P, T]` | what the business asks party `P`, hearing `T` | you | the fact that intends it; `sends` and `resource` as properties the library kind declares |
+| `Action[P, T]` | what the business asks party `P`, hearing `T`; the kind holds `party: P`, filled from the config | you | the fact that intends it; `sends` and `resource` as properties the library kind declares |
 | `Reply[F]` | what the caller receives: the fact `F` as `of`, never serialized, and computed fields that are its words | your contract | none |
 | `Connection` | a party as the deployment names it; comes from a library kind, which opens and closes it | the deployment | `Setting` subclasses |
-| `Route[Q, A]` | one thing the program does; the class name is its name | your contract | none |
+| `Route[Q, A]` | one thing the program does; the class name is its name; the kind holds `request: Q` and `reply: A`, and an instance is one answered request | your contract | none |
 | `Config` | the deployment, from the environment and `.env`; nested names joined with `__` | the deployment | one `Connection` per party, one `Setting` per value |
 
 Ready-made: `Instant` and `Identity` construct themselves when declared on a fact; `Duration` is a positive `timedelta`. A `StrEnum` subclass is a closed word list.
@@ -77,7 +77,7 @@ class Placed(Fact):
     @computed_field
     @property
     def amount(self) -> LargeAmount | SmallAmount:
-        return Priced(self.price.amount.root * self.order.quantity.root).root
+        return Priced.model_validate(self.price.amount.root * self.order.quantity.root).root
 
 class Discounted(Fact):
     placed: Placed
@@ -91,7 +91,7 @@ class Charge(Post[Payments, Payment, Charged]):
     priced: Discounted | FullPrice
 ```
 
-The engine reads `Placed.amount` as what `Placed` produces. For 150 it produces a `LargeAmount`, so `Discounted` constructs and `FullPrice` is skipped. You wrote no `if` and no validator, and the checker verified every reference.
+The engine reads `Placed.amount` as what `Placed` produces. For 150 it produces a `LargeAmount`, so `Discounted` constructs and `FullPrice`, whose `amount` is never filled, is never built. You wrote no `if` and no validator, and the checker verified every reference.
 
 ## Several of one thing
 
@@ -155,11 +155,11 @@ A `Value` field is dotted; a tuple repeats; a tuple of values takes one JSON obj
 
 The contract. You rely on it; you never implement any of it.
 
-- **At startup, the proof.** Reads each route's `Q` and `A`, the reply's `F`, each action's `P` and `T`, every field annotation and every computed field's return type. Refuses the program, naming every fault at once in your class names: a record no action hears or two hear; a class no computed field produces or two produce; a field naming a class nothing produces; a party the config holds zero or two times; a cycle; a reply's fact that exists per element; a tuple collecting a class that exists once.
+- **At startup, the proof.** Starts from each route's request and the config's connections and asks, pass by pass, which classes can exist: a class joins when every required field names a class that has joined; an action's record, a computed field's return classes and a request's elements join with it. Refuses the program, naming every fault at once in your class names: the field no class fills, which is how a record no action hears or a class nothing produces appears; a record two actions hear; a class two computed fields produce; a party the config holds twice; two classes that hold each other.
 - **Receive.** An HTTP body is validated strict as `Q` in JSON mode. A command line is validated leniently from text. Your classes stay strict in code.
-- **Construct.** Each class is `model_validate`d from the instances its fields name, in the order the annotations require. A union member that refuses is skipped. A per-element class is constructed once per element.
-- **Act.** When an action's fields exist, `perform` runs through its library kind and the response is validated as `T`. Actions that need nothing from each other run together.
-- **Answer.** `A(of=F)` is constructed and its computed fields serialized.
+- **Construct.** Each pass asks Pydantic for every class not yet built, `model_validate` from the instances its fields name. A class whose fields are still missing waits for the next pass; a union member whose field is never filled is never built, so the holder's union is the choice. A per-element class is constructed once per element, in a child run that sees the parent's instances.
+- **Act.** An action constructs when the fact that intends it and its party exist; then `perform` runs through its library kind and the response is validated as `T`. The actions of one pass run together.
+- **Answer.** The reply constructs from its fact, the route constructs from the request and the reply, and that is the end of the run; the reply's computed fields are serialized.
 - **Lifecycle.** Every connection is opened once at startup and closed once at shutdown.
 - **Observe.** Every answer is a span named for the route, with one child span per action carrying the party's and the record's class names. No contents are recorded. The deployment chooses the exporter.
 - **Fail.** A `ValidationError` or a client's exception propagates to the caller. A party's stated refusal is a `Record` in a union, not an exception.
@@ -168,7 +168,7 @@ The contract. You rely on it; you never implement any of it.
 
 **Where does the logic go?** In types that only construct for the values the rule allows. See "A rule is a type": the discount is two scalars, a `Scalar` over their union, a computed field, and two facts.
 
-**How is the order of operations determined?** By `model_fields`. `Paid` holds `Charged`; `Charged` is the `T` of `Charge`; `Charge` holds `Placed`; `Placed` holds `Price`; `Price` is the `T` of `Quote`. "Reserve before charge" means `Charge` holds `Reserved`.
+**How is the order of operations determined?** It is not; it falls out of `model_fields`. `Charge` holds `Placed`, so `Charge` cannot construct until `Placed` has; `Placed` holds `Price`, which arrives when `Quote` is performed. Each pass builds what can be built. "Reserve before charge" means `Charge` holds `Reserved`.
 
 **Where does state live?** In the current fact of a context. `Cart` holds the previous `Cart` and the arrival that changed it. This version serves one request per context.
 
@@ -221,4 +221,4 @@ The response validates as `Charged | Declined`; the fact holding the one that ar
 
 ## Not built yet
 
-The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; the generated reference; contexts that persist across requests. The world, the engine and the command line exist and type-check. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.
+The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; the generated reference; contexts that persist across requests; the test system. The world, the engine and the command line exist, type-check, and have answered a shop with two stand-in parties end to end. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.

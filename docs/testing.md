@@ -63,12 +63,12 @@ The same shape one level up. The kind is a route, the input is a request, the ou
 
 | scenario | holds | expects |
 |---|---|---|
-| `Proved` | `route`, `program` | `Ordered(classes)` or `Refuses` with the proof's fault codes |
-| `Answered` | `route`, `request: Json`, `config: Environment`, `program` | `Dumps` of the reply, or `Refuses` |
+| `Proved` | `route`, `program` | `Joins(classes)`, the set the route constructs, or `Refuses` with the proof's fault codes: `missing`, `hearer`, `producer`, `party`, `cycle` |
+| `Answered` | `route`, `request: Json`, `config: Environment`, `program` | `Dumps` of the route's reply, or `Refuses` |
 | `Invoked` | `argv: tuple[str, ...]`, `program` | `Exits(code, stdout_contains, stderr_contains)` |
 | `Checked` | `page: str` | `Reports(hits: tuple[Hit, ...])` from the smell check |
 
-The program a scenario names is a real module of real classes in the package's tests. The engine's is the shop: its parties are `Says[P, T]` actions whose `perform` returns a fixed record, so no transport is needed. The demo program is this module with `Post` in place of `Says`.
+The program a scenario names is a real module of real classes in the package's tests. The engine's is the shop: its parties are `Speaker` connections holding what they say as a `Setting`, and its actions are `Says[P, T]`, whose `perform` returns `hear(self, self.party.says.root)`, so no transport is needed. The demo program is this module with `Post` in place of `Says`.
 
 ## What earns a scenario
 

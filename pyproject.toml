@@ -25,6 +25,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
+    "rust-just>=1.59.0",
     "semgrep>=1.179.0",
 ]
 
@@ -43,7 +44,9 @@ src = ["packages/python"]
 
 [tool.ruff.lint]
 select = ["E","W","F","I","N","UP","B","A","C4","PIE","RET","SIM","ARG","PTH","ERA","PL","TRY","RUF","ANN","S","FBT","TC","EM"]
-ignore = ["ANN401","TRY003","TC001","TC002","TC003"]
+# UP046: Reply declares its fact covariant, which only a TypeVar can say; the new syntax infers
+# invariance for a field.
+ignore = ["ANN401","TRY003","TC001","TC002","TC003","UP046"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S106", "ARG001", "PLR2004"]
@@ -66,35 +69,22 @@ confidence = "LOW"
 severity = "LOW"
 
 [tool.importlinter]
-root_packages = ["type_construction.agent", "type_construction.eval", "type_construction.demo", "type_construction.http", "type_construction.cli", "type_construction.world", "type_construction.engine"]
+root_packages = ["type_construction.world", "type_construction.engine", "type_construction.cli", "type_construction.http", "type_construction.demo"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "The agent's domain imports nothing outside itself"
+name = "The world imports Pydantic and the standard library only"
 type = "forbidden"
-source_modules = ["type_construction.agent.domain"]
-forbidden_modules = [
-    "type_construction.agent.integration",
-    "type_construction.agent.config",
-    "pydantic_ai",
-    "pydantic_ai_harness",
-    "pydantic_settings",
-]
+source_modules = ["type_construction.world"]
+forbidden_modules = ["type_construction.engine", "type_construction.cli", "type_construction.http", "type_construction.demo", "opentelemetry", "httpx", "fastapi"]
 
 [[tool.importlinter.contracts]]
-name = "The agent imports inward, file by file"
-type = "layers"
-containers = ["type_construction.agent"]
-layers = ["config", "integration", "domain"]
+name = "A program imports the kinds, never the engine's body or a server"
+type = "forbidden"
+source_modules = ["type_construction.demo"]
+forbidden_modules = ["type_construction.cli", "type_construction.http"]
 
 [[tool.importlinter.contracts]]
-name = "The agent's domain files import those above them"
+name = "The servers sit on the engine, which sits on the world"
 type = "layers"
-containers = ["type_construction.agent.domain.agent"]
-layers = ["exchange", "type"]
-
-[[tool.importlinter.contracts]]
-name = "The agent's integration files import those above them"
-type = "layers"
-containers = ["type_construction.agent.integration.pydantic_ai"]
-layers = ["interpreter", "answered", "provider", "model"]
+layers = ["type_construction.cli | type_construction.http", "type_construction.engine", "type_construction.world"]

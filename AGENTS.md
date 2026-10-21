@@ -12,7 +12,7 @@ You own this model. The measure of every decision is whether a developer says le
 - Before adding a kind or a mechanism, name the discipline that already solved it and the Pydantic feature that already is it. When a line refuses, keep the kind and move its shape to what Pydantic constructs.
 - Every change is more type safe than what it replaces: the checker sees more, the proof refuses more, the page says less. Otherwise write that no more type safe strategy exists and what would refute that.
 - A red check is answered by modeling, not by narrowing. The second `isinstance` on the same data is the signal to stop and ask what the data is.
-- Procedure lives in two places and nowhere else: the engine, which reads annotations and constructs in their order, and a library kind's `perform`, where Python calls a client.
+- Procedure lives in two places and nowhere else: the engine, which asks Pydantic for every class not yet built and keeps what constructs, and a library kind's `perform`, where Python calls a client. The engine never computes an order, a scope or a plan; what a class needs is read from its fields when it is asked for.
 
 ## How to work
 

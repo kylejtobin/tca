@@ -19,57 +19,15 @@ repos:
 
   - repo: local
     hooks:
-      - id: smell-check
-        name: smell-check
-        entry: .agents/skills/smell-check/smell-check
-        language: script
+      - id: check
+        name: just check
+        entry: uv run just check
+        language: system
         pass_filenames: false
-        types: [python]
-        args: [packages/python/type-construction-demo/src]
-
-  - repo: local
-    hooks:
-      - id: ruff-check
-        name: ruff check
-        entry: uv run ruff check --fix --force-exclude
-        exclude: ^\.agents/skills/
+        always_run: true
+      - id: audit
+        name: just audit
+        entry: uv run just audit
         language: system
-        types: [python]
-      - id: ruff-format
-        name: ruff format
-        entry: uv run ruff format --force-exclude
-        exclude: ^\.agents/skills/
-        language: system
-        types: [python]
-      - id: basedpyright
-        name: basedpyright
-        entry: uv run basedpyright
-        language: system
-        types: [python]
         pass_filenames: false
-      - id: bandit
-        name: bandit
-        entry: uv run bandit -c pyproject.toml -r .
-        language: system
-        types: [python]
-        pass_filenames: false
-      - id: semgrep
-        name: semgrep
-        entry: uv run semgrep scan --config p/python --config p/secrets --error --quiet -j 1
-        language: system
-        types: [python]
-        pass_filenames: false
-      - id: pip-audit
-        name: pip-audit
-        # CVE-2026-59951 is in mcp 1.29.0, which semgrep pins exactly; semgrep is a check of ours,
-        # never shipped. Drop the ignore when a semgrep release allows mcp 1.30.0 or later.
-        entry: uv run pip-audit --ignore-vuln CVE-2026-59951
-        language: system
-        files: ^(pyproject\.toml|uv\.lock)$
-        pass_filenames: false
-      - id: uv-lock-check
-        name: uv lock --check
-        entry: uv lock --check
-        language: system
-        files: ^(pyproject\.toml|uv\.lock)$
-        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock|Dockerfile|compose\.yaml|packages/.*\.py)$

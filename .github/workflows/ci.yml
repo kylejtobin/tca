@@ -12,11 +12,6 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           enable-cache: true
-      - run: uv lock --check
       - run: uv sync --all-packages
-      - run: uv run ruff check packages tests
-      - run: uv run ruff format --check packages tests
-      - run: uv run basedpyright
-      - run: uv run lint-imports
-      - run: '! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"'
-      - run: .agents/skills/smell-check/smell-check packages/python/type-construction-demo/src
+      - run: uv run just check
+      - run: uv run just audit

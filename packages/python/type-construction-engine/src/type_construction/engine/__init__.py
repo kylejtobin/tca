@@ -1,41 +1,41 @@
-"""The engine: reads a program's classes, proves a route, and answers it.
+"""The engine: reads a program's classes, proves them, and answers a route by construction.
 
 A program is one module, named by the entry-point group ``type_construction.programs``.
-``routes`` and ``config`` read its ``Route`` and ``Config`` subclasses; ``arguments``
-reads a route's ``Q`` and ``A`` from its generic parameters; ``hears`` and ``party``
-read an action's ``T`` and ``P``.
+``routes`` and ``config`` read its ``Route`` and ``Config`` subclasses; ``asked`` reads a
+route's request class from its ``request`` field; ``heard`` reads the ``T`` an action
+declares as ``Action[P, T]``.
 
-``prove`` reads a route top-down, from ``A`` through its ``F`` and every field's class,
-and returns the classes in the order they can exist; it is cached, so it runs once per
-route. Every leaf is the request, a record exactly one action hears, a class exactly one
-computed field produces, or an ``Instant`` or ``Identity`` that constructs itself;
-anything else is a fault, and every fault is raised at once as a ``ValidationError``
-named for the route. A class whose field names an element, a class that a request or a
-record holds as ``tuple[E, ...]``, is per element; a class whose field is ``tuple[X, ...]``
-of a per-element class collects every element's ``X``.
+A run is the instances of one answer, keyed by class, seeded with the request and the
+deployment's connections. A pass visits every class of the route not yet in the run and
+asks Pydantic for it from the instances its fields name: ``cls.model_validate(held)``.
+Pydantic answers one of three ways. The class constructs: the instance enters the run,
+each computed field's value enters under its own class, and an action is performed with
+the pass's other actions, its record entering under the record's class. The class refuses
+with ``missing`` only: it is not ready, and the next pass visits it again. The class
+refuses otherwise: the refusal propagates. The run ends when the route constructs, which
+needs the reply, which needs its fact. A union field takes whichever member exists, so a
+member that never exists is never built and the holder's union is the choice. A request
+or a record that holds ``tuple[E, ...]`` fans out: each ``E`` gets a child run that sees
+the parent's instances and its own element, a class whose fields name ``E`` exists once
+per element, and a ``tuple[X, ...]`` field of a parent-run class collects every child's
+``X`` in element order.
 
-``connections`` reads a config's connections; ``opened`` opens each once and closes each
-once around whatever a server kind runs inside it.
+``prove`` is the same passes over classes, at startup: a class joins when every required
+field names a class that has joined; an action's record, a computed field's return
+classes and a request's or record's elements join with their class. The classes that join
+from a route's request are the route's. ``proven`` checks every class joins some route and
+otherwise raises one ``ValidationError`` naming, for each class left, each field no class
+fills.
 
-``answer`` runs that order bottom-up: the request is given; a fact, value or action is
-``model_validate``d from the instances its fields name once they exist; a per-element
-class is constructed once per element, in a child run that sees the parent's instances
-and its own element; a computed field that produces a class puts its value into the run,
-so a union of constrained scalars chooses which fact can construct; a member of a union
-that refuses is skipped; the actions of one level are performed together, across all
-elements; a collecting field receives the children's results in element order, validated
-by Pydantic as ``tuple[X, ...]``; the reply is ``A(of=F)``. The engine holds no class and
-no state beyond the instances of one run.
-
-Every answer is one OpenTelemetry span named for the route, with one child span per performed
-action named for the action and carrying the party's and the record's class names; a skipped union
-member is an event; a refusal sets the span's status. The engine depends on ``opentelemetry-api``
-only; the deployment configures the SDK and the exporter.
+``opened`` opens each connection once and closes each once around whatever a server kind
+runs inside it. Every answer is one OpenTelemetry span named for the route, with one child
+per performed action named for the action and carrying the party's and the record's class
+names; the engine depends on ``opentelemetry-api`` only.
 """
 
 from asyncio import gather
-from collections import ChainMap
-from collections.abc import AsyncGenerator, MutableMapping
+from collections import ChainMap, Counter
+from collections.abc import AsyncGenerator, Container, Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from functools import cache
 from types import ModuleType, UnionType
@@ -50,8 +50,6 @@ from type_construction.world import (
     Config,
     Connection,
     Fact,
-    Identity,
-    Instant,
     Record,
     Reply,
     Request,
@@ -59,24 +57,18 @@ from type_construction.world import (
     Value,
 )
 
-__all__ = [
-    "answer",
-    "config",
-    "opened",
-    "routes",
-]
-
-SELF_CONSTRUCTING = (Instant, Identity)
-"""Classes a product's field may name that construct from nothing; the engine never
-supplies them."""
+__all__ = ["answer", "asked", "config", "hear", "opened", "prove", "proven", "routes"]
 
 type Run = MutableMapping[type[BaseModel], BaseModel]
 """The instances of one run, keyed by class; a child run chains its element over its parent."""
 
+type Options = tuple[type[BaseModel], ...]
+"""The classes a field may hold: a union's members, else the one class."""
+
 tracer = trace.get_tracer("type_construction.engine")
 """Spans named by the program's classes: one per answer, named for the route, with one child per
-performed action, named for the action. Attributes are class names and counts, never contents. With
-no SDK configured these are no-ops; the deployment supplies the SDK and the exporter."""
+performed action, named for the action. Attributes are class names and counts, never contents.
+With no SDK configured these are no-ops; the deployment supplies the SDK and the exporter."""
 
 
 def is_route(cls: type[object]) -> TypeIs[type[Route[Request, Reply[Fact]]]]:
@@ -84,15 +76,14 @@ def is_route(cls: type[object]) -> TypeIs[type[Route[Request, Reply[Fact]]]]:
     return issubclass(cls, Route) and cls is not Route
 
 
-def is_reply(cls: type[object]) -> TypeIs[type[Reply[Fact]]]:
-    """Whether a class is a program's reply: a strict subclass of ``Reply``."""
-    return issubclass(cls, Reply) and cls is not Reply
+def is_request(cls: object) -> TypeIs[type[Request]]:
+    """Whether an annotation is a program's request class."""
+    return isinstance(cls, type) and issubclass(cls, Request) and cls is not Request
 
 
-def is_action(cls: type[object]) -> TypeIs[type[Action[Connection, Record]]]:
-    """Whether a class is a program's action: a strict subclass of ``Action`` toward a named
-    party."""
-    return bool(generic(cls)) and issubclass(cls, Action) and cls is not Action
+def is_record(cls: object) -> TypeIs[type[Record]]:
+    """Whether an annotation is a program's record class."""
+    return isinstance(cls, type) and issubclass(cls, Record) and cls is not Record
 
 
 def is_model(cls: object) -> TypeIs[type[BaseModel]]:
@@ -102,9 +93,20 @@ def is_model(cls: object) -> TypeIs[type[BaseModel]]:
 
 def is_built(
     cls: type[BaseModel],
-) -> TypeIs[type[Fact] | type[Value] | type[Action[Connection, Record]]]:
-    """Whether the run constructs a class from its fields: a fact, a value or an action."""
-    return issubclass(cls, (Fact, Value, Action))
+) -> TypeIs[
+    type[Fact]
+    | type[Value]
+    | type[Action[Connection, Record]]
+    | type[Reply[Fact]]
+    | type[Route[Request, Reply[Fact]]]
+]:
+    """Whether the run constructs a class from the instances its fields name."""
+    return issubclass(cls, (Fact, Value, Action, Reply, Route))
+
+
+def is_action(cls: type[BaseModel]) -> TypeIs[type[Action[Connection, Record]]]:
+    """Whether a class is a program's action: a strict subclass of ``Action``."""
+    return issubclass(cls, Action) and cls is not Action
 
 
 def is_performed(instance: BaseModel) -> TypeIs[Action[Connection, Record]]:
@@ -113,20 +115,26 @@ def is_performed(instance: BaseModel) -> TypeIs[Action[Connection, Record]]:
 
 
 def declared(cls: type[object]) -> bool:
-    """Whether a class was written in the module, not a parametrization Pydantic registered there.
-
-    ``Says[Catalog, Price]`` appears in the module beside ``Quote``; Pydantic marks it with an
-    ``origin``. A class the developer wrote has none."""
+    """Whether a class is one the page wrote: not a parametrization Pydantic registered in the
+    module, as ``Says[Catalog, Price]`` beside ``Quote``, and not a library kind whose parameters
+    are still open, as ``Says`` itself."""
     return (
         not issubclass(cls, BaseModel)
         or cls is BaseModel
-        or cls.__pydantic_generic_metadata__["origin"] is None
+        or (
+            cls.__pydantic_generic_metadata__["origin"] is None
+            and not cls.__pydantic_generic_metadata__["parameters"]
+        )
     )
 
 
 def classes(program: ModuleType) -> list[type[object]]:
-    """Every class the program module declares."""
-    return [c for c in vars(program).values() if isinstance(c, type) and declared(c)]
+    """Every class the program module declares: defined there, not imported into it."""
+    return [
+        c
+        for c in vars(program).values()
+        if isinstance(c, type) and c.__module__ == program.__name__ and declared(c)
+    ]
 
 
 def routes(program: ModuleType) -> tuple[type[Route[Request, Reply[Fact]]], ...]:
@@ -139,11 +147,9 @@ def config(program: ModuleType) -> type[Config]:
     return next(c for c in classes(program) if issubclass(c, Config) and c is not Config)
 
 
-def made_from(reply: type[Reply[Fact]]) -> type[Fact]:
-    """The fact a reply declares as ``Reply[F]``."""
-    (fact,) = resolved(reply, Reply)
-    assert isinstance(fact, type) and issubclass(fact, Fact)
-    return fact
+def built(program: ModuleType) -> list[type[BaseModel]]:
+    """Every class the run constructs, in definition order."""
+    return [c for c in classes(program) if is_model(c) and is_built(c)]
 
 
 def members(annotation: object) -> tuple[object, ...]:
@@ -151,52 +157,310 @@ def members(annotation: object) -> tuple[object, ...]:
     return get_args(annotation) if get_origin(annotation) in (UnionType, Union) else (annotation,)
 
 
+def options(annotation: object) -> Options:
+    """The classes an annotation may hold."""
+    return tuple(m for m in members(annotation) if is_model(m))
+
+
+def held(cls: type[BaseModel]) -> dict[str, Options]:
+    """Each single-valued field and the classes that may fill it."""
+    return {
+        name: options(field.annotation)
+        for name, field in cls.model_fields.items()
+        if get_origin(field.annotation) is not tuple
+    }
+
+
+def collected(cls: type[BaseModel]) -> dict[str, Options]:
+    """Each ``tuple[X, ...]`` field and the classes an element may be."""
+    return {
+        name: options(get_args(field.annotation)[0])
+        for name, field in cls.model_fields.items()
+        if get_origin(field.annotation) is tuple
+    }
+
+
+def produced(cls: type[BaseModel]) -> dict[str, Options]:
+    """Each computed field whose return type names classes, and those classes."""
+    found = {
+        name: options(computed.return_type) for name, computed in cls.model_computed_fields.items()
+    }
+    return {name: classes_ for name, classes_ in found.items() if classes_}
+
+
+def unmet(cls: type[BaseModel], have: Container[type[BaseModel]]) -> dict[str, Options]:
+    """Each required field of a class that no present class fills."""
+    return {
+        name: classes_
+        for name, classes_ in (held(cls) | collected(cls)).items()
+        if cls.model_fields[name].is_required() and not any(c in have for c in classes_)
+    }
+
+
+def asked(route: type[Route[Request, Reply[Fact]]]) -> type[Request]:
+    """The request class a route declares as ``Route[Q, A]``: the class of its ``request``."""
+    (request,) = (m for m in members(route.model_fields["request"].annotation) if is_request(m))
+    return request
+
+
+def parametrized(cls: type[BaseModel]) -> Iterator[tuple[type[BaseModel], tuple[object, ...]]]:
+    """Each parametrized base in a class's MRO with its arguments made concrete.
+
+    ``Charge(Post[Payments, Payment, Charged])`` yields ``Post`` with those three, then
+    ``Action`` with ``(Payments, Charged)``: each base's arguments are bound through the
+    parameters of the base before it."""
+    binding: dict[object, object] = {}
+    for base in cls.__mro__:
+        if (
+            is_model(base)
+            and base is not BaseModel
+            and (origin := base.__pydantic_generic_metadata__["origin"]) is not None
+        ):
+            args = tuple(binding.get(a, a) for a in base.__pydantic_generic_metadata__["args"])
+            binding.update(
+                zip(origin.__pydantic_generic_metadata__["parameters"], args, strict=True)
+            )
+            yield origin, args
+
+
+def heard[P: Connection, T: Record](action: type[Action[P, T]]) -> type[Record]:
+    """The record an action declares as ``Action[P, T]``."""
+    (record,) = (
+        a
+        for origin, args in parametrized(action)
+        if origin is Action
+        for a in args[1:]
+        if is_record(a)
+    )
+    return record
+
+
+def hears[P: Connection, T: Record](record: Record, action: Action[P, T]) -> TypeIs[T]:
+    """Whether a record is the one an action hears."""
+    return isinstance(record, heard(type(action)))
+
+
+def hear[P: Connection, T: Record](action: Action[P, T], text: str) -> T:
+    """The record an action hears, validated strictly from the party's JSON text; what a library
+    kind's ``perform`` returns."""
+    (record,) = (r for r in (heard(type(action)).model_validate_json(text),) if hears(r, action))
+    return record
+
+
+def brought(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
+    """The classes that exist once a class does: itself, what its computed fields produce, the
+    record its action hears, and the elements its request or record holds."""
+    none = frozenset[type[BaseModel]]()
+    produced_ = frozenset(c for classes_ in produced(cls).values() for c in classes_)
+    elements = frozenset(c for classes_ in collected(cls).values() for c in classes_)
+    return (
+        frozenset((cls,))
+        | produced_
+        | (elements if issubclass(cls, (Request, Record)) else none)
+        | (brought(heard(cls)) if is_action(cls) else none)
+    )
+
+
+def faults(
+    pending: Iterable[type[BaseModel]], have: Container[type[BaseModel]]
+) -> list[InitErrorDetails]:
+    """One ``missing`` error per required field of a pending class that no present class fills
+    and no pending class would bring, at ``(class, field)``: the root faults, not what follows
+    from them. When every pending class waits on another, one ``cycle`` error per class."""
+    blocked = frozenset[type[BaseModel]]().union(*(brought(c) for c in pending))
+    details = [
+        InitErrorDetails(
+            type=PydanticCustomError(
+                "missing",
+                "no class fills {cls}.{name}, which holds {holds}",
+                {
+                    "cls": cls.__name__,
+                    "name": name,
+                    "holds": " | ".join(c.__name__ for c in classes_),
+                },
+            ),
+            loc=(cls.__name__, name),
+            input=cls.__name__,
+        )
+        for cls in pending
+        for name, classes_ in unmet(cls, have).items()
+        if not any(c in blocked for c in classes_)
+    ]
+    cycle = [
+        InitErrorDetails(
+            type=PydanticCustomError(
+                "cycle", "{cls} holds a class that holds it", {"cls": cls.__name__}
+            ),
+            loc=(cls.__name__,),
+            input=cls.__name__,
+        )
+        for cls in pending
+    ]
+    return details or cycle
+
+
+@cache
+def prove(
+    route: type[Route[Request, Reply[Fact]]], program: ModuleType
+) -> frozenset[type[BaseModel]]:
+    """The classes a route constructs: those that join, pass by pass, from its request and the
+    deployment's connections; read once per route.
+
+    A class joins when every required field names a class that has joined. An action's record
+    joins with the action; a computed field's return classes join with their holder; a
+    request's or record's elements, the classes its ``tuple[E, ...]`` fields hold, join with
+    it. The passes stop when none of the classes left can join."""
+    have = brought(asked(route))
+    for field in config(program).model_fields.values():
+        for connection in options(field.annotation):
+            have |= brought(connection)
+    pending = built(program)
+    while ready := [c for c in pending if not unmet(c, have)]:
+        have = have.union(*(brought(c) for c in ready))
+        pending = [c for c in pending if c not in ready]
+    return have
+
+
+def ambiguous(
+    code: LiteralString, message: LiteralString, pairs: Iterable[tuple[type[BaseModel], str]]
+) -> list[InitErrorDetails]:
+    """One error per class that appears more than once in the pairs: a record two actions hear,
+    a class two computed fields produce, a party two config fields hold."""
+    counted = Counter(cls for cls, _ in pairs)
+    return [
+        InitErrorDetails(
+            type=PydanticCustomError(
+                code,
+                message,
+                {
+                    "n": n,
+                    "cls": cls.__name__,
+                    "by": ", ".join(sorted(by for c, by in pairs if c is cls)),
+                },
+            ),
+            loc=(cls.__name__,),
+            input=cls.__name__,
+        )
+        for cls, n in counted.items()
+        if n > 1
+    ]
+
+
+@cache
+def proven(program: ModuleType) -> None:
+    """Every class the program declares joins some route, each record has one hearer, each
+    produced class one producer and each party one config field, or one ``ValidationError``
+    names every fault; read once per program, at startup."""
+    classes_ = built(program)
+    have = frozenset[type[BaseModel]]().union(*(prove(r, program) for r in routes(program)))
+    pending = [c for c in classes_ if c not in have]
+    twice = [
+        *ambiguous(
+            "hearer",
+            "{n} actions hear {cls}: {by}; exactly one must",
+            [(heard(c), c.__name__) for c in classes_ if is_action(c)],
+        ),
+        *ambiguous(
+            "producer",
+            "{n} computed fields produce {cls}: {by}; exactly one must",
+            [
+                (produced_, f"{c.__name__}.{name}")
+                for c in classes_
+                for name, options_ in produced(c).items()
+                for produced_ in options_
+            ],
+        ),
+        *ambiguous(
+            "party",
+            "{n} config fields hold {cls}: {by}; exactly one must",
+            [
+                (connection, name)
+                for name, field in config(program).model_fields.items()
+                for connection in options(field.annotation)
+            ],
+        ),
+    ]
+    if pending or twice:
+        raise ValidationError.from_exception_data(
+            program.__name__, [*faults(pending, have), *twice]
+        )
+
+
+def connections(deployment: Config) -> tuple[Connection, ...]:
+    """Every connection a config holds, in field order."""
+    return tuple(
+        value
+        for value in (getattr(deployment, name) for name in type(deployment).model_fields)
+        if isinstance(value, Connection)
+    )
+
+
 @asynccontextmanager
 async def opened(deployment: Config) -> AsyncGenerator[None]:
     """Open every connection once before the body and close every one once after it, last
     opened first."""
-    held = connections(deployment)
-    for connection in held:
+    held_ = connections(deployment)
+    for connection in held_:
         await connection.open()
     try:
         yield
     finally:
-        for connection in reversed(held):
+        for connection in reversed(held_):
             await connection.close()
+
+
+def fanned(scope: Run, given: Request | Record) -> list[Run]:
+    """One child run per element of each ``tuple[E, ...]`` field a request or a record holds,
+    chaining the element over the parent run."""
+    return [
+        ChainMap({type(item): item}, scope)
+        for name in collected(type(given))
+        for item in getattr(given, name)
+        if isinstance(item, BaseModel)
+    ]
+
+
+def supplied(
+    cls: type[BaseModel], scope: Run, children: list[Run]
+) -> dict[str, BaseModel | tuple[BaseModel, ...]]:
+    """What the run has for a class's fields: the present member of each single field, and
+    every child's member of each collecting field once every child has one. A field with
+    nothing present is left out, and Pydantic reports it ``missing``."""
+    singles = {
+        name: scope[c] for name, classes_ in held(cls).items() for c in classes_ if c in scope
+    }
+    tuples = {
+        name: tuple(child[c] for child in children for c in classes_ if c in child)
+        for name, classes_ in collected(cls).items()
+        if children and all(any(c in child for c in classes_) for child in children)
+    }
+    return singles | tuples
 
 
 async def performed_in_span(action: Action[Connection, Record]) -> Record:
     """Perform one action inside a span named for it, carrying the party's and the record's
     class names."""
     with tracer.start_as_current_span(
-        type(action).__name__,
-        attributes={
-            "tca.record": hears(type(action)).__name__,
-        },
-    ):
-        return await action.perform()
+        type(action).__name__, attributes={"tca.party": type(action.party).__name__}
+    ) as span:
+        record = await action.perform()
+        span.set_attribute("tca.record", type(record).__name__)
+        return record
 
 
 async def answer(
     route: type[Route[Request, Reply[Fact]]], request: Request, config: Config, program: ModuleType
-) -> Reply[Fact]:
-    """Construct the route's reply from the request, bottom-up over the proven order.
+) -> Route[Request, Reply[Fact]]:
+    """Construct the route from the request: the route's classes, pass by pass, until the route
+    itself constructs, holding the request and the reply.
 
-    Each class is ``model_validate``d from the instances its fields name; a union field takes
-    whichever member exists; a member of a union that refuses is skipped, because the holder's
-    union is the choice. A per-element class is constructed in one child run per element, which
-    sees the parent's instances and its element. A collecting field receives every child's
-    instance in element order. A computed field that produces a class puts what it produced into
-    its run. An action is performed through its library kind against the config's connection for
-    its party; the actions of one level are performed together, across all elements, and each
-    record is what came back. The reply is ``A(of=F)``. Any other ``ValidationError``, and a
-    library kind's exception, propagates to the caller."""
+    Each pass asks Pydantic for every class not yet in the run, from the instances its fields
+    name; a class whose refusal is ``missing`` only is not ready; any other refusal, and a
+    library kind's exception, propagates. The pass's actions are performed together, across
+    the parent run and its children, and each record enters the run it was asked from. A pass
+    that constructs nothing raises a ``ValidationError`` naming the fields no class fills."""
     with tracer.start_as_current_span(
-        route.__name__,
-        attributes={
-            "tca.request": type(request).__name__,
-            "tca.levels": len(levels(route, program)),
-        },
+        route.__name__, attributes={"tca.request": type(request).__name__}
     ) as span:
         return await constructed(route, request, config, program, span)
 
@@ -207,64 +471,47 @@ async def constructed(
     config: Config,
     program: ModuleType,
     span: trace.Span,
-) -> Reply[Fact]:
+) -> Route[Request, Reply[Fact]]:
     """The body of ``answer``, inside its span."""
-    _, reply = arguments(route)
-    skippable = alternatives(program)
-    scope = scopes(route, program)
-    given = elements(program)
-    parties = {type(connection): connection for connection in connections(config)}
-    run: Run = {type(request): request}
-    children: dict[type[BaseModel], list[Run]] = {}
-
-    def runs_for(element: type[BaseModel] | None) -> list[Run]:
-        """The runs a class is constructed in: the one run, or one child per element, each
-        chaining its element over the parent."""
-        if element is None:
-            return [run]
-        if element not in children:
-            holder, field = given[element]
-            children[element] = [
-                ChainMap({type(item): item}, run)
-                for item in getattr(run[holder], field)
-                if isinstance(item, BaseModel)
-            ]
-        return children[element]
-
-    def gathered(options: tuple[type[BaseModel], ...]) -> tuple[BaseModel, ...]:
-        """Every child's instance of a collected class, in element order, for a
-        ``tuple[X, ...]`` field."""
-        element = next(scope[o] for o in options if scope.get(o) is not None)
-        assert element is not None
-        return tuple(child[o] for child in runs_for(element) for o in options if o in child)
-
-    for level in levels(route, program):
+    todo = [c for c in built(program) if c in prove(route, program)]
+    run: Run = {}
+    run[type(request)] = request
+    run.update((type(c), c) for c in connections(config))
+    children = fanned(run, request)
+    passes = 0
+    while route not in run:
+        passes += 1
         performed: list[tuple[Action[Connection, Record], Run]] = []
-        for cls in level:
-            for scope_run in runs_for(scope.get(cls)):
-                held: dict[str, BaseModel | tuple[BaseModel, ...]] = {
-                    name: scope_run[next(o for o in options if o in scope_run)]
-                    for name, options in needs(cls).items()
-                    if any(o in scope_run for o in options)
-                }
-                held.update({name: gathered(options) for name, options in collects(cls).items()})
+        progress = False
+        for scope in [run, *children]:
+            for cls in todo:
+                if cls in scope:
+                    continue
                 try:
-                    instance = cls.model_validate(held)
-                except ValidationError:
-                    if cls in skippable:
-                        span.add_event("skipped", {"tca.class": cls.__name__})
+                    instance = cls.model_validate(
+                        supplied(cls, scope, children if scope is run else [])
+                    )
+                except ValidationError as refusal:
+                    if all(error["type"] == "missing" for error in refusal.errors()):
                         continue
                     raise
-                scope_run[cls] = instance
-                for name, options in produces(cls).items():
+                progress = True
+                scope[cls] = instance
+                for name, classes_ in produced(cls).items():
                     value = getattr(instance, name)
-                    if type(value) in options:
-                        scope_run[type(value)] = value
+                    if type(value) in classes_:
+                        scope[type(value)] = value
                 if is_performed(instance):
-                    performed.append((instance, scope_run))
-        heard = await gather(
-            *(performed_in_span(action, parties[party(type(action))]) for action, _ in performed)
-        )
-        for (action, scope_run), record in zip(performed, heard, strict=True):
-            scope_run[hears(type(action))] = record
-    return reply.model_validate({"of": run[made_from(reply)]})
+                    performed.append((instance, scope))
+        records = await gather(*(performed_in_span(action) for action, _ in performed))
+        for (_, scope), record in zip(performed, records, strict=True):
+            scope[type(record)] = record
+            if scope is run:
+                children.extend(fanned(run, record))
+        if not progress:
+            pending = [
+                c for c in todo if c not in run and not any(c in child for child in children)
+            ]
+            raise ValidationError.from_exception_data(route.__name__, faults(pending, run))
+    span.set_attribute("tca.passes", passes)
+    return route.model_validate(run[route])

@@ -8,11 +8,11 @@ A party is reached through a client, an `httpx.AsyncClient`, that must be opened
 
 ## Rejected
 
-An engine class holding opened clients. A module-level client. A client parameter on `perform`. A client per call.
+An engine class holding opened clients. A module-level client. A client parameter on `perform`. A client per call. The engine passing the connection to `perform` (0047).
 
 ## Decision
 
-`Connection` declares `open` and `close` as abstract methods, so a connection with no library kind cannot be constructed. The library kind's `open` creates the client and holds it in a `PrivateAttr`, outside validation and outside the frozen fields; `close` closes it; `perform` reads it from the party it is given. The engine's `opened(config)` opens every connection once before its body and closes every one once after, last opened first; a server kind runs inside it.
+`Connection` declares `open` and `close` as abstract methods, so a connection with no library kind cannot be constructed. The library kind's `open` creates the client and holds it in a `PrivateAttr`, outside validation and outside the frozen fields; `close` closes it; `perform` reads it from `self.party`, the connection the action holds. The engine's `opened(config)` opens every connection once before its body and closes every one once after, last opened first; a server kind runs inside it, and `answer` seeds each run with the same connection instances, so every action in every answer holds an opened client.
 
 ## Evidence
 
@@ -20,4 +20,4 @@ On a frozen `Connection`, `self._client = httpx.AsyncClient(...)` succeeded afte
 
 ## Consequences
 
-The engine passes a `Connection` to `perform` and never sees a client. Refuted by nothing.
+The engine never sees a client and never passes a connection; the action holds it. Refuted by nothing.

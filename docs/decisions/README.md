@@ -1,6 +1,6 @@
 # Decision records
 
-One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Consequences. Evidence is a run on Pydantic 2.13.5 and Python 3.14, or "not run" with what would refute the decision. Scenarios for each run are in `packages/python/type-construction/tests/features/`.
+One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Consequences. Evidence is a run on Pydantic 2.13.5 and Python 3.14, or "not run" with what would refute the decision. Scenarios for each run are in each package's `tests/features/`.
 
 | # | Decision |
 |---|---|
@@ -24,7 +24,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0018 | A field's docstring is its description |
 | 0019 | Config reads the environment and .env |
 | 0020 | StrEnum is the enumeration |
-| 0021 | The engine has no classes |
+| 0021 | The engine has no classes and no order: readiness is what construction answers |
 | 0022 | The classes are the inventory |
 | 0023 | The interface is defined once |
 | 0024 | A page subclasses a kind, never one of its own classes |
@@ -33,7 +33,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0027 | The command line is rendered from the request's JSON schema parsed into node classes |
 | 0028 | A key a party may omit is T | None = None on a Record |
 | 0029 | A program is one module named by the entry-point group |
-| 0030 | answer takes the route, the request, the config and the program, and returns the reply |
+| 0030 | answer takes the route, the request, the config and the program, and returns the route |
 | 0031 | Narrowing to a parametrized class is a TypeIs guard, never a cast |
 | 0032 | A red check is answered by modeling, not by narrowing |
 | 0033 | Tests are written for procedure only |
@@ -50,3 +50,6 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0044 | Several of one thing in a run is a child run per element |
 | 0045 | A connection opens once at startup and closes once at shutdown, holding its client outside validation |
 | 0046 | The engine emits OpenTelemetry spans named by the program's classes, through the API alone |
+| 0047 | An action holds its party as a field, and hears its record through the engine |
+| 0048 | A route holds its request and its reply; constructing it ends the run |
+| 0049 | The gate is just check and just audit; the commit hook and CI run them and nothing else |

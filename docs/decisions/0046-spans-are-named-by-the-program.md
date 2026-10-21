@@ -8,15 +8,15 @@ A run should be observable without a page writing a log line, and without the en
 
 ## Rejected
 
-Logging calls on pages or in the engine. A vendor SDK as a dependency of the engine. Request or record contents as span attributes.
+Logging calls on pages or in the engine. A vendor SDK as a dependency of the engine. Request or record contents as span attributes. A `skipped` event per refused union member, which the passes no longer produce: a member that cannot exist is never asked for.
 
 ## Decision
 
-The engine depends on `opentelemetry-api`. `answer` is one span named for the route with `tca.request` and `tca.levels`; each performed action is a child span named for the action with `tca.party` and `tca.record`; a skipped union member is a `skipped` event with `tca.class`; a refusal or a client exception sets the span's status through `start_as_current_span`'s defaults. Attributes are class names and counts, never contents. The deployment configures the SDK and the exporter through the standard `OTEL_*` variables; the dev container exports to the Jaeger service in `compose.yaml`. With no SDK the calls are no-ops.
+The engine depends on `opentelemetry-api`. `answer` is one span named for the route with `tca.request` and, when the run ends, `tca.passes`; each performed action is a child span named for the action with `tca.party` from the connection it holds and `tca.record` from the record it heard; a refusal or a client exception sets the span's status through `start_as_current_span`'s defaults. Attributes are class names and counts, never contents. The deployment configures the SDK and the exporter through the standard `OTEL_*` variables; the dev container exports to the Jaeger service in `compose.yaml`. With no SDK the calls are no-ops.
 
 ## Evidence
 
-Under the SDK with an in-memory exporter, a two-line order produced `Checkout` with `tca.request=PlaceOrder`, `tca.levels=6` and two `skipped` events, and four child spans, two `Quote` with `tca.party=Catalog, tca.record=Price` and two `Charge` with `tca.party=Payments, tca.record=Charged`, all with status unset.
+Not run under the SDK since the rewrite; the calls are the same three as before, `start_as_current_span` on the route and on each action and `set_attribute` for the counts. Refuted by a span tree under the in-memory exporter that differs from: one `Checkout` span with `tca.request=PlaceOrder` and `tca.passes`, and one child per performed action with `tca.party` and `tca.record`.
 
 ## Consequences
 
