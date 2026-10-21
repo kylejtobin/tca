@@ -12,8 +12,14 @@ Why eleven classes are enough: an application is data, control flow and I/O.
   enumeration, ``Value`` is a composite part. Those are the algebraic data types.
 - Control flow: a field is a sequence (``Paid`` holds ``Charged``, so ``Charged``
   exists first); a union is a branch; a tuple is iteration; a fact holding the
-  previous fact is accumulation; a ``@computed_field`` is a derived value; a
-  constraint on a ``Scalar`` or the choice of a union member is a rule.
+  previous fact is accumulation; a constraint on a ``Scalar`` or the choice of a
+  union member is a rule.
+- Computation: a derived value is a derivation kind, ``Times`` or ``Sum``, declared
+  with its operands; a rule over several values is a relation kind, ``AtMost``,
+  ``Beyond``, ``Between`` or ``Equal``, whose refusal is one outcome and whose
+  construction is the other; a choice among elements is a selection kind, ``Least``,
+  ``Greatest``, ``First`` or ``Only``. A program declares each as a subclass with its
+  own classes as the parameters, and writes no expression.
 - I/O: ``Request`` arrives on a ``Route``; ``Record`` is what a party says;
   ``Action`` asks a ``Connection`` and hears a ``Record``; ``Reply`` leaves.
   A library kind per transport (HTTP first) subclasses ``Connection`` and
@@ -84,27 +90,40 @@ Example, a shop that prices an order and charges for it::
 
 from abc import abstractmethod
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from functools import partial
-from typing import Generic, TypeVar
+from typing import Generic, LiteralString, Self, TypeVar, override
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
     "Action",
+    "AtMost",
+    "Between",
+    "Beyond",
     "Config",
     "Connection",
     "Duration",
+    "Equal",
     "Fact",
+    "First",
+    "Greatest",
     "Identity",
     "Instant",
+    "Least",
+    "Measure",
+    "Only",
     "Record",
     "Reply",
     "Request",
     "Route",
     "Scalar",
     "Setting",
+    "Sum",
+    "Times",
     "Value",
 ]
 
@@ -330,6 +349,284 @@ class Fact(BaseModel):
     """
 
     model_config = PRODUCT
+
+
+class Measure(Fact):
+    """A derived value: a fact whose ``root`` the framework computes from what it holds.
+
+    A program never computes a value. It declares the value's class as a subclass of a
+    derivation kind, ``Times`` or ``Sum``, with the operands as the parameters, and reads
+    the result as ``.root``, as it reads a ``Scalar``::
+
+        class LineTotal(Times[UnitPrice, Quantity]): ...
+
+    The engine constructs a derivation when its operands exist, like any fact. An operand
+    is a scalar the run holds, which is one a request, a record or a value carries, or
+    another derivation. A derivation is itself an operand of a relation, a selection or a
+    further derivation.
+    """
+
+    @property
+    @abstractmethod
+    def root(self) -> Decimal:
+        """The derived value, exact: every operand is read as a ``Decimal``."""
+
+
+type Numeric = Scalar[Decimal] | Scalar[int] | Measure
+"""What a derivation, a relation or a selection operates on: a scalar over a number, or a
+derived value."""
+
+
+def refused(message: LiteralString, value: BaseModel, bound: BaseModel) -> PydanticCustomError:
+    """The ``relation`` refusal a relation kind raises when it does not hold, naming the two
+    operands' classes. The engine reads a ``relation`` refusal as the fact not existing, so a
+    union of the facts that hold each outcome is the choice."""
+    return PydanticCustomError(
+        "relation", message, {"value": type(value).__name__, "bound": type(bound).__name__}
+    )
+
+
+class Times[A: Numeric, B: Numeric](Measure):
+    """The product of two values.
+
+    ::
+
+        class LineTotal(Times[UnitPrice, Quantity]): ...
+
+    A constant factor is a scalar with a default, given as the field's default on the
+    subclass, so nothing has to carry it::
+
+        class Rate(Scalar[Decimal]):
+            root: Decimal = Decimal("0.9")
+
+        class Reduced(Times[LineTotal, Rate]):
+            right: Rate = Rate()
+    """
+
+    left: A
+    """The first factor."""
+    right: B
+    """The second factor."""
+
+    @property
+    @override
+    def root(self) -> Decimal:
+        return Decimal(self.left.root) * Decimal(self.right.root)
+
+
+class Sum[E: Numeric](Measure):
+    """The sum of every element's value.
+
+    The elements are what a child run produced once per element, collected in order::
+
+        class OrderTotal(Sum[LinePaid]): ...
+    """
+
+    of: tuple[E, ...]
+    """The values summed, in element order; none sums to zero."""
+
+    @property
+    @override
+    def root(self) -> Decimal:
+        return sum((Decimal(e.root) for e in self.of), Decimal(0))
+
+
+class AtMost[A: Numeric, B: Numeric](Fact):
+    """A relation between two values: ``value`` is at most ``bound``.
+
+    A rule that compares two values is declared as a relation kind with the two values as
+    its parameters, and each outcome is the fact that holds the relation that makes it
+    true::
+
+        class Small(AtMost[LineTotal, Threshold]): ...
+        class Large(Beyond[LineTotal, Threshold]): ...
+
+        class FullPrice(Fact):
+            line: Line
+            tier: Small
+
+        class Discounted(Fact):
+            line: Line
+            tier: Large
+
+        class Charge(Post[Payments, Payment, Charged]):
+            priced: Discounted | FullPrice
+
+    The relation that holds constructs, and the one that does not refuses with ``relation``,
+    which the engine reads as the fact not existing; so exactly one of ``Discounted`` and
+    ``FullPrice`` exists, and the union is the choice. ``AtMost`` and ``Beyond`` over the
+    same two operands are complements, and the proof reads them as disjoint. A bound that is
+    a business constant is a scalar with a default, given as the field's default on the
+    subclass::
+
+        class Threshold(Scalar[Decimal]):
+            root: Decimal = Decimal(100)
+
+        class Small(AtMost[LineTotal, Threshold]):
+            bound: Threshold = Threshold()
+
+    At startup the proof reads the constraints on both operands and refuses a relation that
+    can never hold, or can never refuse.
+    """
+
+    value: A
+    """The value the relation is about."""
+    bound: B
+    """What the value is compared with."""
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        """Refuse with ``relation`` when the value exceeds the bound."""
+        if Decimal(self.value.root) > Decimal(self.bound.root):
+            refusal = refused("{value} exceeds {bound}", self.value, self.bound)
+            raise refusal
+        return self
+
+
+class Beyond[A: Numeric, B: Numeric](Fact):
+    """A relation between two values: ``value`` is beyond ``bound``. The complement of
+    ``AtMost`` over the same two operands; see ``AtMost`` for how a rule is written with the
+    two."""
+
+    value: A
+    """The value the relation is about."""
+    bound: B
+    """What the value is compared with."""
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        """Refuse with ``relation`` when the value does not exceed the bound."""
+        if Decimal(self.value.root) <= Decimal(self.bound.root):
+            refusal = refused("{value} is within {bound}", self.value, self.bound)
+            raise refusal
+        return self
+
+
+class Between[A: Numeric, L: Numeric, U: Numeric](Fact):
+    """A relation among three values: ``value`` is at least ``lower`` and at most ``upper``.
+
+    ::
+
+        class Eligible(Between[Age, MinimumAge, MaximumAge]): ...
+
+    Its complement is the union of the two relations outside it: ``Beyond[U, A]`` for a
+    value under the lower bound, written with the operands reversed, and ``Beyond[A, U]``
+    for one over the upper.
+    """
+
+    value: A
+    """The value the relation is about."""
+    lower: L
+    """The least the value may be."""
+    upper: U
+    """The most the value may be."""
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        """Refuse with ``relation`` when the value is under the lower bound or over the
+        upper."""
+        if Decimal(self.value.root) < Decimal(self.lower.root):
+            refusal = refused("{value} is under {bound}", self.value, self.lower)
+            raise refusal
+        if Decimal(self.value.root) > Decimal(self.upper.root):
+            refusal = refused("{value} is over {bound}", self.value, self.upper)
+            raise refusal
+        return self
+
+
+class Equal[A: Numeric, B: Numeric](Fact):
+    """A relation between two values: ``value`` equals ``bound``, compared exactly.
+
+    ::
+
+        class Settled(Equal[AmountPaid, AmountDue]): ...
+    """
+
+    value: A
+    """The value the relation is about."""
+    bound: B
+    """What the value must equal."""
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        """Refuse with ``relation`` when the two values differ."""
+        if Decimal(self.value.root) != Decimal(self.bound.root):
+            refusal = refused("{value} differs from {bound}", self.value, self.bound)
+            raise refusal
+        return self
+
+
+class Least[E: Numeric](Fact):
+    """The element whose value is least.
+
+    A choice among elements is declared as a selection kind with the element class as its
+    parameter. The engine collects the elements a child run produced, and ``chosen`` is the
+    one selected::
+
+        class Cheapest(Least[LineTotal]): ...
+
+    Ties go to the earliest element.
+    """
+
+    of: tuple[E, ...] = Field(min_length=1)
+    """The elements chosen among, in element order; at least one."""
+
+    @property
+    def chosen(self) -> E:
+        """The element whose value is least."""
+        return min(self.of, key=lambda e: Decimal(e.root))
+
+
+class Greatest[E: Numeric](Fact):
+    """The element whose value is greatest; see ``Least``. Ties go to the earliest element."""
+
+    of: tuple[E, ...] = Field(min_length=1)
+    """The elements chosen among, in element order; at least one."""
+
+    @property
+    def chosen(self) -> E:
+        """The element whose value is greatest."""
+        return max(self.of, key=lambda e: Decimal(e.root))
+
+
+class First[E: BaseModel](Fact):
+    """The first element, in element order; see ``Least``. Any element class, not only a
+    numeric one."""
+
+    of: tuple[E, ...] = Field(min_length=1)
+    """The elements chosen among, in element order; at least one."""
+
+    @property
+    def chosen(self) -> E:
+        """The first element."""
+        return self.of[0]
+
+
+class Only[E: BaseModel](Fact):
+    """The one element, when there is exactly one.
+
+    A rule that a collection holds a single thing. With more than one, or none, it refuses
+    with ``relation``, which the engine reads as the fact not existing, so a fact holding
+    ``Only[Quote]`` and one holding ``Several[Quote]`` are a choice on how many came back::
+
+        class Sole(Only[Quote]): ...
+    """
+
+    of: tuple[E, ...]
+    """The elements, in element order."""
+
+    @property
+    def chosen(self) -> E:
+        """The one element."""
+        return self.of[0]
+
+    @model_validator(mode="after")
+    def holds(self) -> Self:
+        """Refuse with ``relation`` unless there is exactly one element."""
+        if len(self.of) != 1:
+            refusal = PydanticCustomError("relation", "{n} elements, not one", {"n": len(self.of)})
+            raise refusal
+        return self
 
 
 class Connection(BaseModel):

@@ -33,6 +33,7 @@ check:
     uv run basedpyright {{packages}}
     uv run lint-imports
     uv run bandit -c pyproject.toml -q -r {{packages}}
+    uv run pytest -q packages/python
 
 # The supply chain: the lockfile, known vulnerabilities, code patterns, pinned images.
 # CVE-2026-59951 is in mcp 1.29.0, which semgrep pins; PYSEC-2026-4302 and -4303 are in

@@ -2,30 +2,33 @@
 
 A program is one module, named by the entry-point group ``type_construction.programs``.
 ``routes`` and ``config`` read its ``Route`` and ``Config`` subclasses; ``asked`` reads a
-route's request class from its ``request`` field; ``heard`` reads the ``T`` an action
-declares as ``Action[P, T]``.
+route's request class from its ``request`` field; ``heard`` reads the record classes an
+action declares as ``Action[P, T]``, one or the members of a union.
 
-A run is the instances of one answer, keyed by class, seeded with the request and the
-deployment's connections. A pass visits every class of the route not yet in the run and
-asks Pydantic for it from the instances its fields name: ``cls.model_validate(held)``.
-Pydantic answers one of three ways. The class constructs: the instance enters the run,
-each computed field's value enters under its own class, and an action is performed with
-the pass's other actions, its record entering under the record's class. The class refuses
-with ``missing`` only: it is not ready, and the next pass visits it again. The class
-refuses otherwise: the refusal propagates. The run ends when the route constructs, which
-needs the reply, which needs its fact. A union field takes whichever member exists, so a
-member that never exists is never built and the holder's union is the choice. A request
-or a record that holds ``tuple[E, ...]`` fans out: each ``E`` gets a child run that sees
-the parent's instances and its own element, a class whose fields name ``E`` exists once
-per element, and a ``tuple[X, ...]`` field of a parent-run class collects every child's
-``X`` in element order.
+A run is the instances of one answer, keyed by class, seeded with the request, the scalars
+and values it carries, and the deployment's connections. A pass visits every class of the
+route not yet in the run and asks Pydantic for it from the instances its fields name:
+``cls.model_validate(held)``. Pydantic answers one of three ways. The class constructs: the
+instance enters the run, each computed field's value enters under its own class, and an
+action is performed with the pass's other actions, its record and what the record carries
+entering under their classes. The class refuses with ``missing`` only, or a relation kind
+refuses with ``relation``: it does not exist yet, and the next pass visits it again. The
+class refuses otherwise: the refusal propagates. The run ends when the route constructs,
+which needs the reply, which needs its fact. A union field takes whichever member exists,
+so a member that never exists is never built and the holder's union is the choice. A
+request or a record that holds ``tuple[E, ...]`` fans out: each ``E`` gets a child run that
+sees the parent's instances and its own element with what it carries, a class whose fields
+name ``E`` exists once per element, and a ``tuple[X, ...]`` field of a parent-run class
+collects every child's ``X`` in element order.
 
 ``prove`` is the same passes over classes, at startup: a class joins when every required
-field names a class that has joined; an action's record, a computed field's return
-classes and a request's or record's elements join with their class. The classes that join
-from a route's request are the route's. ``proven`` checks every class joins some route and
-otherwise raises one ``ValidationError`` naming, for each class left, each field no class
-fills.
+field names a class that has joined; an action's records, a computed field's return
+classes, a carrier's scalars and values, and a request's or record's elements join with
+their class. The classes that join from a route's request are the route's. ``proven``
+checks every class joins some route, each record has one hearer, each produced or carried
+class one source, each party one config field, no union holds two members the proof can
+see both constructing, and no relation is one the proof can see never holding or never
+refusing; otherwise it raises one ``ValidationError`` naming every fault.
 
 ``opened`` opens each connection once and closes each once around whatever a server kind
 runs inside it. Every answer is one OpenTelemetry span named for the route, with one child
@@ -37,18 +40,24 @@ from asyncio import gather
 from collections import ChainMap, Counter
 from collections.abc import AsyncGenerator, Container, Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from functools import cache
 from types import ModuleType, UnionType
 from typing import LiteralString, TypeIs, Union, get_args, get_origin
 
+from annotated_types import Ge, Gt, Le, Lt
 from opentelemetry import trace
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, RootModel, TypeAdapter, ValidationError
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from type_construction.world import (
     Action,
+    AtMost,
+    Between,
+    Beyond,
     Config,
     Connection,
+    Equal,
     Fact,
     Record,
     Reply,
@@ -64,6 +73,12 @@ type Run = MutableMapping[type[BaseModel], BaseModel]
 
 type Options = tuple[type[BaseModel], ...]
 """The classes a field may hold: a union's members, else the one class."""
+
+type Bound = tuple[Decimal, bool] | None
+"""One end of a scalar's interval: the value and whether it is included; ``None`` when open."""
+
+type Interval = tuple[Bound, Bound]
+"""The lower and upper bound a scalar's constraint sets."""
 
 tracer = trace.get_tracer("type_construction.engine")
 """Spans named by the program's classes: one per answer, named for the route, with one child per
@@ -91,6 +106,16 @@ def is_model(cls: object) -> TypeIs[type[BaseModel]]:
     return isinstance(cls, type) and issubclass(cls, BaseModel)
 
 
+def is_scalar(cls: object) -> TypeIs[type[RootModel[object]]]:
+    """Whether an annotation is a class over one root value."""
+    return isinstance(cls, type) and issubclass(cls, RootModel)
+
+
+def is_value(cls: object) -> TypeIs[type[Value]]:
+    """Whether an annotation is a program's composite part."""
+    return isinstance(cls, type) and issubclass(cls, Value) and cls is not Value
+
+
 def is_built(
     cls: type[BaseModel],
 ) -> TypeIs[
@@ -114,10 +139,16 @@ def is_performed(instance: BaseModel) -> TypeIs[Action[Connection, Record]]:
     return isinstance(instance, Action)
 
 
+def carries(cls: type[BaseModel]) -> bool:
+    """Whether a class brings what its fields hold into the run: what arrives, what a party
+    says, and a composite part."""
+    return issubclass(cls, (Request, Record, Value))
+
+
 def declared(cls: type[object]) -> bool:
-    """Whether a class is one the page wrote: not a parametrization Pydantic registered in the
-    module, as ``Says[Catalog, Price]`` beside ``Quote``, and not a library kind whose parameters
-    are still open, as ``Says`` itself."""
+    """Whether a class is one the program wrote: not a parametrization Pydantic registered in
+    the module, as ``Says[Catalog, Price]`` beside ``Quote``, and not a library kind whose
+    parameters are still open, as ``Says`` itself."""
     return (
         not issubclass(cls, BaseModel)
         or cls is BaseModel
@@ -150,6 +181,11 @@ def config(program: ModuleType) -> type[Config]:
 def built(program: ModuleType) -> list[type[BaseModel]]:
     """Every class the run constructs, in definition order."""
     return [c for c in classes(program) if is_model(c) and is_built(c)]
+
+
+def carriers(program: ModuleType) -> list[type[BaseModel]]:
+    """Every class the program declares that carries scalars and values into the run."""
+    return [c for c in classes(program) if is_model(c) and carries(c)]
 
 
 def members(annotation: object) -> tuple[object, ...]:
@@ -188,6 +224,32 @@ def produced(cls: type[BaseModel]) -> dict[str, Options]:
     return {name: classes_ for name, classes_ in found.items() if classes_}
 
 
+def carried(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
+    """The scalars and values a carrying class's single fields hold, and what those values
+    carry in turn; nothing for a class that does not carry."""
+    none = frozenset[type[BaseModel]]()
+    if not carries(cls):
+        return none
+    direct = frozenset(
+        c for classes_ in held(cls).values() for c in classes_ if is_scalar(c) or is_value(c)
+    )
+    return direct.union(*(carried(c) for c in direct))
+
+
+def carried_by(instance: BaseModel) -> dict[type[BaseModel], BaseModel]:
+    """The scalar and value instances a carrying instance holds, keyed by class, and what
+    those values carry in turn."""
+    if not carries(type(instance)):
+        return {}
+    direct: dict[type[BaseModel], BaseModel] = {
+        type(value): value
+        for name, classes_ in held(type(instance)).items()
+        if any(is_scalar(c) or is_value(c) for c in classes_)
+        and isinstance(value := getattr(instance, name), BaseModel)
+    }
+    return direct | {k: v for value in direct.values() for k, v in carried_by(value).items()}
+
+
 def unmet(
     cls: type[BaseModel], have: Container[type[BaseModel]], gathered: Container[type[BaseModel]]
 ) -> dict[str, Options]:
@@ -206,7 +268,7 @@ def unmet(
     return singles | tuples
 
 
-def asked(route: type[Route[Request, Reply[Fact]]]) -> type[Request]:
+def asked[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]]) -> type[Request]:
     """The request class a route declares as ``Route[Q, A]``: the class of its ``request``."""
     (request,) = (m for m in members(route.model_fields["request"].annotation) if is_request(m))
     return request
@@ -232,44 +294,46 @@ def parametrized(cls: type[BaseModel]) -> Iterator[tuple[type[BaseModel], tuple[
             yield origin, args
 
 
-def heard[P: Connection, T: Record](action: type[Action[P, T]]) -> type[Record]:
-    """The record an action declares as ``Action[P, T]``."""
-    (record,) = (
-        a
-        for origin, args in parametrized(action)
-        if origin is Action
-        for a in args[1:]
-        if is_record(a)
-    )
+def said[P: Connection, T: Record](action: type[Action[P, T]]) -> object:
+    """The ``T`` an action declares as ``Action[P, T]``: one record class, or a union of them."""
+    (record,) = (args[1] for origin, args in parametrized(action) if origin is Action)
     return record
 
 
+def heard[P: Connection, T: Record](action: type[Action[P, T]]) -> tuple[type[Record], ...]:
+    """The record classes an action may hear: the one it declares, or a union's members."""
+    return tuple(m for m in members(said(action)) if is_record(m))
+
+
 def hears[P: Connection, T: Record](record: Record, action: Action[P, T]) -> TypeIs[T]:
-    """Whether a record is the one an action hears."""
+    """Whether a record is one the action hears."""
     return isinstance(record, heard(type(action)))
 
 
 def hear[P: Connection, T: Record](action: Action[P, T], text: str) -> T:
-    """The record an action hears, validated strictly from the party's JSON text; what a library
-    kind's ``perform`` returns."""
-    (record,) = (r for r in (heard(type(action)).model_validate_json(text),) if hears(r, action))
+    """The record an action hears, validated strictly from the party's JSON text as the ``T``
+    the action declares, so a union chooses its member; what a library kind's ``perform``
+    returns."""
+    validated = TypeAdapter[Record](said(type(action))).validate_json(text, strict=True)
+    (record,) = (r for r in (validated,) if hears(r, action))
     return record
 
 
 def brought(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
     """The classes that exist in the same run once a class does: itself, what its computed
-    fields produce, and the record its action hears."""
+    fields produce, what it carries, and the records its action hears."""
     none = frozenset[type[BaseModel]]()
     produced_ = frozenset(c for classes_ in produced(cls).values() for c in classes_)
-    return frozenset((cls,)) | produced_ | (brought(heard(cls)) if is_action(cls) else none)
+    heard_ = none.union(*(brought(r) for r in heard(cls))) if is_action(cls) else none
+    return frozenset((cls,)) | produced_ | carried(cls) | heard_
 
 
 def elements(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
     """The classes that exist once per element when a class does: those a request or a record
-    holds as ``tuple[E, ...]``, each in a child run of its own."""
+    holds as ``tuple[E, ...]``, each in a child run of its own, with what each carries."""
     none = frozenset[type[BaseModel]]()
     held_ = frozenset(c for classes_ in collected(cls).values() for c in classes_)
-    return held_ if issubclass(cls, (Request, Record)) else none
+    return held_.union(*(carried(e) for e in held_)) if issubclass(cls, (Request, Record)) else none
 
 
 def faults(
@@ -315,15 +379,15 @@ type Proof = tuple[frozenset[type[BaseModel]], frozenset[type[BaseModel]]]
 
 
 @cache
-def prove(route: type[Route[Request, Reply[Fact]]], program: ModuleType) -> Proof:
+def prove[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]], program: ModuleType) -> Proof:
     """The classes a route constructs: those that join, pass by pass, from its request and the
     deployment's connections, once per run or once per element; read once per route.
 
     A class joins the run when every required single field names a class in the run and every
     ``tuple[X, ...]`` field names a class in the run or its children; it joins the children when
-    its fields are filled there. An action's record and a computed field's return classes join
-    with their class; a request's or record's elements join the children. The passes stop when
-    none of the classes left can join."""
+    its fields are filled there. An action's records, a computed field's return classes and a
+    carrier's scalars and values join with their class; a request's or record's elements join
+    the children. The passes stop when none of the classes left can join."""
     once = brought(asked(route))
     for field in config(program).model_fields.values():
         for connection in options(field.annotation):
@@ -343,11 +407,132 @@ def prove(route: type[Route[Request, Reply[Fact]]], program: ModuleType) -> Proo
     return once, per
 
 
+def interval(cls: type[BaseModel]) -> Interval:
+    """The interval a scalar's ``root`` constraint sets, read from its ``gt``, ``ge``, ``lt`` and
+    ``le``; each end open when the constraint does not set it or sets it to something that is
+    not a number."""
+    lo: Bound = None
+    hi: Bound = None
+    field = cls.model_fields.get("root")
+    for meta in field.metadata if field is not None else []:
+        match meta:
+            case Gt(gt=int() | float() | Decimal() as v):
+                lo = (Decimal(str(v)), False)
+            case Ge(ge=int() | float() | Decimal() as v):
+                lo = (Decimal(str(v)), True)
+            case Lt(lt=int() | float() | Decimal() as v):
+                hi = (Decimal(str(v)), False)
+            case Le(le=int() | float() | Decimal() as v):
+                hi = (Decimal(str(v)), True)
+            case _:
+                pass
+    return lo, hi
+
+
+def above(lo: Bound, hi: Bound) -> bool:
+    """Whether a lower bound lies entirely above an upper bound, so no value satisfies both."""
+    if lo is None or hi is None:
+        return False
+    (low, low_in), (high, high_in) = lo, hi
+    return low > high or (low == high and not (low_in and high_in))
+
+
+def at_or_below(hi: Bound, lo: Bound) -> bool:
+    """Whether every value under an upper bound is at or below every value over a lower bound."""
+    return hi is not None and lo is not None and hi[0] <= lo[0]
+
+
+def meets(a: Interval, b: Interval) -> bool:
+    """Whether two intervals share a value."""
+    (alo, ahi), (blo, bhi) = a, b
+    return not (above(blo, ahi) or above(alo, bhi))
+
+
+def relation(cls: type[BaseModel]) -> tuple[type[BaseModel], tuple[object, ...]] | None:
+    """The relation kind a class subclasses, with its operands; ``None`` for any other class."""
+    kinds = (AtMost, Beyond, Between, Equal)
+    return next(((o, args) for o, args in parametrized(cls) if o in kinds), None)
+
+
+def point(span: Interval) -> Decimal | None:
+    """The one value an interval admits, when both ends close on the same value."""
+    lo, hi = span
+    if lo is None or hi is None:
+        return None
+    return lo[0] if lo == hi and lo[1] and hi[1] else None
+
+
+def selective(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = frozenset()) -> bool:
+    """Whether a class can be absent from a run that holds its parts: a record, which a party
+    sends or does not; a relation, which refuses; or a class that holds one of those. A scalar
+    is not: it is there whenever its carrier is."""
+    if is_record(cls) or relation(cls) is not None:
+        return True
+    if is_scalar(cls) or cls in seen:
+        return False
+    return any(selective(c, seen | {cls}) for classes_ in held(cls).values() for c in classes_)
+
+
+def overlapping(a: type[BaseModel], b: type[BaseModel]) -> bool:
+    """Whether the proof can see two classes a field may hold both constructing from one run:
+    the same class; two scalars whose intervals meet; two relations of one kind over the same
+    operands; two facts whose shared fields all overlap and whose other fields hold nothing
+    selective. Two records, two relations of different kinds, two facts told apart by a
+    selective field one of them holds, and anything the proof cannot read are not reported."""
+    if a is b:
+        return True
+    if is_scalar(a) and is_scalar(b):
+        return meets(interval(a), interval(b))
+    if is_record(a) or is_record(b):
+        return False
+    ra, rb = relation(a), relation(b)
+    if ra is not None or rb is not None:
+        return ra == rb
+    held_a, held_b = held(a), held(b)
+    unshared = held_a.keys() ^ held_b.keys()
+    if any(selective(c) for name in unshared for c in (held_a | held_b)[name]):
+        return False
+    return all(
+        any(overlapping(x, y) for x in held_a[name] for y in held_b[name])
+        for name in held_a.keys() & held_b.keys()
+        if held_a[name] and held_b[name]
+    )
+
+
+def never(cls: type[BaseModel]) -> str | None:
+    """``"holds"`` when the proof can see a relation never holding, ``"refuses"`` when it can see
+    it never refusing, from its operands' intervals; ``None`` otherwise."""
+    found = relation(cls)
+    if found is None or not all(is_model(a) for a in found[1]):
+        return None
+    kind, args = found
+    spans = [interval(a) for a in args if is_model(a)]
+    if kind is Between:
+        (vlo, vhi), (llo, lhi), (ulo, uhi) = spans
+        holds_never = above(llo, vhi) or above(vlo, uhi) or above(llo, uhi)
+        refuses_never = at_or_below(lhi, vlo) and at_or_below(vhi, ulo)
+    elif kind is Equal:
+        value, bound = spans
+        holds_never = not meets(value, bound)
+        refuses_never = point(value) is not None and point(value) == point(bound)
+    else:
+        (vlo, vhi), (blo, bhi) = spans
+        exceeds, within = above(vlo, bhi), at_or_below(vhi, blo)
+        holds_never = exceeds if kind is AtMost else within
+        refuses_never = within if kind is AtMost else exceeds
+    if holds_never:
+        return "holds"
+    if refuses_never:
+        return "refuses"
+    return None
+
+
 def ambiguous(
     code: LiteralString, message: LiteralString, pairs: Iterable[tuple[type[BaseModel], str]]
 ) -> list[InitErrorDetails]:
     """One error per class that appears more than once in the pairs: a record two actions hear,
-    a class two computed fields produce, a party two config fields hold."""
+    a class two computed fields produce, a scalar two carriers hold, a party two config fields
+    hold."""
     counted = Counter(cls for cls, _ in pairs)
     return [
         InitErrorDetails(
@@ -368,16 +553,12 @@ def ambiguous(
     ]
 
 
-@cache
-def proven(program: ModuleType) -> None:
-    """Every class the program declares joins some route, each record has one hearer, each
-    produced class one producer and each party one config field, or one ``ValidationError``
-    names every fault; read once per program, at startup."""
-    classes_ = built(program)
-    proofs = {r: prove(r, program) for r in routes(program)}
-    have = frozenset[type[BaseModel]]().union(*(once | per for once, per in proofs.values()))
-    pending = [c for c in classes_ if c not in have]
-    scope = [
+def scoped(
+    proofs: dict[type[Route[Request, Reply[Fact]]], Proof], classes_: list[type[BaseModel]]
+) -> list[InitErrorDetails]:
+    """One ``scope`` error per route that lands once per element, and per ``tuple[X, ...]``
+    field that collects a class existing once per run."""
+    return [
         *(
             InitErrorDetails(
                 type=PydanticCustomError(
@@ -410,11 +591,16 @@ def proven(program: ModuleType) -> None:
             if held_ in once
         ),
     ]
-    twice = [
+
+
+def twice(program: ModuleType, classes_: list[type[BaseModel]]) -> list[InitErrorDetails]:
+    """One error per record two actions hear, class two computed fields produce, scalar or value
+    two carriers hold, and party two config fields hold."""
+    return [
         *ambiguous(
             "hearer",
             "{n} actions hear {cls}: {by}; exactly one must",
-            [(heard(c), c.__name__) for c in classes_ if is_action(c)],
+            [(r, c.__name__) for c in classes_ if is_action(c) for r in heard(c)],
         ),
         *ambiguous(
             "producer",
@@ -427,6 +613,17 @@ def proven(program: ModuleType) -> None:
             ],
         ),
         *ambiguous(
+            "carrier",
+            "{n} classes carry {cls}: {by}; exactly one must",
+            [
+                (carried_, c.__name__)
+                for c in carriers(program)
+                for classes__ in held(c).values()
+                for carried_ in classes__
+                if is_scalar(carried_) or is_value(carried_)
+            ],
+        ),
+        *ambiguous(
             "party",
             "{n} config fields hold {cls}: {by}; exactly one must",
             [
@@ -436,10 +633,64 @@ def proven(program: ModuleType) -> None:
             ],
         ),
     ]
-    if pending or scope or twice:
-        raise ValidationError.from_exception_data(
-            program.__name__, [*faults(pending, have), *scope, *twice]
-        )
+
+
+def unsound(classes_: list[type[BaseModel]]) -> list[InitErrorDetails]:
+    """One ``overlap`` error per union field whose two members the proof can see both
+    constructing, and one ``relation`` error per relation the proof can see never holding or
+    never refusing."""
+    return [
+        *(
+            InitErrorDetails(
+                type=PydanticCustomError(
+                    "overlap",
+                    "{cls}.{name} holds {a} | {b}, and both could construct; write members so"
+                    " at most one can",
+                    {"cls": cls.__name__, "name": name, "a": a.__name__, "b": b.__name__},
+                ),
+                loc=(cls.__name__, name),
+                input=cls.__name__,
+            )
+            for cls in classes_
+            for name, options_ in held(cls).items()
+            for i, a in enumerate(options_)
+            for b in options_[i + 1 :]
+            if overlapping(a, b)
+        ),
+        *(
+            InitErrorDetails(
+                type=PydanticCustomError(
+                    "relation",
+                    "{cls} never {what}, by the constraints on its operands",
+                    {"cls": cls.__name__, "what": what},
+                ),
+                loc=(cls.__name__,),
+                input=cls.__name__,
+            )
+            for cls in classes_
+            if (what := never(cls)) is not None
+        ),
+    ]
+
+
+@cache
+def proven(program: ModuleType) -> None:
+    """Every class the program declares joins some route, each record has one hearer, each
+    produced or carried class one source and each party one config field, no union holds two
+    members that could both construct, and no relation can never hold or never refuse, or one
+    ``ValidationError`` names every fault; read once per program, at startup."""
+    classes_ = built(program)
+    proofs = {r: prove(r, program) for r in routes(program)}
+    have = frozenset[type[BaseModel]]().union(*(once | per for once, per in proofs.values()))
+    pending = [c for c in classes_ if c not in have]
+    details = [
+        *faults(pending, have),
+        *scoped(proofs, classes_),
+        *twice(program, classes_),
+        *unsound(classes_),
+    ]
+    if details:
+        raise ValidationError.from_exception_data(program.__name__, details)
 
 
 def connections(deployment: Config) -> tuple[Connection, ...]:
@@ -467,9 +718,9 @@ async def opened(deployment: Config) -> AsyncGenerator[None]:
 
 def fanned(scope: Run, given: Request | Record) -> list[Run]:
     """One child run per element of each ``tuple[E, ...]`` field a request or a record holds,
-    chaining the element over the parent run."""
+    chaining the element and what it carries over the parent run."""
     return [
-        ChainMap({type(item): item}, scope)
+        ChainMap({type(item): item, **carried_by(item)}, scope)
         for name in collected(type(given))
         for item in getattr(given, name)
         if isinstance(item, BaseModel)
@@ -493,6 +744,12 @@ def supplied(
     return singles | tuples
 
 
+def absent(refusal: ValidationError) -> bool:
+    """Whether a refusal says only that the class does not exist yet: every error is a field no
+    present class fills, or a relation that does not hold."""
+    return all(error["type"] in ("missing", "relation") for error in refusal.errors())
+
+
 async def performed_in_span(action: Action[Connection, Record]) -> Record:
     """Perform one action inside a span named for it, carrying the party's and the record's
     class names."""
@@ -504,35 +761,37 @@ async def performed_in_span(action: Action[Connection, Record]) -> Record:
         return record
 
 
-async def answer(
-    route: type[Route[Request, Reply[Fact]]], request: Request, config: Config, program: ModuleType
-) -> Route[Request, Reply[Fact]]:
+async def answer[Q: Request, A: Reply[Fact]](
+    route: type[Route[Q, A]], request: Q, config: Config, program: ModuleType
+) -> Route[Q, A]:
     """Construct the route from the request: the route's classes, pass by pass, until the route
     itself constructs, holding the request and the reply.
 
     Each pass asks Pydantic for every class not yet in the run, from the instances its fields
-    name; a class whose refusal is ``missing`` only is not ready; any other refusal, and a
-    library kind's exception, propagates. The pass's actions are performed together, across
-    the parent run and its children, and each record enters the run it was asked from. A pass
-    that constructs nothing raises a ``ValidationError`` naming the fields no class fills."""
+    name; a class whose refusal is ``missing`` or ``relation`` only does not exist yet; any
+    other refusal, and a library kind's exception, propagates. The pass's actions are performed
+    together, across the parent run and its children, and each record enters the run it was
+    asked from. A pass that constructs nothing raises a ``ValidationError`` naming the fields
+    no class fills."""
     with tracer.start_as_current_span(
         route.__name__, attributes={"tca.request": type(request).__name__}
     ) as span:
         return await constructed(route, request, config, program, span)
 
 
-async def constructed(
-    route: type[Route[Request, Reply[Fact]]],
-    request: Request,
+async def constructed[Q: Request, A: Reply[Fact]](
+    route: type[Route[Q, A]],
+    request: Q,
     config: Config,
     program: ModuleType,
     span: trace.Span,
-) -> Route[Request, Reply[Fact]]:
+) -> Route[Q, A]:
     """The body of ``answer``, inside its span."""
     once, per = prove(route, program)
     todo = [c for c in built(program) if c in once or c in per]
     run: Run = {}
     run[type(request)] = request
+    run.update(carried_by(request))
     run.update((type(c), c) for c in connections(config))
     children = fanned(run, request)
     passes = 0
@@ -549,11 +808,12 @@ async def constructed(
                         supplied(cls, scope, children if scope is run else [])
                     )
                 except ValidationError as refusal:
-                    if all(error["type"] == "missing" for error in refusal.errors()):
+                    if absent(refusal):
                         continue
                     raise
                 progress = True
                 scope[cls] = instance
+                scope.update(carried_by(instance))
                 for name, classes_ in produced(cls).items():
                     value = getattr(instance, name)
                     if type(value) in classes_:
@@ -563,6 +823,7 @@ async def constructed(
         records = await gather(*(performed_in_span(action) for action, _ in performed))
         for (_, scope), record in zip(performed, records, strict=True):
             scope[type(record)] = record
+            scope.update(carried_by(record))
             if scope is run:
                 children.extend(fanned(run, record))
         if not progress:
