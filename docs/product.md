@@ -1,72 +1,88 @@
 # TCA
 
-A Python framework. The developer writes an application as Pydantic classes and nothing else. The engine constructs them and does four things. This document states who it is for, what it promises, how the work is divided, and the checks that say the promise was kept.
+## Positioning
+
+For the developer who builds the backend services of a business, the ones with rules, external parties and decisions, and who writes them today as a controller, a model, a validator, a mapper, a service, a repository and a container, TCA is a backend application framework in which the service is written as types and nothing else. Unlike every framework on that shelf, it checks the logic and not only the edges: there is no function between what arrives and what leaves, so the type checker reads the whole program and the program refuses what the business does not allow. It is built in Python, on Pydantic.
 
 ## The customer
 
-- An application developer writing a service that talks to external parties over HTTP, a database, or a queue.
-- That developer on day one, with the classes written and no server, who wants to run the program from the shell and see it answer.
-- An operator who needs to run one route by hand: replay a checkout against staging, requote a sku, confirm a party is reachable.
-- An integrator reading the OpenAPI document, who sees the field descriptions the developer wrote on the classes and nothing written separately for them.
-- A model writing that service, given the classes to write and the checker that judges them.
-- A reader who knows the business and not the code, reading the program to confirm it says the business.
+One person: the developer who builds business services and has shipped a bug from a service method that passed the type checker and the tests. They learned the layered habit in Spring or ASP.NET, or in its Python copies. They choose their own tools, read alone, and judge by trying.
 
-## The division of responsibility
+The same program serves five others, with nothing written for any of them:
 
-The developer writes classes:
+- the developer on day one, with the business written and no server, who runs it from the shell and sees it answer;
+- the operator who replays one request against staging without reading the code;
+- the integrator who reads, in the API document, the descriptions the developer wrote on the fields;
+- the reader who knows the business and not the code, who confirms the program says the business;
+- the reasoning model that writes the service, judged by the same checker as a person.
 
-| the developer declares | as |
-|---|---|
-| what arrives | a `Request` |
-| what an external party says | a `Record`, with the party's field names as aliases |
-| what the business concludes | a `Fact` whose fields are the things it was concluded from |
-| what the business asks a party | an `Action` whose fields are the fact that intends it; the kind holds the party |
-| what the caller receives | a `Reply[F]` made from the fact `F`, whose computed fields are its words |
-| each party | a `Connection` |
-| each thing the program does | a `Route[Request, Reply]` |
-| the deployment | a `Config` |
+## The problem
 
-The engine does four things: deserialize the request; perform each action and deserialize its response; serialize the reply; open and close clients at startup and shutdown. It constructs the developer's classes as their fields become fillable, asking Pydantic for each class and keeping what constructs, until the route itself constructs. It has no classes, no order and no state of its own.
-
-A class or field on a page that exists for the engine is a defect. A behavior in the engine that the developer should have declared is a defect.
+In the layered habit every layer has a tool that checks it except the one that matters. The framework validates what arrives. The database holds the schema. The container checks the wiring. The service, where every rule, every call and every decision lives, is checked by nothing but tests. The same model is written three times, with a mapper between each pair. The schema and the documentation are copies, and copies drift. The bugs that reach production come from the one layer no tool can see, and the tests exist to see what the compiler cannot.
 
 ## The promise
 
-- No invalid state is constructible. A rule is a constrained `Scalar` or a union member, so a value the business does not have has no type.
-- basedpyright in strict mode checks every reference in the program.
-- A broken program fails at startup, naming the record no action hears, the field no class produces, or the cycle.
-- A unit test is constructing an instance, or asserting `ValidationError`.
-- There is one failure path: `ValidationError` for input and rules, the client's exception for a party that did not answer.
-- The developer says each thing once, and says only their business.
-- The interface is defined once. `class Checkout(Route[PlaceOrder, OrderPaid])`, with the fields and descriptions on those two classes, is the whole definition. The command line is derived from it by pydantic-settings: `shop checkout --sku tea --quantity 3` constructs `PlaceOrder` and prints `OrderPaid`'s computed fields as JSON; `shop --help` lists routes by docstring and `shop checkout --help` lists fields by description. The HTTP endpoint is derived from it by FastAPI: `POST /checkout` validates the body as `PlaceOrder`, returns 422 with Pydantic's errors, serializes `OrderPaid`, and publishes the OpenAPI document with the same descriptions. Connections come from the environment, `PAYMENTS__URL` and `PAYMENTS__KEY`, for both. Running as CLI, HTTP or both is a deployment choice that changes no class. The developer writes no parser, handler, help string, schema, entry point or output formatter.
-- The documentation is the program. Help text is the field descriptions and class docstrings; the same classes produce the reference for every route, record and configuration variable. Documentation cannot drift from the code because it is read from the code.
+Each of these is a commitment, and each could be proven false.
 
-## The acceptance test
+- A value the business does not have cannot exist in the program. A rule is a type, and the wrong value has no type.
+- The type checker reads the whole program. There is no service, no handler and no function between what arrives and what leaves.
+- A program that is wired wrong does not start. A question nothing answers, a value nothing produces, or two things that each need the other is named, in the developer's own names, before anything runs.
+- The developer says each thing once, and says only the business. Nothing in the program exists for the framework.
+- Nothing is ordered. Each thing exists when what it is made of exists, and things that need nothing from each other happen together.
+- The command line, the API and the documentation are one definition, read from the types. Choosing one or both changes nothing the developer wrote, and nothing drifts because nothing is a copy.
+- There is one way to fail. A value outside the business is refused by name, the same way from the shell and from a request body. A party that does not answer raises its own client's error. Nothing else fails, because nothing else runs.
+- A party's refusal is an answer, not an exception, and it reaches the caller as a reply.
+- Every request is a trace named in the developer's words, one span per party asked, with no contents recorded.
 
-Kept when each of these holds on the demo program and on any program written against the framework.
+## The scope
 
-| # | Check | Pass |
-|---|---|---|
-| P1 | Search the program for `def`. | Every hit is under `@property` or `@computed_field`. |
-| P2 | Run `basedpyright --strict` on the program. | Zero errors. |
-| P3 | Delete the action that hears one record. Start the program. | Startup fails naming that record. |
-| P4 | Give a developer who has read the Pydantic docs and the demo a second route to write. | They write it without opening the engine. |
-| P5 | Give a reader who knows the business the program. | They name what each class is from its name and docstring. |
-| P6 | Count the engine's public classes. | None of its own; one entry function per server kind. |
-| P7 | Run the program with `--help`, then one route with `--help`. | Every route appears with its docstring; every request field appears with its description; every connection field appears with its environment variable. |
-| P8 | Run one route from the shell against mock parties, and post the same request over HTTP. | The shell's output equals the HTTP response body. |
-| P9 | Give an operator the program and a staging environment. | They replay a request from the shell without reading the code. |
-| P10 | Open `/docs` on the served program and run `shop checkout --help`. | Every field and description in one appears in the other. |
-| P11 | Send a value outside a `Scalar` constraint on the command line and in an HTTP body. | Both fail with `ValidationError` naming the field; nothing else is reported. |
-| P12 | Run `shop docs`. | A reference for every route, record and configuration variable, assembled from the class docstrings and field descriptions. |
+What it is: a backend application framework. It owns the configuration, the connections, the lifecycle, the wiring, the request boundary, the interfaces and the trace. It also owns the logic, because the logic is types.
 
-A failed check is a defect in the framework, not in the program.
+What stays the developer's: Pydantic, the strict type checker, the HTTP server, the database, the trace exporter.
 
-## What it refuses to be
+What it refuses to be: a validation framework, because validation is Pydantic's; a workflow engine, because there is no step, stage or plan; a DSL, because every construct is one Pydantic already documents; a handler framework, because there is no function between request and reply; a command-line framework, because each thing the program does is already the command.
 
-- Not a validation framework. Validation is Pydantic's; the framework adds no validator.
-- Not a workflow engine. There is no step, stage, state machine or plan; the order is the annotations.
-- Not a DSL. Every construct is a documented Pydantic feature.
-- Not a handler framework. There is no function between the request and the reply.
-- Not a CLI framework. There is no command to write; a route is the command, and the command line is derived from the request.
-- No escape hatch inside a program. `perform` in a library kind is the only Python that calls a client; anything else that cannot be expressed is a missing class or a missing library kind.
+There is no escape hatch inside a program. The only code that speaks to another system is the framework's, one piece per transport, and a program never contains it. Anything a program cannot express is a missing type or a missing transport, and that is a defect in the framework.
+
+## The principles
+
+A program is nothing but a true description of a business, and it runs because it is true.
+
+The measure of every decision: the developer says less, says it once, and says only their world. A design that makes the developer say more, or say anything for the framework, is wrong even when it works.
+
+Why it is built this way. Types made the machine able to hold what the developer means, and every framework stopped them at the edges. TCA takes types through the middle, so the program is the statement of what exists in the business and what follows from what, and the statement is what runs. And because the program is a world that refuses what is false, a mind can be let into it, a person's or a model's, and its errors cannot run. The wrong program cannot be written. The business is the program. Judgment can be put in production.
+
+The defect rules. Anything in a program that exists for the framework is a defect in the framework. Any behavior in the framework that the developer should have declared is a defect in the framework. Any failed observation below is a defect in the framework, never in the program.
+
+## The evidence
+
+The promise is kept when each of these is observed on any program written against the framework.
+
+- Every function in a program is a property of a type or a value computed from one.
+- The strict type checker reports nothing.
+- Removing the one thing that receives a party's answer stops the program at startup, naming that answer.
+- A developer who has read Pydantic's documentation and one program writes the next operation without opening the framework.
+- A reader who knows the business names what each type is from its name and description.
+- The framework has no public types of its own, and one entry per interface.
+- The program's help lists every operation, every field with its description, and every variable the deployment sets, from the program alone.
+- The same request answered from the shell and over HTTP gives the same body.
+- An operator replays a request against an environment without reading code.
+- The served API document and the shell's help show the same fields and the same descriptions.
+- A value outside a rule is refused the same way from the shell and from a request body, naming the field and nothing else.
+- The reference for every operation, every answer and every variable is assembled from the program.
+
+## The category and the competitors
+
+The shelf is backend application frameworks: Spring Boot, ASP.NET Core, NestJS, Django, Rails. Each gives a checked edge and an unchecked middle. Against all of them the difference is one sentence: TCA has no middle.
+
+The strongest competitors are the ones that can nearly say the middle is checked.
+
+- **Effect**, in TypeScript. Dependencies, errors and services live in the type and are resolved by layers that fail at compile time when one is missing. Effect still runs your functions. TCA runs your types.
+- **ASP.NET Core with F#.** The strongest checker on the shelf, and a community that already models a business as states that cannot be represented wrongly. They hold the ideology and the framework in separate hands. TCA holds them in one.
+- **Spring Boot.** The container resolving a graph of types is TCA's startup proof and its run, and every Spring architect will say so. The container stops at the service object and hands control to a method. TCA does not stop.
+- **ZIO**, in Scala. The compile-time proof of a dependency graph, done first and done rigorously. The proof wires the program; it is not the program running.
+- **Servant**, in Haskell. The API is a type and every handler is checked against it, so the interface is defined once and everything is derived. That is half the promise. The other half, no handler at all, is where it stops.
+
+Not competitors. FastAPI serves TCA's HTTP. Temporal is where a TCA operation runs when the process must survive the night. Hamilton and Dagster derive order from declarations for data, not applications.
+
+Who should not use it: a service that is CRUD with few decisions; a team that wants a function when a type is in the way; rules that business users edit at runtime; a process that must itself survive a restart.

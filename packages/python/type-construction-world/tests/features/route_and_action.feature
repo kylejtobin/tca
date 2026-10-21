@@ -25,3 +25,7 @@ Feature: Routes and actions declare through generic parameters, fields the kind 
   Scenario: An action without a party cannot be constructed
     When Charge(placed=placed) is constructed
     Then ValidationError is raised with type missing at loc ("party",)
+
+  Scenario: A parametrized library kind's arguments are read from its base
+    When parametrized(Charge) is read
+    Then it yields Post with (Payments, Payment, Charged), then Action with (Payments, Charged)

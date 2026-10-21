@@ -8,7 +8,7 @@ A party is reached through a client, an `httpx.AsyncClient`, that must be opened
 
 ## Rejected
 
-An engine class holding opened clients. A module-level client. A client parameter on `perform`. A client per call. The engine passing the connection to `perform` (0047).
+An engine class holding opened clients. A module-level client. A client parameter on `perform`. A client per call. The engine passing the connection to `perform` (0015).
 
 ## Decision
 
@@ -16,7 +16,7 @@ An engine class holding opened clients. A module-level client. A client paramete
 
 ## Evidence
 
-On a frozen `Connection`, `self._client = httpx.AsyncClient(...)` succeeded after construction, a field assignment was refused as `frozen_instance`, `model_dump_json` excluded the client, and `hash` still worked. Two answers inside one `opened` produced `open:Catalog, open:Payments, perform ×4, close:Payments, close:Catalog`, four performs using two clients. A direct `Connection` subclass with no library kind raised `TypeError` at construction.
+Two answers of the shop inside one `opened(ShopConfig())`, with connections that record their calls, produced `open:Catalog, open:Payments, perform, perform, perform, perform, close:Payments, close:Catalog`. On a frozen `Connection` with `_client: httpx.AsyncClient = PrivateAttr()`, `open` set the client, a field assignment was refused as `frozen_instance`, `model_dump_json` gave `{"url":"https://p.test"}` with no client, and `hash` returned an int.
 
 ## Consequences
 

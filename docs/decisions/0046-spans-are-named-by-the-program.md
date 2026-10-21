@@ -8,7 +8,7 @@ A run should be observable without a page writing a log line, and without the en
 
 ## Rejected
 
-Logging calls on pages or in the engine. A vendor SDK as a dependency of the engine. Request or record contents as span attributes. A `skipped` event per refused union member, which the passes no longer produce: a member that cannot exist is never asked for.
+Logging calls on pages or in the engine. A vendor SDK as a dependency of the engine. Request or record contents as span attributes. An event per refused union member: a member whose field is never filled is never asked for, so there is nothing to record.
 
 ## Decision
 
@@ -16,7 +16,7 @@ The engine depends on `opentelemetry-api`. `answer` is one span named for the ro
 
 ## Evidence
 
-Not run under the SDK since the rewrite; the calls are the same three as before, `start_as_current_span` on the route and on each action and `set_attribute` for the counts. Refuted by a span tree under the in-memory exporter that differs from: one `Checkout` span with `tca.request=PlaceOrder` and `tca.passes`, and one child per performed action with `tca.party` and `tca.record`.
+Under the SDK with an in-memory exporter, a two-line order produced one `Checkout` span with `tca.request=PlaceOrder` and `tca.passes=4`, and four children of it: two `Quote` with `tca.party=Catalog, tca.record=Price` and two `Charge` with `tca.party=Payments, tca.record=Charged`, every status unset, and no attribute value containing the sku, the price or the charge id.
 
 ## Consequences
 

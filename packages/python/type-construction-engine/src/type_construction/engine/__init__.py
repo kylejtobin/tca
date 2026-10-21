@@ -188,13 +188,22 @@ def produced(cls: type[BaseModel]) -> dict[str, Options]:
     return {name: classes_ for name, classes_ in found.items() if classes_}
 
 
-def unmet(cls: type[BaseModel], have: Container[type[BaseModel]]) -> dict[str, Options]:
-    """Each required field of a class that no present class fills."""
-    return {
+def unmet(
+    cls: type[BaseModel], have: Container[type[BaseModel]], gathered: Container[type[BaseModel]]
+) -> dict[str, Options]:
+    """Each required field of a class that no present class fills: a single field from what the
+    run has, a ``tuple[X, ...]`` field from what the run and its children have."""
+    singles = {
         name: classes_
-        for name, classes_ in (held(cls) | collected(cls)).items()
+        for name, classes_ in held(cls).items()
         if cls.model_fields[name].is_required() and not any(c in have for c in classes_)
     }
+    tuples = {
+        name: classes_
+        for name, classes_ in collected(cls).items()
+        if cls.model_fields[name].is_required() and not any(c in gathered for c in classes_)
+    }
+    return singles | tuples
 
 
 def asked(route: type[Route[Request, Reply[Fact]]]) -> type[Request]:
@@ -248,17 +257,19 @@ def hear[P: Connection, T: Record](action: Action[P, T], text: str) -> T:
 
 
 def brought(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
-    """The classes that exist once a class does: itself, what its computed fields produce, the
-    record its action hears, and the elements its request or record holds."""
+    """The classes that exist in the same run once a class does: itself, what its computed
+    fields produce, and the record its action hears."""
     none = frozenset[type[BaseModel]]()
     produced_ = frozenset(c for classes_ in produced(cls).values() for c in classes_)
-    elements = frozenset(c for classes_ in collected(cls).values() for c in classes_)
-    return (
-        frozenset((cls,))
-        | produced_
-        | (elements if issubclass(cls, (Request, Record)) else none)
-        | (brought(heard(cls)) if is_action(cls) else none)
-    )
+    return frozenset((cls,)) | produced_ | (brought(heard(cls)) if is_action(cls) else none)
+
+
+def elements(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
+    """The classes that exist once per element when a class does: those a request or a record
+    holds as ``tuple[E, ...]``, each in a child run of its own."""
+    none = frozenset[type[BaseModel]]()
+    held_ = frozenset(c for classes_ in collected(cls).values() for c in classes_)
+    return held_ if issubclass(cls, (Request, Record)) else none
 
 
 def faults(
@@ -267,7 +278,7 @@ def faults(
     """One ``missing`` error per required field of a pending class that no present class fills
     and no pending class would bring, at ``(class, field)``: the root faults, not what follows
     from them. When every pending class waits on another, one ``cycle`` error per class."""
-    blocked = frozenset[type[BaseModel]]().union(*(brought(c) for c in pending))
+    blocked = frozenset[type[BaseModel]]().union(*(brought(c) | elements(c) for c in pending))
     details = [
         InitErrorDetails(
             type=PydanticCustomError(
@@ -283,7 +294,7 @@ def faults(
             input=cls.__name__,
         )
         for cls in pending
-        for name, classes_ in unmet(cls, have).items()
+        for name, classes_ in unmet(cls, have, have).items()
         if not any(c in blocked for c in classes_)
     ]
     cycle = [
@@ -299,26 +310,37 @@ def faults(
     return details or cycle
 
 
-@cache
-def prove(
-    route: type[Route[Request, Reply[Fact]]], program: ModuleType
-) -> frozenset[type[BaseModel]]:
-    """The classes a route constructs: those that join, pass by pass, from its request and the
-    deployment's connections; read once per route.
+type Proof = tuple[frozenset[type[BaseModel]], frozenset[type[BaseModel]]]
+"""The classes a route constructs once per run, and those it constructs once per element."""
 
-    A class joins when every required field names a class that has joined. An action's record
-    joins with the action; a computed field's return classes join with their holder; a
-    request's or record's elements, the classes its ``tuple[E, ...]`` fields hold, join with
-    it. The passes stop when none of the classes left can join."""
-    have = brought(asked(route))
+
+@cache
+def prove(route: type[Route[Request, Reply[Fact]]], program: ModuleType) -> Proof:
+    """The classes a route constructs: those that join, pass by pass, from its request and the
+    deployment's connections, once per run or once per element; read once per route.
+
+    A class joins the run when every required single field names a class in the run and every
+    ``tuple[X, ...]`` field names a class in the run or its children; it joins the children when
+    its fields are filled there. An action's record and a computed field's return classes join
+    with their class; a request's or record's elements join the children. The passes stop when
+    none of the classes left can join."""
+    once = brought(asked(route))
     for field in config(program).model_fields.values():
         for connection in options(field.annotation):
-            have |= brought(connection)
+            once |= brought(connection)
+    per = elements(asked(route))
     pending = built(program)
-    while ready := [c for c in pending if not unmet(c, have)]:
-        have = have.union(*(brought(c) for c in ready))
-        pending = [c for c in pending if c not in ready]
-    return have
+    while pending:
+        ready = [c for c in pending if not unmet(c, once, once | per)]
+        ready_per = [c for c in pending if c not in ready and not unmet(c, once | per, once | per)]
+        once = once.union(*(brought(c) for c in ready))
+        per = per.union(
+            *(elements(c) for c in ready), *(brought(c) | elements(c) for c in ready_per)
+        )
+        pending = [c for c in pending if c not in ready and c not in ready_per]
+        if not ready and not ready_per:
+            break
+    return once, per
 
 
 def ambiguous(
@@ -352,8 +374,42 @@ def proven(program: ModuleType) -> None:
     produced class one producer and each party one config field, or one ``ValidationError``
     names every fault; read once per program, at startup."""
     classes_ = built(program)
-    have = frozenset[type[BaseModel]]().union(*(prove(r, program) for r in routes(program)))
+    proofs = {r: prove(r, program) for r in routes(program)}
+    have = frozenset[type[BaseModel]]().union(*(once | per for once, per in proofs.values()))
     pending = [c for c in classes_ if c not in have]
+    scope = [
+        *(
+            InitErrorDetails(
+                type=PydanticCustomError(
+                    "scope",
+                    "{cls} exists once per element; a route exists once per run, so its reply's"
+                    " fact collects elements as tuple[X, ...] instead of holding one",
+                    {"cls": route.__name__},
+                ),
+                loc=(route.__name__,),
+                input=route.__name__,
+            )
+            for route, (_, per) in proofs.items()
+            if route in per
+        ),
+        *(
+            InitErrorDetails(
+                type=PydanticCustomError(
+                    "scope",
+                    "{cls}.{name} collects {held}, which exists once per run; hold it directly",
+                    {"cls": cls.__name__, "name": name, "held": held_.__name__},
+                ),
+                loc=(cls.__name__, name),
+                input=cls.__name__,
+            )
+            for once, _ in proofs.values()
+            for cls in classes_
+            if cls in once
+            for name, classes__ in collected(cls).items()
+            for held_ in classes__
+            if held_ in once
+        ),
+    ]
     twice = [
         *ambiguous(
             "hearer",
@@ -380,9 +436,9 @@ def proven(program: ModuleType) -> None:
             ],
         ),
     ]
-    if pending or twice:
+    if pending or scope or twice:
         raise ValidationError.from_exception_data(
-            program.__name__, [*faults(pending, have), *twice]
+            program.__name__, [*faults(pending, have), *scope, *twice]
         )
 
 
@@ -473,7 +529,8 @@ async def constructed(
     span: trace.Span,
 ) -> Route[Request, Reply[Fact]]:
     """The body of ``answer``, inside its span."""
-    todo = [c for c in built(program) if c in prove(route, program)]
+    once, per = prove(route, program)
+    todo = [c for c in built(program) if c in once or c in per]
     run: Run = {}
     run[type(request)] = request
     run.update((type(c), c) for c in connections(config))

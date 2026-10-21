@@ -8,7 +8,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0002 | A rule is a constrained Scalar or a union member |
 | 0003 | A choice is a union in a field annotation |
 | 0004 | Several of one thing is a tuple |
-| 0005 | A route is a class |
+| 0005 | A route is a class that holds its request and its reply |
 | 0006 | A record validates by alias only |
 | 0007 | A party's naming convention is an alias generator |
 | 0008 | A nested value in a payload is an AliasPath |
@@ -18,7 +18,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0012 | Failure has no noun |
 | 0013 | A record with no fields is not a type |
 | 0014 | An unused generic parameter distinguishes nothing |
-| 0015 | An action hears one record; perform is abstract on Action and the library kind implements it |
+| 0015 | An action holds its party, hears one record, and performs through its library kind |
 | 0016 | A connection with a credential is a subclass, not a union |
 | 0017 | Edges validate in the mode the edge needs; code constructs strict |
 | 0018 | A field's docstring is its description |
@@ -50,6 +50,3 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0044 | Several of one thing in a run is a child run per element |
 | 0045 | A connection opens once at startup and closes once at shutdown, holding its client outside validation |
 | 0046 | The engine emits OpenTelemetry spans named by the program's classes, through the API alone |
-| 0047 | An action holds its party as a field, and hears its record through the engine |
-| 0048 | A route holds its request and its reply; constructing it ends the run |
-| 0049 | The gate is just check and just audit; the commit hook and CI run them and nothing else |
