@@ -20,4 +20,4 @@ For three teas at 2.50 the run held a `SmallAmount` and constructed `FullPrice`;
 
 ## Consequences
 
-A derived value with a rule is a computed field typed as a union of constrained scalars, returning `Scalar.model_validate(value).root` over that union. A computed field that returns a class no fact needs is harmless until one does, and then it must be the only producer. Refuted by nothing.
+A derived value is a derivation kind (0047) and a rule over values is a relation kind (0048); a computed field that produces a class is a reply's word, or a value no kind derives. A computed field that returns a class no fact needs is harmless until one does, and then it must be the only producer. Refuted by nothing.

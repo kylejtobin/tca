@@ -1,11 +1,10 @@
 """The classes a developer writes an application with.
 
-An application is a module of subclasses of the eleven classes below, and nothing
-else. There are no functions, handlers, validators or steps. Constructing the
-classes is running the program, and ``pydantic.ValidationError`` is the only
-failure path.
+An application is a module of subclasses of the classes below, and nothing else.
+There are no functions, handlers, validators or steps. Constructing the classes is
+running the program, and ``pydantic.ValidationError`` is the only failure path.
 
-Why eleven classes are enough: an application is data, control flow and I/O.
+Why these classes are enough: an application is data, control flow, computation and I/O.
 
 - Data: a field is a product, a union ``A | B`` is a sum, ``tuple[T, ...]`` is
   repetition, ``Scalar`` is a primitive with an invariant, a ``StrEnum`` subclass is an

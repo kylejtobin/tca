@@ -16,4 +16,4 @@ Every class on a page subclasses a kind from `type_construction.world`, a librar
 
 ## Consequences
 
-Substitution never arises on a page. The smell check reports a class whose base is not a kind, a library kind or `StrEnum` as `BASE`. Refuted by nothing.
+Substitution never arises on a page. Refuted by nothing.

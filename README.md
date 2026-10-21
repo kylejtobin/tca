@@ -19,7 +19,7 @@ Your type checker sees the request and the response. The container sees the wiri
 
 ## What you stop doing
 
-**You stop writing logic nothing can read.** There is no service, no handler, and no function between what arrives and what leaves. A rule is a type that cannot hold the wrong value. A decision is one type per outcome, and only the outcome that is true can exist. Your type checker reads all of it, in strict mode, because there is nothing else to read.
+**You stop writing logic nothing can read.** There is no service, no handler, and no function between what arrives and what leaves. A rule is a type that cannot hold the wrong value. A comparison, a computed value and a choice among several are declared with their parts named, and the framework compares, computes and chooses. A decision is one type per outcome, and only the outcome that is true can exist. Your type checker reads all of it, in strict mode, because there is nothing else to read.
 
 **You stop writing the same model three times.** What arrives, what a party says and what the business concludes are each written once. A party's answer is read by the party's own field names. Nothing maps between them.
 
@@ -31,6 +31,36 @@ Your type checker sees the request and the response. The container sees the wiri
 
 **You stop writing a second way to fail.** There is one. A value the business does not have is refused, by name, whether it arrived on the command line or in a request body. A party that does not answer raises its own client's error. Nothing else fails, because nothing else runs.
 
+## What a program looks like
+
+A line is discounted when its total is over the threshold. In a service method that is an `if`. Here it is four classes, and the engine builds the one that is true:
+
+```python
+class LineTotal(Times[UnitPrice, Quantity]):
+    """What a line costs: its unit price times its quantity."""
+
+class Small(AtMost[LineTotal, Threshold]):
+    bound: Threshold = Threshold()
+
+class Large(Beyond[LineTotal, Threshold]):
+    bound: Threshold = Threshold()
+
+class FullPrice(Fact):
+    line: Line
+    tier: Small
+    due: LineTotal
+
+class Discounted(Fact):
+    line: Line
+    tier: Large
+    due: Reduced
+
+class Charge(Says[Payments, Charged]):
+    priced: Discounted | FullPrice
+```
+
+The whole shop, with a catalog that prices, a screen that may say no, and a payment party, is one module of classes like these: [`shop.py`](packages/python/type-construction-engine/tests/type_construction_engine/shop.py). Delete the action that hears the catalog's answer and the program refuses to start, naming the field that nothing fills.
+
 ## What stays yours
 
 Pydantic. Your strict type checker. Your HTTP server. Your database. Your tracing. TCA adds no validator, no DSL, no handler and no command framework. Every construct is a documented Pydantic feature, so a developer who has read the Pydantic docs and one program can write the next route without opening the framework.
@@ -41,7 +71,7 @@ You cannot write a function when a type gets hard. There is no escape hatch insi
 
 ## The questions you will ask
 
-**Where does the logic go?** Into types. A rule is a value that can only be built within the rule. A choice is one type per outcome, and the one whose conditions hold is the one that gets built. A conclusion is a type whose parts are what it was concluded from.
+**Where does the logic go?** Into types. A rule on one value is a value that can only be built within the rule. A rule that compares values is declared with the two values named, and the outcome that holds is the one that gets built. A computed value is declared with its parts named. A choice among several is declared with the several named. A conclusion is a type whose parts are what it was concluded from.
 
 **How is the order determined?** It is not. Each thing exists when its parts exist. "Reserve before charge" is written as: the charge is made from the reservation.
 
@@ -72,6 +102,16 @@ Anyone not on Python. A CRUD service with few decisions. A team that wants a fun
 A program is nothing but a true description of a business, and it runs because it is true. For as long as there has been software, the business lived in someone's head and the program was a translation of it into steps a machine could follow, and every bug lived in the translation. Types made the machine able to hold what you mean. TCA finishes that: the whole program is the statement of what exists in the business and what follows from what, and the statement itself is what runs. The wrong program cannot be written. The business is the program. And because the program is a world that refuses what is false, a mind can be let into it, yours or a model's, and its errors cannot run.
 
 Write one route. If the type checker is green and the program starts, it does what you said.
+
+## Try it
+
+```
+git clone https://github.com/kylejtobin/tca && cd tca
+uv sync --all-packages
+uv run just check
+```
+
+The last command runs the gate: the smell check, ruff, basedpyright strict, the import contracts, bandit, and the tests that answer the shop's orders through the engine. What exists today is the type system, the engine and the command line; the HTTP server is designed and not built, and `TODO.md` says what is next, in order.
 
 ## License
 

@@ -33,14 +33,13 @@ check:
     uv run basedpyright {{packages}}
     uv run lint-imports
     uv run bandit -c pyproject.toml -q -r {{packages}}
-    uv run pytest -q packages/python
+    uv run pytest -q
 
 # The supply chain: the lockfile, known vulnerabilities, code patterns, pinned images.
-# CVE-2026-59951 is in mcp 1.29.0, which semgrep pins; PYSEC-2026-4302 and -4303 are in
-# strawberry-graphql 0.320.4, which arize-phoenix pins for the eval package. Both are checks
-# of ours, never shipped. Drop each ignore when its pin moves.
+# CVE-2026-59951 is in mcp 1.29.0, which semgrep pins; semgrep is a check of ours, never
+# shipped. Drop the ignore when its pin moves.
 audit:
     uv lock --check
-    uv run pip-audit --ignore-vuln CVE-2026-59951 --ignore-vuln PYSEC-2026-4302 --ignore-vuln PYSEC-2026-4303
+    uv run pip-audit --ignore-vuln CVE-2026-59951
     uv run semgrep scan --config p/python --config p/secrets --error --quiet -j 1 {{packages}}
     ! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"

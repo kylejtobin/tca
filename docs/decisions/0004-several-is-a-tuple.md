@@ -20,4 +20,4 @@ No run applies; the decision removes a construct. Pydantic validates each elemen
 
 ## Consequences
 
-Unwritable: `Many`. The smell check reports `list` and `set` as `LIST` and `SET`. Refuted by a whole that must be a class with no field name; none has been found.
+Unwritable: `Many`, a `list` or a `set` on a page. Refuted by a whole that must be a class with no field name; none has been found.

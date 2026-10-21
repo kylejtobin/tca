@@ -1,5 +1,5 @@
 Feature: Routes and actions declare through generic parameters, fields the kind holds, and abstract properties
-  Decision records 0005, 0015, 0047, 0048.
+  Decision records 0005, 0015.
 
   Scenario: A route's request and reply are the annotations of its fields
     Given class Checkout(Route[PlaceOrder, OrderPaid | OrderUnpaid])
@@ -29,3 +29,8 @@ Feature: Routes and actions declare through generic parameters, fields the kind 
   Scenario: A parametrized library kind's arguments are read from its base
     When parametrized(Charge) is read
     Then it yields Post with (Payments, Payment, Charged), then Action with (Payments, Charged)
+
+  Scenario: An action declares a union of records as what it hears
+    Given class Screen(Says[Fraud, Clear | Flagged]) with order: PlaceOrder
+    When basedpyright checks the module and parametrized(Screen) is read
+    Then it reports no error, and the Action base's second argument is Clear | Flagged

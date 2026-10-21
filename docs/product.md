@@ -25,8 +25,9 @@ In the layered habit every layer has a tool that checks it except the one that m
 Each of these is a commitment, and each could be proven false.
 
 - A value the business does not have cannot exist in the program. A rule is a type, and the wrong value has no type.
+- A rule that compares values, a value computed from others, and a choice among several are each declared, with their parts named, and the framework does the comparing, the computing and the choosing. The program contains no expression.
 - The type checker reads the whole program. There is no service, no handler and no function between what arrives and what leaves.
-- A program that is wired wrong does not start. A question nothing answers, a value nothing produces, or two things that each need the other is named, in the developer's own names, before anything runs.
+- A program that is wired wrong does not start. A question nothing answers, a value nothing produces, two things that each need the other, two outcomes that could both be true, or a rule its own bounds make certain or impossible is named, in the developer's own names, before anything runs.
 - The developer says each thing once, and says only the business. Nothing in the program exists for the framework.
 - Nothing is ordered. Each thing exists when what it is made of exists, and things that need nothing from each other happen together.
 - The command line, the API and the documentation are one definition, read from the types. Choosing one or both changes nothing the developer wrote, and nothing drifts because nothing is a copy.

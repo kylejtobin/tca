@@ -1,3 +1,3 @@
 # type-construction-world
 
-The kinds a developer writes an application with: ten Pydantic classes, three ready-made types, and their configuration.
+The kinds a developer writes an application with. Ten Pydantic classes say what a thing is: `Scalar`, `Setting`, `Value`, `Request`, `Record`, `Fact`, `Action`, `Reply`, `Connection`, `Route`, and `Config` holds the deployment. Ten more say a computation without an expression: `Times` and `Sum` derive a value; `AtMost`, `Beyond`, `Between` and `Equal` relate values and refuse when the relation does not hold; `Least`, `Greatest`, `First` and `Only` choose among elements. `Instant`, `Identity` and `Duration` are ready-made. Every class is strict, frozen, and refuses what it does not declare.

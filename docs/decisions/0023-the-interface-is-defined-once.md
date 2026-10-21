@@ -1,6 +1,6 @@
 # 0023. The interface is defined once
 
-Status: accepted; the HTTP server kind not yet built
+Status: accepted
 
 ## Context
 
