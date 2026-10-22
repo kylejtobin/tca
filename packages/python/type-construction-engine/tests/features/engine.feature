@@ -121,12 +121,37 @@ Feature: The engine proves a program at startup, placing every class, and answer
   Scenario: A stalled run names the relation that did not hold with the ordering observed
     Given stalls, PARTY__SAYS='{"amount": "25"}' and one element
     When answer(stalls.Operation, request, stalls.Parties(), proven(stalls)) is awaited
-    Then ValidationError is raised with exactly one error, type relation at loc ("Low",), message "Low did not hold: value Amount > bound Limit"
+    Then ValidationError is raised with exactly one error, type relation at loc ("Low",), message "Low at request.each.[0].Low did not hold: value Amount at request.each.[0].Asked.heard.amount > bound Limit at Limit"
 
-  Scenario: A stalled run names the selection with nothing to choose and not the complement that was decided
-    Given PARTY__SAYS='{"amount": "2.50", "parts": []}' and one element
+  Scenario: A stalled run names every refutation that blocks the route, each at its own occurrence
+    Given PARTY__SAYS='{"amount": "2.50", "parts": []}' and one element, so Cheap is blocked by Largest and Dear by High
     When answer is awaited
-    Then ValidationError is raised with exactly one error, type relation at loc ("Largest",), message "Largest did not hold: Tuple should have at least 1 item after validation, not 0"
+    Then ValidationError is raised with exactly two errors: type relation at loc ("Largest",), message "Largest at request.each.[0].Largest did not hold: Tuple should have at least 1 item after validation, not 0", and type relation at loc ("High",), message "High at request.each.[0].High did not hold: value Amount at request.each.[0].Asked.heard.amount < bound Limit at Limit"
+    And Low, which held, is not among them
+
+  Scenario: A premise refuted in one scope is reported there and nowhere else
+    Given stalls' party valuing each element at what its name says, and elements named 2, 25 and 3
+    When answer is awaited
+    Then ValidationError is raised with exactly one error, type relation at loc ("Low",), message "Low at request.each.[1].Low did not hold: value Amount at request.each.[1].Asked.heard.amount > bound Limit at Limit"
+    And the Operation span has tca.outcome "refused" and three admitted events
+
+  Scenario: Each premise blocking the route is named, whatever the others are
+    Given blockers' Approve route, whose Concluded holds Screened, which needs Clear, and Low over the amount
+    When answer is awaited with the screening flagged and the amount 25
+    Then ValidationError is raised with exactly two errors: type missing at loc ("Screened", "clear"), message "no instance fills Screened.clear at Screened, which holds Clear; Screen at Screen heard Flagged", and type relation at loc ("Low",), message "Low at Low did not hold: value Amount at request.amount > bound Limit at Limit"
+    And with the screening flagged and the amount 5, the missing error alone; with the screening clear and the amount 25, the relation error alone; with the screening clear and the amount 5, the route answers holding the request's amount by identity
+
+  Scenario: Occurrences waiting on one another are a failure, not the business's no
+    Given deadlock's Egg and Chicken, which the proof refuses as cycle, at ("Egg",) and ("Chicken",) among the classes waiting on them, placed by hand unproven with Hatched, Told and Hatch
+    When answer is awaited
+    Then ValidationError is raised with type deadlock at ("Hatch",), ("Told",), ("Hatched",), ("Egg",) and ("Chicken",), each message "X at X waits for Y at Y, and nothing constructs", and the Hatch span has tca.outcome "failed"
+
+  Scenario: A refutable kind is refuted by its declared condition only
+    Given a placement of stalls' Low in the element scope, and one of Largest over the parts
+    When construct is called with Amount 11 and Limit, with Amount 11 alone, with an ordering given, and with a Limit as the value
+    Then the first returns the ValidationError with literal_error at ("ordering",), and each of the others raises Pydantic's ValidationError for Low noted "at request.each.[0].Low", the one with uncomputed among its errors included
+    When construct is called for Largest with no parts, and with a Limit among them
+    Then the first returns the ValidationError with too_short at ("of",), and the second raises Pydantic's for Largest, noted "at request.each.[0].Largest", with model_type and too_short
 
   Scenario: A selection's shape is its tuple annotation
     When Least[Amount](of=()) is constructed
@@ -208,13 +233,13 @@ Feature: The engine proves a program at startup, placing every class, and answer
   Scenario: A premise the party decided against refuses the run at that field
     Given the occurrences program's Cleared route, whose only conclusion holds Screened, and FRAUD__SAYS='{"status": "flagged", "reason": "velocity"}'
     When answer is awaited
-    Then ValidationError is raised with exactly one error, type missing at loc ("Screened", "clear"), message "no instance fills Screened.clear at Screened, which holds Clear", not cycle
+    Then ValidationError is raised with exactly one error, type missing at loc ("Screened", "clear"), message "no instance fills Screened.clear at Screened, which holds Clear; Screen at Screen heard Flagged", not cycle
     And the Cleared span has tca.outcome "refused" and seven admitted events, Screen.heard among them
 
   Scenario: A construction that is not refutable refusing is a failure, not the business's no
     Given fixed's placements taken unproven with Both.totals, a fixed pair, placed over the cart's lines, and a cart of three lines
     When answer is awaited
-    Then ValidationError is raised titled "Both at Both" with type too_long at loc ("totals",), and the Checkout span has tca.outcome "failed" and status ERROR
+    Then the ValidationError Pydantic raised for Both propagates, noted "at Both", with type too_long at loc ("totals",), and the Checkout span has tca.outcome "failed" and status ERROR
 
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
     Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set before open() yields

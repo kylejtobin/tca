@@ -571,7 +571,8 @@ async def test_a_stalled_run_names_the_relation_that_did_not_hold_with_the_order
         (
             "relation",
             ("Low",),
-            "Low at request.each.[0].Low did not hold: value Amount > bound Limit",
+            "Low at request.each.[0].Low did not hold: value Amount at"
+            " request.each.[0].Asked.heard.amount > bound Limit at Limit",
         )
     }
 
@@ -591,7 +592,13 @@ async def test_a_stalled_run_names_the_selection_with_nothing_to_choose(
             ("Largest",),
             "Largest at request.each.[0].Largest did not hold: Tuple should have at least 1 item"
             " after validation, not 0",
-        )
+        ),
+        (
+            "relation",
+            ("High",),
+            "High at request.each.[0].High did not hold: value Amount at"
+            " request.each.[0].Asked.heard.amount < bound Limit at Limit",
+        ),
     }
 
 

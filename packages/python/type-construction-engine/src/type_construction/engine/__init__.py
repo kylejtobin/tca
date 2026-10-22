@@ -47,17 +47,25 @@ it.
 
 A run is the same construction over instances at the same sites. The request and the deployment
 arrive and are walked into scopes; each pass asks Pydantic for every placement of the route not
-yet constructed in a scope at its site whose bound sites are present, ``cls.model_validate``
-over the instances found there, a fresh scalar constructed for the holder, and a tuple field
-every element scope's instance at the bound sites, in element order, the empty tuple for no
-element. A relation or a selection that refuses is refuted in that scope and asked again next
-pass; any other refusal is a failure of the construction and propagates. The pass's actions are
-performed together in one task group and each record enters the scope its action was built in,
-its elements fanning out under it. The run ends when the route constructs, or is refused when a
-pass builds nothing: one ``ValidationError`` naming each relation that did not hold, with the
-ordering observed, or each field no occurrence fills. The refusal is the construction model's,
-made of what its refutable kinds refused and what never arrived, and is raised by ``answer``;
-everything else that is raised is a failure.
+yet constructed or refuted in a scope at its site whose bound sites are present,
+``cls.model_validate`` over the instances found there, a fresh scalar constructed for the
+holder, and a tuple field every element scope's instance at the bound sites, in element order,
+the empty tuple for no element. A relation or a selection whose declared condition does not hold
+over its operands, the ordering outside the ``Literal`` or the elements outside the tuple's
+shape, is refuted in that scope, once, and that refutation is kept there with the operands'
+paths; any other refusal is a failure of the construction and propagates. The pass's actions
+are performed together in one task group and each record enters the scope its action was built
+in, its elements fanning out under it. The run ends when the route constructs.
+
+A pass that builds nothing ends the run, and why is read from the same bindings: each
+occurrence not constructed has, per premise not filled, the pending occurrences that construct
+its bound sites and could still fill it, and the causes why its other candidates never will, a
+refutation or a site that resolved without what the premise holds, an action that heard the
+other record, a record or request without the field. An occurrence a premise of which no
+candidate can fill is blocked by those causes, and so is every occurrence waiting on it; the
+route blocked is the run refused, one ``ValidationError`` naming each cause at its own
+occurrence, which ``answer`` raises. The route waiting on occurrences that wait on one another
+is a deadlock no evidence explains, a failure raised as such.
 
 ``opened`` enters each connection's ``open`` once and exits each once around whatever a server
 kind runs inside it, whatever the body raised and whatever an exit raises. Every answer is one
@@ -83,7 +91,7 @@ from annotated_types import Ge, Gt, Le, Lt, MaxLen, MinLen
 from opentelemetry import trace
 from opentelemetry.trace import Span
 from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, ValidationError, model_validator
-from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefined
+from pydantic_core import ErrorDetails, InitErrorDetails, PydanticCustomError, PydanticUndefined
 
 from type_construction.world import (
     Action,
@@ -1826,6 +1834,14 @@ type Provenance = dict[str, tuple[Site, ...]]
 """Which occurrences supplied each field of a construction: the concrete path of each."""
 
 
+class Refuted(NamedTuple):
+    """A relation or a selection whose declared condition did not hold in a scope: Pydantic's
+    refusal, and the concrete paths of the operands it was evaluated over."""
+
+    refusal: ValidationError
+    provenance: Provenance
+
+
 @dataclass(eq=False)
 class Scope:
     """One scope of a run: opened at a root or an element, owning the instances at the sites
@@ -1844,6 +1860,7 @@ class Scope:
     )
     children: list[Scope] = field(default_factory=list["Scope"])
     provenance: dict[Site, Provenance] = field(default_factory=dict[Site, Provenance])
+    refuted: dict[Site, Refuted] = field(default_factory=dict[Site, "Refuted"])
 
     @property
     def chain(self) -> Iterator[Scope]:
@@ -1912,41 +1929,100 @@ type Given = dict[str, BaseModel | tuple[BaseModel, ...]]
 """What a scope supplies for a placement's fields, as Pydantic takes it."""
 
 
-class Supplied(NamedTuple):
-    """What a scope supplies for a placement, and the concrete path of each occurrence that
-    supplied it."""
+class Found(NamedTuple):
+    """An instance at a bound site, with its concrete path."""
+
+    path: Site
+    instance: BaseModel
+
+
+class Occurrence(NamedTuple):
+    """A placement in a concrete scope: one occurrence of a class the run constructs, with what
+    the scope holds of it, constructed or refuted."""
+
+    scope: Scope
+    placed: Placement
+
+    @property
+    def site(self) -> Site:
+        """The declared site: the scope's and the class's name."""
+        return (*self.scope.site, self.placed.cls.__name__)
+
+    @property
+    def path(self) -> Site:
+        """The concrete path."""
+        return self.scope.at(self.site)
+
+    @property
+    def constructed(self) -> BaseModel | None:
+        """The instance, once constructed."""
+        return self.scope.owned.get(self.site)
+
+    @property
+    def refuted(self) -> Refuted | None:
+        """The refutation, once refuted."""
+        return self.scope.refuted.get(self.site)
+
+
+class Produced(NamedTuple):
+    """Where a bound site comes from: the occurrence that constructs it, and the path under
+    that construction, ``()`` for the construction itself and ``("heard", ...)`` for what the
+    record its action hears holds."""
+
+    occurrence: Occurrence
+    rest: Site
+
+
+class Cause(NamedTuple):
+    """Why a premise of an occurrence can never be filled by one of its candidates: a relation
+    or a selection whose declared condition did not hold, or a site that resolved without what
+    the premise holds."""
+
+    code: Literal["relation", "missing"]
+    loc: tuple[str, ...]
+    message: str
+
+
+class Bound(NamedTuple):
+    """What a scope supplies for a placement, premise by premise: what is available, with the
+    concrete path of each occurrence that supplied it; and for each premise not filled, a single
+    field or one element of a tuple field, the pending occurrences that could still fill it and
+    the causes why its other candidates never will. Ready when every premise is filled."""
 
     given: Given
     provenance: Provenance
+    waits: dict[str, list[Occurrence]]
+    causes: dict[str, list[Cause]]
+
+    @property
+    def ready(self) -> bool:
+        """Whether every premise is filled."""
+        return not self.waits and not self.causes
 
 
-type Located = tuple[Site, BaseModel]
-"""An instance with its concrete path."""
-
-
-def found_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[Located]:
+def found_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[Found]:
     """The instances of the classes a scope sees at any of the sites, with their paths: two
     alternatives share a site, and the one that arrived is the one whose class the field
     declares."""
     return [
-        found
+        Found(*found)
         for s in sites
         if (found := scope.located(s)) is not None and type(found[1]) in classes_
     ]
 
 
-def owned_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[Located]:
+def owned_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[Found]:
     """The instances of the classes a scope owns at any of the sites, with their paths."""
     return [
-        (scope.at(s), i)
+        Found(scope.at(s), i)
         for s in sites
         if (i := scope.owned.get(s)) is not None and type(i) in classes_
     ]
 
 
-def present(found: list[Located], placed: Placement, name: str) -> Located | None:
-    """The one instance found for a field; ``None`` for none; a refusal for more than one, which
-    the proof excludes and the run refuses rather than choose."""
+def present(found: list[Found], placed: Placement, name: str) -> Found | None:
+    """The one instance found for a field; ``None`` for none; a failure for more than one, which
+    the proof excludes and the run refuses to choose among."""
     if len(found) > 1:
         raise ValidationError.from_exception_data(
             placed.cls.__name__,
@@ -1964,40 +2040,125 @@ def present(found: list[Located], placed: Placement, name: str) -> Located | Non
     return found[0] if found else None
 
 
-def supplied(placed: Placement, scope: Scope) -> Supplied | None:
-    """What a scope supplies for a placement: the instance at each single field's bound site, a
-    fresh instance for each fresh field, and for each tuple field every element scope's instance
-    at the bound element sites, in element order; ``None`` while any is absent, so the class is
-    asked again next pass."""
+def producer(site: Site, scope: Scope, placements: tuple[Placement, ...]) -> Produced | None:
+    """The occurrence a bound site is constructed by, seen from a scope: the placement, in the
+    scope or an ancestor, whose own site is a prefix of it, and the path under that site;
+    ``None`` for a site that arrives, under the request, the deployment or a constant."""
+    for scope_ in scope.chain:
+        for placed in placements:
+            if placed.scope == scope_.site:
+                made = Occurrence(scope_, placed)
+                if site[: len(made.site)] == made.site:
+                    return Produced(made, site[len(made.site) :])
+    return None
+
+
+def where(site: Site, scope: Scope) -> Site:
+    """The concrete path of a site seen from a scope, whether or not anything is there."""
+    for scope_ in scope.chain:
+        if site[: len(scope_.site)] == scope_.site:
+            return scope_.at(site)
+    return site
+
+
+def candidate(
+    site: Site, scope: Scope, placements: tuple[Placement, ...], consumer: Occurrence, name: str
+) -> Occurrence | Cause:
+    """What could still fill a bound site of a consumer's premise that the scope does not see:
+    the pending occurrence that constructs it; else the cause why nothing will: the site arrived
+    without it, the occurrence that constructs it was refuted, or that occurrence heard a record
+    without it."""
+    placed = consumer.placed
+    classes_ = {**holds(placed.cls), **collects(placed.cls)}[name]
+    unfilled = (
+        f"no instance fills {placed.cls.__name__}.{name} at {'.'.join(consumer.path)}, which"
+        f" holds {names(classes_)}"
+    )
+    made = producer(site, scope, placements)
+    if made is None:
+        absent = ".".join(where(site, scope))
+        return Cause("missing", (placed.cls.__name__, name), f"{unfilled}; {absent} is absent")
+    occurrence, rest = made
+    cls = occurrence.placed.cls.__name__
+    if (refuted := occurrence.refuted) is not None:
+        why = rendered(occurrence.placed.cls, refuted.refusal, refuted.provenance)
+        return Cause(
+            "relation", (cls,), f"{cls} at {'.'.join(occurrence.path)} did not hold: {why}"
+        )
+    if occurrence.constructed is None:
+        return occurrence
+    heard_ = occurrence.scope.owned.get((*occurrence.site, HEARD))
+    said = "nothing" if heard_ is None else type(heard_).__name__
+    without = f" without {'.'.join(rest[1:])}" if len(rest) > 1 else ""
+    return Cause(
+        "missing",
+        (placed.cls.__name__, name),
+        f"{unfilled}; {cls} at {'.'.join(occurrence.path)} heard {said}{without}",
+    )
+
+
+def bound(placed: Placement, scope: Scope, placements: tuple[Placement, ...]) -> Bound:
+    """What a scope supplies for a placement, read from its bindings: the instance at each
+    single field's bound site, and for each tuple field every element scope's instance at the
+    bound element sites, in element order; for each premise not filled, what could still fill
+    it and why the rest never will, from the occurrence each candidate site is constructed by."""
     given: Given = {}
     provenance: Provenance = {}
-    built_at = scope.at((*scope.site, placed.cls.__name__))
+    waits: dict[str, list[Occurrence]] = {}
+    causes: dict[str, list[Cause]] = {}
+    consumer = Occurrence(scope, placed)
+
+    def unfilled(key: str, site: Site, at: Scope, name: str) -> None:
+        found = candidate(site, at, placements, consumer, name)
+        if isinstance(found, Occurrence):
+            waits.setdefault(key, []).append(found)
+        else:
+            causes.setdefault(key, []).append(found)
+
     for name, sites in placed.singles.items():
         found = present(found_at(sites, holds(placed.cls)[name], scope), placed, name)
-        if found is None:
-            return None
-        provenance[name], given[name] = (found[0],), found[1]
-    for name, cls in placed.freshly.items():
-        provenance[name], given[name] = ((*built_at, name),), cls()
+        if found is not None:
+            provenance[name], given[name] = (found.path,), found.instance
+            continue
+        for site in sites:
+            unfilled(name, site, scope, name)
     for name, collected in placed.collections.items():
-        element_scopes = scope.collection(collected.site)
-        if element_scopes is None:
-            return None
-        picked: list[Located] = []
-        for element in element_scopes:
-            classes_ = collects(placed.cls)[name]
-            found = present(owned_at(collected.elements, classes_, element), placed, name)
-            if found is None:
-                return None
-            picked.append(found)
-        provenance[name] = tuple(path for path, _ in picked)
-        given[name] = tuple(instance for _, instance in picked)
-    return Supplied(given, provenance)
+        elements = scope.collection(collected.site)
+        if elements is None:
+            unfilled(name, collected.site, scope, name)
+            continue
+        picked: list[Found] = []
+        for index, element in enumerate(elements):
+            found = present(
+                owned_at(collected.elements, collects(placed.cls)[name], element), placed, name
+            )
+            if found is not None:
+                picked.append(found)
+                continue
+            for site in collected.elements:
+                unfilled(f"{name}[{index}]", site, element, name)
+        if len(picked) == len(elements):
+            provenance[name] = tuple(f.path for f in picked)
+            given[name] = tuple(f.instance for f in picked)
+    return Bound(given, provenance, waits, causes)
 
 
-def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
+def supplied(placed: Placement, scope: Scope, placements: tuple[Placement, ...]) -> Bound | None:
+    """What a scope supplies for a placement when every premise is filled, with a fresh instance
+    for each fresh field; ``None`` while any is not, so the class is asked again next pass."""
+    found = bound(placed, scope, placements)
+    if not found.ready:
+        return None
+    built_at = scope.at((*scope.site, placed.cls.__name__))
+    for name, cls in placed.freshly.items():
+        found.provenance[name], found.given[name] = ((*built_at, name),), cls()
+    return found
+
+
+def rendered(cls: type[BaseModel], refusal: ValidationError, provenance: Provenance) -> str:
     """Why a relation or a selection did not hold: the ordering observed between the two
-    operands, as ``value Amount > bound Limit``, or Pydantic's message for a selection."""
+    operands at their paths, as ``value Amount at request.each.[0].Asked.heard.amount > bound
+    Limit at Limit``, or Pydantic's message for a selection."""
     for error in refusal.errors():
         loc = error["loc"]
         compared = (
@@ -2005,81 +2166,94 @@ def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
         )
         if isinstance(compared, Comparison) and isinstance(error["input"], int):
             left, right = holds(cls)[compared.left][0], holds(cls)[compared.right][0]
+            at_left = ".".join(provenance[compared.left][0])
+            at_right = ".".join(provenance[compared.right][0])
             sign = SIGN[error["input"]]
-            return f"{compared.left} {left.__name__} {sign} {compared.right} {right.__name__}"
+            return (
+                f"{compared.left} {left.__name__} at {at_left} {sign} {compared.right}"
+                f" {right.__name__} at {at_right}"
+            )
     return "; ".join(error["msg"] for error in refusal.errors())
 
 
-class Refuted(NamedTuple):
-    """A relation or a selection that refused in a scope this pass."""
+def blocked_by(found: Bound, blocked: Mapping[Site, list[Cause]]) -> list[Cause]:
+    """The causes of every premise of a binding that nothing can fill any more: each pending
+    occurrence it waited on is blocked, and their causes are its causes; empty while every
+    premise not filled still has a pending occurrence that could fill it."""
+    return [
+        cause
+        for key in dict.fromkeys((*found.waits, *found.causes))
+        if all(w.path in blocked for w in found.waits.get(key, []))
+        for cause in (
+            *found.causes.get(key, []),
+            *(c for w in found.waits.get(key, []) for c in blocked[w.path]),
+        )
+    ]
 
-    placed: Placement
-    scope: Scope
-    refusal: ValidationError
 
-    @property
-    def path(self) -> Site:
-        """The concrete path of the occurrence that refused."""
-        return self.scope.at((*self.scope.site, self.placed.cls.__name__))
+def waited_on(start: Site, pending: Mapping[Site, tuple[Occurrence, Bound]]) -> list[Site]:
+    """An occurrence and every occurrence it waits on, transitively, in order of reach."""
+    found: list[Site] = []
+    todo = [start]
+    while todo:
+        path = todo.pop(0)
+        if path in found or path not in pending:
+            continue
+        found.append(path)
+        todo.extend(w.path for ws in pending[path][1].waits.values() for w in ws)
+    return found
 
 
-def stalled(
-    root: Scope,
-    placements: tuple[Placement, ...],
-    refuted: list[Refuted],
-    proof: Proof,
-) -> list[InitErrorDetails]:
-    """Why a pass constructed nothing: one ``relation`` error per occurrence whose refusal said
-    it did not hold, at its concrete path, with what was observed, leaving out one whose
-    complement holds in the same scope, since that choice was decided; else one ``missing``
-    error per field no instance fills, at the concrete path the class was asked at, unless a
-    pending class or a pending action's record would fill it; else ``cycle``."""
-    causes = [
-        r
-        for r in refuted
-        if not deciders(frozenset({r.placed.cls}), r.scope.classes, proof.classes)
-    ] or refuted
+def ended(
+    root: Scope, placements: tuple[Placement, ...], route: type[BaseModel]
+) -> ValidationError:
+    """Why the route did not construct, from the binding of every occurrence the passes left
+    unconstructed, in its own scope. An occurrence a premise of which no candidate can fill is
+    blocked, by the refutations and the resolved sites that are its causes, and so is every
+    occurrence waiting on it, until nothing moves. The route blocked is the run refused, as a
+    value: one error per cause, each at its own occurrence. The route not blocked waits on
+    occurrences that wait on one another, which no evidence explains: a failure, raised,
+    naming each and what it waits for."""
+    pending: dict[Site, tuple[Occurrence, Bound]] = {}
+    for scope in scopes(root):
+        for placed in placements:
+            occurrence = Occurrence(scope, placed)
+            if (
+                placed.scope == scope.site
+                and occurrence.constructed is None
+                and occurrence.refuted is None
+            ):
+                pending[occurrence.path] = (occurrence, bound(placed, scope, placements))
+    blocked: dict[Site, list[Cause]] = {}
+    moved = True
+    while moved:
+        moved = False
+        for path, (_, found) in pending.items():
+            if path not in blocked and (causes := blocked_by(found, blocked)):
+                blocked[path] = causes
+                moved = True
+    at = (route.__name__,)
+    if at in blocked:
+        details = [fault(c.code, "{why}", c.loc, why=c.message) for c in dict.fromkeys(blocked[at])]
+        return ValidationError.from_exception_data(route.__name__, details)
     details = [
         fault(
-            "relation",
-            "{cls} at {path} did not hold: {why}",
-            (r.placed.cls.__name__,),
-            cls=r.placed.cls.__name__,
-            path=".".join(r.path),
-            why=rendered(r.placed.cls, r.refusal),
+            "deadlock",
+            "{cls} at {path} waits for {on}, and nothing constructs",
+            (occurrence.placed.cls.__name__,),
+            cls=occurrence.placed.cls.__name__,
+            path=".".join(path),
+            on=", ".join(
+                f"{w.placed.cls.__name__} at {'.'.join(w.path)}"
+                for ws in found.waits.values()
+                for w in ws
+                if w.path not in blocked
+            ),
         )
-        for r in causes
+        for path in waited_on(at, pending)
+        for occurrence, found in (pending[path],)
     ]
-    if details:
-        return details
-    pending = [
-        (scope, placed)
-        for scope in scopes(root)
-        for placed in placements
-        if placed.scope == scope.site and (*scope.site, placed.cls.__name__) not in scope.owned
-    ]
-    unbuilt = {placed.cls for _, placed in pending}
-    for scope, placed in pending:
-        for name, sites in placed.singles.items():
-            classes_ = holds(placed.cls)[name]
-            if not found_at(sites, classes_, scope) and not any(
-                c in unbuilt or unbuilt.intersection(hearers_of(c, proof.classes)) for c in classes_
-            ):
-                details.append(
-                    fault(
-                        "missing",
-                        "no instance fills {cls}.{name} at {path}, which holds {holds}",
-                        (placed.cls.__name__, name),
-                        cls=placed.cls.__name__,
-                        name=name,
-                        path=".".join(scope.at((*scope.site, placed.cls.__name__))),
-                        holds=names(classes_),
-                    )
-                )
-    return details or [
-        fault("cycle", "{cls} holds a class that holds it", (cls.__name__,), cls=cls.__name__)
-        for cls in unbuilt
-    ]
+    raise ValidationError.from_exception_data(route.__name__, details)
 
 
 async def performed_in_span(performed: Performed) -> Record:
@@ -2119,16 +2293,17 @@ async def answer[Q: Request, A: Reply[Fact]](
     the reply.
 
     Each pass asks Pydantic for every placement not yet constructed in a scope whose bound sites
-    are present; a relation or a selection that refuses does not hold in that scope yet; any
-    other refusal propagates. The pass's actions are performed together in one task group,
-    across every scope, and each record enters the scope its action was built in once every
-    action of the pass was heard; a library kind's exception cancels the group's other actions
-    and propagates in an ``ExceptionGroup``, noted with the paths of the actions cancelled
-    with it. An action's effect may have happened whenever its task started: one heard
-    returned a validated record, one failed or cancelled may have had its effect and returned
-    none, and no record of the pass is admitted, which the group's note says. A pass that
-    constructs nothing is the refusal of the run: a ``ValidationError`` naming each relation
-    that did not hold or each field no instance fills."""
+    are present; a relation or a selection whose declared condition does not hold is refuted in
+    that scope, once; any other refusal is a failure and propagates. The pass's actions are
+    performed together in one task group, across every scope, and each record enters the scope
+    its action was built in once every action of the pass was heard; a library kind's exception
+    cancels the group's other actions and propagates in an ``ExceptionGroup``, noted with the
+    paths of the actions cancelled with it. An action's effect may have happened whenever its
+    task started: one heard returned a validated record, one failed or cancelled may have had
+    its effect and returned none, and no record of the pass is admitted, which the group's note
+    says. A pass that constructs nothing ends the run as ``ended`` reads it from the bindings:
+    refused, a ``ValidationError`` naming each cause the route is blocked by, or a deadlock,
+    raised."""
     return (await ran(route, request, deployment, proof)).route
 
 
@@ -2161,25 +2336,35 @@ class Performed(NamedTuple):
         return self.scope.at(self.site)
 
 
+def refutes(cls: type[BaseModel], error: ErrorDetails) -> bool:
+    """Whether one error of a refusal is the declared condition of a refutable kind not holding
+    over its operands: a relation's computed ordering outside the ``Literal`` its field admits,
+    or a selection's elements outside the shape its tuple declares. Any other error, an operand
+    missing or of another class, an ordering given, is a failure of the construction."""
+    loc = error["loc"]
+    name = str(loc[0]) if loc else ""
+    if is_relation(cls):
+        compared = (
+            isinstance(computation(cls, name), Comparison) if name in cls.model_fields else False
+        )
+        return len(loc) == 1 and compared and error["type"] == "literal_error"
+    return (
+        is_selection(cls) and name == "of" and error["type"] in ("too_short", "too_long", "missing")
+    )
+
+
 def construct(placed: Placement, given: Given, path: Site) -> BaseModel | ValidationError:
     """Ask Pydantic for a placement with what a scope supplied: the instance, or the refusal of
-    a relation or a selection, which says only that it does not hold here; any other refusal
-    propagates, titled with the occurrence's concrete path."""
+    a relation or a selection whose every error is its declared condition not holding, which
+    says only that it does not hold here; any other refusal is a failure and propagates as
+    Pydantic raised it, noted with the occurrence's concrete path, as a party's exception is."""
     try:
         return placed.cls.model_validate(given)
     except ValidationError as refusal:
-        if refutable(placed.cls):
+        if refutable(placed.cls) and all(refutes(placed.cls, e) for e in refusal.errors()):
             return refusal
-        title = f"{placed.cls.__name__} at {'.'.join(path)}"
-        raise ValidationError.from_exception_data(
-            title,
-            [
-                InitErrorDetails(
-                    type=e["type"], loc=e["loc"], input=e["input"], ctx=e.get("ctx", {})
-                )
-                for e in refusal.errors()
-            ],
-        ) from refusal
+        refusal.add_note(f"at {'.'.join(path)}")
+        raise
 
 
 async def ran[Q: Request, A: Reply[Fact]](
@@ -2228,19 +2413,18 @@ async def constructed[Q: Request, A: Reply[Fact]](
     while (route.__name__,) not in root.owned:
         passes += 1
         performed: list[Performed] = []
-        refuted: list[Refuted] = []
         built = False
         for scope in list(scopes(root)):
             for placed in placements:
                 site = (*scope.site, placed.cls.__name__)
-                if placed.scope != scope.site or site in scope.owned:
+                if placed.scope != scope.site or site in scope.owned or site in scope.refuted:
                     continue
-                found = supplied(placed, scope)
+                found = supplied(placed, scope, placements)
                 if found is None:
                     continue
                 instance = construct(placed, found.given, scope.at(site))
                 if isinstance(instance, ValidationError):
-                    refuted.append(Refuted(placed, scope, instance))
+                    scope.refuted[site] = Refuted(instance, found.provenance)
                     continue
                 built = True
                 scope.owned[site] = instance
@@ -2262,8 +2446,7 @@ async def constructed[Q: Request, A: Reply[Fact]](
                 {"tca.record": type(record).__name__, "tca.heard": ".".join((*p.path, HEARD))},
             )
         if not built:
-            why = stalled(root, placements, refuted, proof)
-            return ValidationError.from_exception_data(route.__name__, why)
+            return ended(root, placements, route)
     return Run(route.model_validate(root.owned[(route.__name__,)]), root, passes)
 
 

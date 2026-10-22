@@ -13,7 +13,7 @@ from typing import Any, TypeIs
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from type_construction.engine import (
     Collected,
@@ -21,6 +21,7 @@ from type_construction.engine import (
     Proof,
     answer,
     config,
+    construct,
     hear,
     models,
     opened,
@@ -31,7 +32,7 @@ from type_construction.engine import (
 )
 from type_construction.world import Connection, Record
 
-from . import fixed, stalls
+from . import blockers, deadlock, fixed, stalls
 from . import occurrences as program
 from . import test_engine as valued
 from .occurrences import PERFORMED, Checkout, PlaceOrder, Quote, Screen
@@ -446,7 +447,8 @@ async def test_a_premise_the_party_decided_against_refuses_the_run_at_that_field
         (
             "missing",
             ("Screened", "clear"),
-            "no instance fills Screened.clear at Screened, which holds Clear",
+            "no instance fills Screened.clear at Screened, which holds Clear; Screen at Screen"
+            " heard Flagged",
         )
     ]
     (route,) = by_name(exporter.get_finished_spans(), "Cleared")
@@ -483,8 +485,222 @@ async def test_a_construction_that_is_not_refutable_refusing_is_a_failure_not_th
     )
     with pytest.raises(ValidationError) as failure:
         await answer(fixed.Checkout, request, config(fixed)(), unproven)
-    assert failure.value.title == "Both at Both"
+    assert failure.value.title == "Both"
+    assert failure.value.__notes__ == ["at Both"]
     assert [(e["type"], e["loc"]) for e in failure.value.errors()] == [("too_long", ("totals",))]
     (route,) = by_name(exporter.get_finished_spans(), "Checkout")
     assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
     assert route.status.status_code.name == "ERROR"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_premise_refuted_in_one_scope_is_reported_there_and_nowhere_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+
+    async def valuing(self: stalls.Tell[stalls.Party, Record]) -> Record:
+        """A party that values an element at what its name says."""
+        assert isinstance(self, stalls.Asked)
+        return hear(self, json.dumps({"amount": self.element.name.root}))
+
+    monkeypatch.setattr(stalls.Tell, "perform", valuing)
+    request = stalls.Elements.model_validate_json(
+        '{"each": [{"name": "2"}, {"name": "25"}, {"name": "3"}]}'
+    )
+    with pytest.raises(ValidationError) as refusal:
+        await answer(stalls.Operation, request, config(stalls)(), proven(stalls))
+    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == [
+        (
+            "relation",
+            ("Low",),
+            "Low at request.each.[1].Low did not hold: value Amount at"
+            " request.each.[1].Asked.heard.amount > bound Limit at Limit",
+        )
+    ]
+    (route,) = by_name(exporter.get_finished_spans(), "Operation")
+    assert attributes(route)["tca.outcome"] == "refused"
+    assert len(admitted(route)) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("says", "amount", "expected"),
+    [
+        (
+            '{"status": "flagged", "reason": "velocity"}',
+            "25",
+            [
+                (
+                    "missing",
+                    ("Screened", "clear"),
+                    "no instance fills Screened.clear at Screened, which holds Clear; Screen at"
+                    " Screen heard Flagged",
+                ),
+                (
+                    "relation",
+                    ("Low",),
+                    "Low at Low did not hold: value Amount at request.amount > bound Limit at"
+                    " Limit",
+                ),
+            ],
+        ),
+        (
+            '{"status": "flagged", "reason": "velocity"}',
+            "5",
+            [
+                (
+                    "missing",
+                    ("Screened", "clear"),
+                    "no instance fills Screened.clear at Screened, which holds Clear; Screen at"
+                    " Screen heard Flagged",
+                ),
+            ],
+        ),
+        (
+            '{"status": "clear"}',
+            "25",
+            [
+                (
+                    "relation",
+                    ("Low",),
+                    "Low at Low did not hold: value Amount at request.amount > bound Limit at"
+                    " Limit",
+                ),
+            ],
+        ),
+        ('{"status": "clear"}', "5", []),
+    ],
+)
+async def test_each_premise_blocking_the_route_is_named_whatever_the_others_are(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    says: str,
+    amount: str,
+    expected: list[tuple[str, tuple[str, ...], str]],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FRAUD__SAYS", says)
+    request = blockers.Ask.model_validate_json(f'{{"amount": "{amount}"}}')
+    if not expected:
+        done = await answer(blockers.Approve, request, config(blockers)(), proven(blockers))
+        assert done.reply.of.low.value is request.amount
+        return
+    with pytest.raises(ValidationError) as refusal:
+        await answer(blockers.Approve, request, config(blockers)(), proven(blockers))
+    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == expected
+
+
+def placing(cls: type[BaseModel], scope: tuple[str, ...], **singles: tuple[str, ...]) -> Placement:
+    """A placement of a class in a scope, its single fields bound to one site each."""
+    return Placement(
+        route=deadlock.Hatch,
+        cls=cls,
+        scope=scope,
+        singles={name: (site,) for name, site in singles.items()},
+        freshly={},
+        collections={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_occurrences_waiting_on_one_another_are_a_failure_not_the_businesss_no(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    exporter = exporting()
+    with pytest.raises(ValidationError) as refused:
+        proven(deadlock)
+    assert {e["type"] for e in refused.value.errors()} == {"cycle"}
+    assert {("cycle", ("Egg",)), ("cycle", ("Chicken",))} <= {
+        (e["type"], e["loc"]) for e in refused.value.errors()
+    }
+    unproven = Proof.model_construct(
+        program=deadlock.__name__,
+        classes=models(deadlock),
+        placed=(
+            placing(deadlock.Egg, (), chicken=("Chicken",), ask=("request",)),
+            placing(deadlock.Chicken, (), egg=("Egg",)),
+            placing(deadlock.Hatched, (), egg=("Egg",)),
+            placing(deadlock.Told, (), of=("Hatched",)),
+            placing(deadlock.Hatch, (), request=("request",), reply=("Told",)),
+        ),
+        waiting=(),
+        faulted=(),
+    )
+    request = deadlock.Ask.model_validate_json('{"name": "a"}')
+    with pytest.raises(ValidationError) as failure:
+        await answer(deadlock.Hatch, request, config(deadlock)(), unproven)
+    assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
+        ("deadlock", ("Hatch",), "Hatch at Hatch waits for Told at Told, and nothing constructs"),
+        (
+            "deadlock",
+            ("Told",),
+            "Told at Told waits for Hatched at Hatched, and nothing constructs",
+        ),
+        (
+            "deadlock",
+            ("Hatched",),
+            "Hatched at Hatched waits for Egg at Egg, and nothing constructs",
+        ),
+        ("deadlock", ("Egg",), "Egg at Egg waits for Chicken at Chicken, and nothing constructs"),
+        (
+            "deadlock",
+            ("Chicken",),
+            "Chicken at Chicken waits for Egg at Egg, and nothing constructs",
+        ),
+    ]
+    (route,) = by_name(exporter.get_finished_spans(), "Hatch")
+    assert attributes(route) == {"tca.request": "Ask", "tca.outcome": "failed"}
+
+
+ELEMENT = ("request", "each", "[]")
+"""The site of each element's scope in the stalls and engine programs."""
+
+
+def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
+    low = Placement(
+        route=stalls.Operation,
+        cls=stalls.Low,
+        scope=ELEMENT,
+        singles={"value": ((*ELEMENT, "Asked", "heard", "amount"),), "bound": (("Limit",),)},
+        freshly={},
+        collections={},
+    )
+    path = ("request", "each", "[0]", "Low")
+    refuted = construct(low, {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit()}, path)
+    assert isinstance(refuted, ValidationError)
+    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("literal_error", ("ordering",))]
+    malformed: list[dict[str, BaseModel]] = [
+        {"value": stalls.Amount(Decimal(11))},
+        {"value": stalls.Amount(Decimal(5)), "bound": stalls.Limit(), "ordering": -1},  # type: ignore[dict-item]
+        {"value": stalls.Limit(), "bound": stalls.Limit()},
+    ]
+    for given in malformed:
+        with pytest.raises(ValidationError) as failure:
+            construct(low, given, path)  # type: ignore[arg-type]
+        assert failure.value.title == "Low"
+        assert failure.value.__notes__ == ["at request.each.[0].Low"]
+    largest = Placement(
+        route=valued.Operation,
+        cls=valued.Largest,
+        scope=ELEMENT,
+        singles={},
+        freshly={},
+        collections={
+            "of": Collected(
+                site=(*ELEMENT, "Asked", "heard", "parts"),
+                elements=((*ELEMENT, "Asked", "heard", "parts", "[]", "Portion"),),
+            )
+        },
+    )
+    path = ("request", "each", "[0]", "Largest")
+    refuted = construct(largest, {"of": ()}, path)
+    assert isinstance(refuted, ValidationError)
+    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("too_short", ("of",))]
+    with pytest.raises(ValidationError) as failure:
+        construct(largest, {"of": (valued.Limit(),)}, path)
+    assert failure.value.title == "Largest"
+    assert failure.value.__notes__ == ["at request.each.[0].Largest"]
+    assert [e["type"] for e in failure.value.errors()] == ["model_type", "too_short"]

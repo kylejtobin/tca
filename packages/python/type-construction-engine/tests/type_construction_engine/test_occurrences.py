@@ -296,7 +296,8 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
         (
             "missing",
             ("Discount", "coupon"),
-            "no instance fills Discount.coupon at Discount, which holds Coupon",
+            "no instance fills Discount.coupon at Discount, which holds Coupon; Quote at Quote"
+            " heard Quoted without coupon",
         )
     ]
 
@@ -448,17 +449,19 @@ async def test_a_stall_names_the_occurrence_that_did_not_hold(
         (
             "relation",
             ("Low",),
-            "Low at request.each.[0].Low did not hold: value Amount > bound Limit",
+            "Low at request.each.[0].Low did not hold: value Amount at"
+            " request.each.[0].Asked.heard.amount > bound Limit at Limit",
         ),
         (
             "relation",
             ("Low",),
-            "Low at request.each.[1].Low did not hold: value Amount > bound Limit",
+            "Low at request.each.[1].Low did not hold: value Amount at"
+            " request.each.[1].Asked.heard.amount > bound Limit at Limit",
         ),
     ]
 
 
-def test_a_refusal_that_is_not_a_refutation_is_titled_with_the_occurrence() -> None:
+def test_a_refusal_that_is_not_a_refutation_is_noted_with_the_occurrence() -> None:
     placed = Placement(
         route=fixed.Checkout,
         cls=fixed.Both,
@@ -473,7 +476,8 @@ def test_a_refusal_that_is_not_a_refutation_is_titled_with_the_occurrence() -> N
     }
     with pytest.raises(ValidationError) as refusal:
         construct(placed, given, ("Both",))
-    assert refusal.value.title == "Both at Both"
+    assert refusal.value.title == "Both"
+    assert refusal.value.__notes__ == ["at Both"]
     assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
         ("missing", ("totals", 0)),
         ("missing", ("totals", 1)),
