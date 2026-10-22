@@ -39,6 +39,9 @@ def main() -> None:
             "span": span.context.span_id if span.context else None,
             "parent": span.parent.span_id if span.parent else None,
             "attributes": dict(span.attributes or {}),
+            "events": [
+                {"name": e.name, "attributes": dict(e.attributes or {})} for e in span.events
+            ],
             "status": span.status.status_code.name,
         }
         for span in EXPORTER.get_finished_spans()

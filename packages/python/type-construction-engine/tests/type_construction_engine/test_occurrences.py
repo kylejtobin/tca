@@ -396,7 +396,14 @@ async def test_spans_name_each_action_occurrence_by_its_concrete_path() -> None:
         )
     ]
     (checkout,) = [s for s in exporter.get_finished_spans() if s.name == "Checkout"]
-    assert dict(checkout.attributes or {}) == {"tca.request": "PlaceOrder", "tca.passes": 4}
+    assert dict(checkout.attributes or {}) == {
+        "tca.request": "PlaceOrder",
+        "tca.outcome": "answered",
+        "tca.passes": 4,
+    }
+    assert sorted(
+        (e.name, str((e.attributes or {})["tca.heard"])) for e in checkout.events
+    ) == sorted(("admitted", str(a["tca.heard"])) for _, a in spans)
     assert not any("2.50" in str(v) for _, a in spans for v in a.values())
 
 

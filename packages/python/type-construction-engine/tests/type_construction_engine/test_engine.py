@@ -737,7 +737,7 @@ async def test_an_answer_is_one_span_per_route_and_one_per_performed_action() ->
             )
             for i in (0, 1)
         ),
-        ("Operation", {"tca.request": "Elements", "tca.passes": 4}),
+        ("Operation", {"tca.request": "Elements", "tca.outcome": "answered", "tca.passes": 4}),
     ]
     assert not any("2.50" in str(v) for _, a in spans for v in a.values())
 

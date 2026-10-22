@@ -184,20 +184,26 @@ Feature: The engine proves a program at startup, placing every class, and answer
     Given every action of the pass waiting at a gate
     When answer is awaited under asyncio.timeout inside opened(deployment), then the gate is opened and ran is awaited
     Then TimeoutError is raised with all seven actions cancelled and nothing closed, and the second answer takes 4 passes and replies {"cart":"10.00","gifts":"4","pair":"14.50","solo":"10"}
+    And the first Checkout span has tca.outcome "cancelled", status UNSET, no tca.passes and no admitted event; the second has tca.outcome "answered", tca.passes 4 and seven admitted events, one per action's heard path
     And every performed action held the very connection instance open was called on, and each of the six Quote occurrences holds deployment.catalog by identity
 
   Scenario: One action failing mid-pass cancels its siblings and the group holds it alone
-    Given the solo line's Quote yielding once and then raising ConnectionError, or answering '{"price": "a lot"}', while its six siblings wait at a gate
+    Given the solo line's Quote yielding once and then raising ConnectionError, or answering '{"price": "a lot"}', while the five other quotes wait at a gate and Screen answers at once
     When answer is awaited under the SDK with an in-memory exporter
     Then ExceptionGroup is raised holding exactly the ConnectionError, or the ValidationError with decimal_parsing at ("price",), noted "at request.solo.lines.[0].Quote"
-    And the group is noted "cancelled Screen, request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
-    And the six siblings were cancelled while waiting, the route span has status ERROR and no tca.passes, all seven action spans are its children, only the solo Quote's has status ERROR with tca.outcome "failed", the six others have tca.outcome "cancelled", and none carries tca.record
+    And the group is noted "cancelled request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
+    And the five quotes were cancelled while waiting, the route span has tca.outcome "failed", status ERROR, no tca.passes and no admitted event, all seven action spans are its children, only the solo Quote's has status ERROR with tca.outcome "failed", Screen's has tca.outcome "heard" with tca.record "Clear" though its record was never admitted, and the five others have tca.outcome "cancelled" without tca.record
 
   Scenario: Two answers interleaving across passes keep their evidence and traces apart
     Given the engine program's party valuing an element at what its name says, every Asked waiting at one gate and Notify at another
     When ran is awaited for {"each": [{"name": "2"}, {"name": "3"}]} and for {"each": [{"name": "25"}]} as two tasks, the Asked gate opened once three wait, the first awaited, then the Notify gate opened and the second awaited
     Then the replies are {"total":"5"} and {"total":"25"}, each route holds its own request by identity, the Dear holds the second request's element by identity
-    And the spans form two traces, every action span a child of its own trace's Operation span with tca.outcome "heard", Notify performed in pass 2, and both runs take 4 passes
+    And the spans form two traces, every action span a child of its own trace's Operation span with tca.outcome "heard", each Operation span with tca.outcome "answered" and one admitted event per action of its own trace, Notify performed in pass 2, and both runs take 4 passes
+
+  Scenario: A refused run is the business's no on the route span, not a failure
+    Given stalls, PARTY__SAYS='{"amount": "25"}' and one element, under the SDK with an in-memory exporter
+    When answer is awaited
+    Then ValidationError is raised with type relation, the Operation span has tca.outcome "refused" and one admitted event for request.each.[0].Asked.heard, and the Asked span has tca.outcome "heard"
 
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
     Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set before open() yields
@@ -207,7 +213,7 @@ Feature: The engine proves a program at startup, placing every class, and answer
   Scenario: An answer is one span per route and one per performed action
     Given the OpenTelemetry SDK with an in-memory exporter
     When answer is awaited for two elements
-    Then the root span is named Operation with attributes tca.request "Elements" and tca.passes 4
+    Then the root span is named Operation with attributes tca.request "Elements", tca.outcome "answered" and tca.passes 4
     And its children are two spans named Asked with tca.party "Party", tca.outcome "heard" and tca.record "Heard"
     And no attribute holds the amount the party said
 

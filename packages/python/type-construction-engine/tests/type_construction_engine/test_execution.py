@@ -19,6 +19,7 @@ from type_construction.engine import answer, config, hear, opened, proven, ran, 
 from type_construction.world import Connection, Record
 
 from . import occurrences as program
+from . import stalls
 from . import test_engine as valued
 from .occurrences import PERFORMED, Checkout, PlaceOrder, Quote, Screen
 from .test_occurrences import ORDER, exporting
@@ -35,12 +36,12 @@ OPENED: list[int] = []
 HELD: list[int] = []
 """The identity of the party each performed action held."""
 
-CANCELLED = (
-    "cancelled Screen, request.cart.lines.[0].Quote, request.cart.lines.[1].Quote,"
-    " request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
+QUOTES = (
+    "request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote,"
+    " request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
 )
-"""The note a pass leaves on its group when the solo line's quote fails: the six actions
-cancelled with it, in the order they were constructed."""
+"""The five quotes cancelled when the solo line's fails, in the order they were constructed;
+the screening, constructed at the root before them, comes first when it is cancelled too."""
 
 
 class Flight:
@@ -154,6 +155,12 @@ def grouped(failure: BaseException | None) -> TypeIs[ExceptionGroup[Exception]]:
     return isinstance(failure, ExceptionGroup)
 
 
+def admitted(route: ReadableSpan) -> list[str]:
+    """The paths of the records admitted on a route's span, in order; a failed or refused run's
+    span also carries the API's ``exception`` event."""
+    return [str((e.attributes or {})["tca.heard"]) for e in route.events if e.name == "admitted"]
+
+
 def by_name(spans: Sequence[ReadableSpan], name: str) -> list[ReadableSpan]:
     """The spans with a name."""
     return [s for s in spans if s.name == name]
@@ -201,7 +208,7 @@ async def test_a_close_that_raises_after_a_failed_answer_closes_the_rest_and_kee
     (down,) = group.exceptions
     assert isinstance(down, ConnectionError)
     assert down.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.__notes__ == [CANCELLED]
+    assert group.__notes__ == [f"cancelled Screen, {QUOTES}"]
     assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
 
 
@@ -239,6 +246,7 @@ async def test_a_cancellation_that_lands_during_shutdown_does_not_keep_the_rest_
 async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_answers_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    exporter = exporting()
     flight = Flight(7)
     monkeypatch.setattr(Quote, "perform", quoting(flight))
     monkeypatch.setattr(Screen, "perform", screening(flight))
@@ -271,6 +279,18 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     ]
     assert len(quotes) == 6
     assert all(isinstance(q, Quote) and q.party is deployment.catalog for q in quotes)
+    cancelled, answered = by_name(exporter.get_finished_spans(), "Checkout")
+    assert attributes(cancelled) == {"tca.request": "PlaceOrder", "tca.outcome": "cancelled"}
+    assert cancelled.status.status_code.name == "UNSET"
+    assert admitted(cancelled) == []
+    assert attributes(answered) == {
+        "tca.request": "PlaceOrder",
+        "tca.outcome": "answered",
+        "tca.passes": 4,
+    }
+    assert sorted(admitted(answered)) == sorted(
+        f"{s}.heard" for s in ("Screen", *QUOTES.split(", "), "request.solo.lines.[0].Quote")
+    )
 
 
 @pytest.mark.asyncio
@@ -282,32 +302,37 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     monkeypatch: pytest.MonkeyPatch, breaking: str, failure: type[Exception]
 ) -> None:
     exporter = exporting()
-    flight = Flight(6)
+    flight = Flight(5)
     monkeypatch.setattr(Quote, "perform", quoting(flight, breaking=breaking))
-    monkeypatch.setattr(Screen, "perform", screening(flight))
     request = PlaceOrder.model_validate_json(ORDER.replace('"pot"', f'"{breaking}"'))
     with pytest.raises(ExceptionGroup) as group:
         await answer(Checkout, request, config(program)(), proven(program))
     (failed,) = group.value.exceptions
     assert type(failed) is failure
     assert failed.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.value.__notes__ == [CANCELLED]
+    assert group.value.__notes__ == [f"cancelled {QUOTES}"]
     if isinstance(failed, ValidationError):
         assert [(e["type"], e["loc"]) for e in failed.errors()] == [("decimal_parsing", ("price",))]
-    assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
+    assert sorted(flight.cancelled) == ["mug", "mug", "tea", "tea", "tea"]
     assert flight.waiting == 0
+    assert PERFORMED == ["screen"]
     spans = exporter.get_finished_spans()
     (route,) = by_name(spans, "Checkout")
+    assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
     assert route.status.status_code.name == "ERROR"
-    assert "tca.passes" not in attributes(route)
+    assert admitted(route) == []
     actions = [s for s in spans if s.name != "Checkout"]
     assert len(actions) == 7
     assert parented(actions, route)
     (broken,) = [s for s in actions if s.status.status_code.name == "ERROR"]
     assert site(broken) == "request.solo.lines.[0].Quote"
     assert attributes(broken)["tca.outcome"] == "failed"
-    assert {attributes(s)["tca.outcome"] for s in actions if s is not broken} == {"cancelled"}
-    assert all("tca.record" not in attributes(s) for s in actions)
+    (screen,) = by_name(actions, "Screen")
+    assert attributes(screen)["tca.outcome"] == "heard"
+    assert attributes(screen)["tca.record"] == "Clear"
+    quotes = [s for s in actions if s is not broken and s is not screen]
+    assert {attributes(s)["tca.outcome"] for s in quotes} == {"cancelled"}
+    assert all("tca.record" not in attributes(s) for s in quotes)
 
 
 @pytest.mark.asyncio
@@ -359,6 +384,11 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
     (notify,) = by_name(spans, "Notify")
     assert attributes(notify)["tca.pass"] == 2
     assert {attributes(s)["tca.outcome"] for s in spans if s.name != "Operation"} == {"heard"}
+    for trace, route in routes.items():
+        assert attributes(route)["tca.outcome"] == "answered"
+        assert sorted(admitted(route)) == sorted(
+            f"{site(s)}.heard" for s in spans if trace_of(s) == trace and s.name != "Operation"
+        )
     traced = sorted(
         sorted(site(s) for s in spans if trace_of(s) == trace and s.name != "Operation")
         for trace in routes
@@ -368,3 +398,22 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
         ["request.each.[0].Asked", "request.each.[1].Asked"],
     ]
     assert (done.passes, later.passes) == (4, 4)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_refused_run_is_the_businesss_no_on_the_route_span_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "25"}')
+    request = stalls.Elements.model_validate_json('{"each": [{"name": "a"}]}')
+    with pytest.raises(ValidationError) as refusal:
+        await answer(stalls.Operation, request, config(stalls)(), proven(stalls))
+    assert [e["type"] for e in refusal.value.errors()] == ["relation"]
+    spans = exporter.get_finished_spans()
+    (route,) = by_name(spans, "Operation")
+    assert attributes(route) == {"tca.request": "Elements", "tca.outcome": "refused"}
+    assert admitted(route) == ["request.each.[0].Asked.heard"]
+    (asked,) = by_name(spans, "Asked")
+    assert attributes(asked)["tca.outcome"] == "heard"

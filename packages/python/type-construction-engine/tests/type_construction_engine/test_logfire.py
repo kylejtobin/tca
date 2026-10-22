@@ -55,7 +55,12 @@ def test_a_route_under_logfire_is_one_trace_of_the_engines_spans(tmp_path: Path)
     assert {s["trace"] for s in spans} == {route["trace"]}
     assert all(s["parent"] == route["span"] for s in actions)
     assert route["attributes"]["tca.request"] == "PlaceOrder"
+    assert route["attributes"]["tca.outcome"] == "answered"
     assert route["attributes"]["tca.passes"] == 4
+    assert sorted((e["name"], e["attributes"]["tca.heard"]) for e in route["events"]) == sorted(
+        ("admitted", s["attributes"]["tca.heard"]) for s in actions
+    )
+    assert all(s["events"] == [] for s in actions)
     assert sorted(s["attributes"]["tca.site"] for s in actions) == [
         "Screen",
         "request.cart.lines.[0].Quote",

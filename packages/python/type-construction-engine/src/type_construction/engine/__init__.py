@@ -59,9 +59,11 @@ each field no occurrence fills.
 
 ``opened`` enters each connection's ``open`` once and exits each once around whatever a server
 kind runs inside it, whatever the body raised and whatever an exit raises. Every answer is one
-OpenTelemetry span named for the route, with one child per performed action carrying the
-outcome the task had, heard, failed or cancelled; the engine depends on ``opentelemetry-api``
-only. The engine keeps nothing about a program between runs:
+OpenTelemetry span named for the route, carrying the outcome the run had, answered, refused,
+failed or cancelled, and one ``admitted`` event per record that entered a scope after its pass;
+one child span per performed action carries the outcome its task had, heard, failed or
+cancelled. Each outcome is read from the exit path that made it; the engine depends on
+``opentelemetry-api`` only. The engine keeps nothing about a program between runs:
 the proof is a value the server computes once and passes in.
 """
 
@@ -77,6 +79,7 @@ from typing import Literal, LiteralString, NamedTuple, Self, TypeIs, Union, get_
 
 from annotated_types import Ge, Gt, Le, Lt, MaxLen, MinLen
 from opentelemetry import trace
+from opentelemetry.trace import Span
 from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, ValidationError, model_validator
 from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefined
 
@@ -2179,20 +2182,37 @@ def construct(placed: Placement, given: Given, path: Site) -> BaseModel | Valida
 async def ran[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof
 ) -> Run[Q, A]:
-    """``answer`` with everything the construction knew kept: the run, inside the route's
-    span."""
+    """``answer`` with everything the construction knew kept: the run, inside the route's span,
+    whose ``tca.outcome`` is the outcome the run had, read from how it ended: ``answered``,
+    with ``tca.passes``; ``refused``, a ``ValidationError`` from a stall or a construction, the
+    business's no; ``failed``, a party's exception in its pass's group or any other, the span's
+    status set to error by the API; ``cancelled``, from outside, which is no error of the run
+    and leaves the status unset. Each record that entered a scope after its pass is one
+    ``admitted`` event on the span, with the record's class and path: an action heard in a pass
+    another action failed leaves none."""
     with tracer.start_as_current_span(
         route.__name__, attributes={"tca.request": type(request).__name__}
     ) as span:
-        found = await constructed(route, request, deployment, proof)
+        try:
+            found = await constructed(route, request, deployment, proof, span)
+        except CancelledError:
+            span.set_attribute("tca.outcome", "cancelled")
+            raise
+        except ValidationError:
+            span.set_attribute("tca.outcome", "refused")
+            raise
+        except Exception:
+            span.set_attribute("tca.outcome", "failed")
+            raise
+        span.set_attribute("tca.outcome", "answered")
         span.set_attribute("tca.passes", found.passes)
         return found
 
 
 async def constructed[Q: Request, A: Reply[Fact]](
-    route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof
+    route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof, span: Span
 ) -> Run[Q, A]:
-    """The passes of ``ran``."""
+    """The passes of ``ran``, admitting each record on the route's span."""
     placements = proof.placements(route)
     root = Scope((), (), None)
     arrived(request, REQUEST, root)
@@ -2236,7 +2256,12 @@ async def constructed[Q: Request, A: Reply[Fact]](
                 failed.add_note(f"cancelled {', '.join(cancelled)}")
             raise
         for p, task in zip(performed, tasks, strict=True):
-            arrived(task.result(), (*p.site, HEARD), p.scope)
+            record = task.result()
+            arrived(record, (*p.site, HEARD), p.scope)
+            span.add_event(
+                "admitted",
+                {"tca.record": type(record).__name__, "tca.heard": ".".join((*p.path, HEARD))},
+            )
         if not built:
             why = stalled(root, placements, refuted, proof)
             raise ValidationError.from_exception_data(route.__name__, why)
