@@ -172,7 +172,7 @@ Feature: The engine proves a program at startup, placing every class, and answer
   Scenario: A close that raises after a failed answer closes the rest and keeps the failure as its context
     Given the occurrences program's Catalog and Fraud recording their open and close, Fraud's close raising OSError, and the solo line's Quote raising ConnectionError once its six siblings wait at a gate
     When answer is awaited inside opened(deployment)
-    Then OSError is raised, its __context__ is the ExceptionGroup of the one ConnectionError noted "at request.solo.lines.[0].Quote", the group noted with the six cancelled occurrences, the six siblings were cancelled
+    Then OSError is raised, its __context__ is the ExceptionGroup of the one ConnectionError noted "at request.solo.lines.[0].Quote", the group noted "heard none; cancelled Screen, ...; admitted none" with the six cancelled occurrences, the six siblings were cancelled
     And the record is open:Catalog, open:Fraud, close:Fraud, close:Catalog
 
   Scenario: A cancellation that lands during shutdown does not keep the other connections open
@@ -191,7 +191,7 @@ Feature: The engine proves a program at startup, placing every class, and answer
     Given the solo line's Quote yielding once and then raising ConnectionError, or answering '{"price": "a lot"}', while the five other quotes wait at a gate and Screen answers at once
     When answer is awaited under the SDK with an in-memory exporter
     Then ExceptionGroup is raised holding exactly the ConnectionError, or the ValidationError with decimal_parsing at ("price",), noted "at request.solo.lines.[0].Quote"
-    And the group is noted "cancelled request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
+    And the group is noted "heard Screen; cancelled request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote; admitted none"
     And the five quotes were cancelled while waiting, the route span has tca.outcome "failed", status ERROR, no tca.passes and no admitted event, all seven action spans are its children, only the solo Quote's has status ERROR with tca.outcome "failed", Screen's has tca.outcome "heard" with tca.record "Clear" though its record was never admitted, and the five others have tca.outcome "cancelled" without tca.record
 
   Scenario: Two answers interleaving across passes keep their evidence and traces apart
@@ -204,6 +204,17 @@ Feature: The engine proves a program at startup, placing every class, and answer
     Given stalls, PARTY__SAYS='{"amount": "25"}' and one element, under the SDK with an in-memory exporter
     When answer is awaited
     Then ValidationError is raised with type relation, the Operation span has tca.outcome "refused" and one admitted event for request.each.[0].Asked.heard, and the Asked span has tca.outcome "heard"
+
+  Scenario: A premise the party decided against refuses the run at that field
+    Given the occurrences program's Cleared route, whose only conclusion holds Screened, and FRAUD__SAYS='{"status": "flagged", "reason": "velocity"}'
+    When answer is awaited
+    Then ValidationError is raised with exactly one error, type missing at loc ("Screened", "clear"), message "no instance fills Screened.clear at Screened, which holds Clear", not cycle
+    And the Cleared span has tca.outcome "refused" and seven admitted events, Screen.heard among them
+
+  Scenario: A construction that is not refutable refusing is a failure, not the business's no
+    Given fixed's placements taken unproven with Both.totals, a fixed pair, placed over the cart's lines, and a cart of three lines
+    When answer is awaited
+    Then ValidationError is raised titled "Both at Both" with type too_long at loc ("totals",), and the Checkout span has tca.outcome "failed" and status ERROR
 
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
     Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set before open() yields

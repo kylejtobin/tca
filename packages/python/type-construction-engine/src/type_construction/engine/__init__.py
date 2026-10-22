@@ -51,11 +51,13 @@ yet constructed in a scope at its site whose bound sites are present, ``cls.mode
 over the instances found there, a fresh scalar constructed for the holder, and a tuple field
 every element scope's instance at the bound sites, in element order, the empty tuple for no
 element. A relation or a selection that refuses is refuted in that scope and asked again next
-pass; any other refusal propagates. The pass's actions are performed together in one task group
-and each record enters the scope its action was built in, its elements fanning out under it.
-The run ends when the route constructs. A pass that builds nothing raises one
-``ValidationError`` naming each relation that did not hold, with the ordering observed, or
-each field no occurrence fills.
+pass; any other refusal is a failure of the construction and propagates. The pass's actions are
+performed together in one task group and each record enters the scope its action was built in,
+its elements fanning out under it. The run ends when the route constructs, or is refused when a
+pass builds nothing: one ``ValidationError`` naming each relation that did not hold, with the
+ordering observed, or each field no occurrence fills. The refusal is the construction model's,
+made of what its refutable kinds refused and what never arrived, and is raised by ``answer``;
+everything else that is raised is a failure.
 
 ``opened`` enters each connection's ``open`` once and exits each once around whatever a server
 kind runs inside it, whatever the body raised and whatever an exit raises. Every answer is one
@@ -2030,8 +2032,8 @@ def stalled(
     """Why a pass constructed nothing: one ``relation`` error per occurrence whose refusal said
     it did not hold, at its concrete path, with what was observed, leaving out one whose
     complement holds in the same scope, since that choice was decided; else one ``missing``
-    error per field no instance fills, at the concrete path the class was asked at; else
-    ``cycle``."""
+    error per field no instance fills, at the concrete path the class was asked at, unless a
+    pending class or a pending action's record would fill it; else ``cycle``."""
     causes = [
         r
         for r in refuted
@@ -2057,12 +2059,11 @@ def stalled(
         if placed.scope == scope.site and (*scope.site, placed.cls.__name__) not in scope.owned
     ]
     unbuilt = {placed.cls for _, placed in pending}
-    heard_ = hearers(proof.classes)
     for scope, placed in pending:
         for name, sites in placed.singles.items():
             classes_ = holds(placed.cls)[name]
             if not found_at(sites, classes_, scope) and not any(
-                c in unbuilt or c in heard_ for c in classes_
+                c in unbuilt or unbuilt.intersection(hearers_of(c, proof.classes)) for c in classes_
             ):
                 details.append(
                     fault(
@@ -2123,9 +2124,11 @@ async def answer[Q: Request, A: Reply[Fact]](
     across every scope, and each record enters the scope its action was built in once every
     action of the pass was heard; a library kind's exception cancels the group's other actions
     and propagates in an ``ExceptionGroup``, noted with the paths of the actions cancelled
-    with it, each of which may have had its effect. A pass that constructs nothing raises a
-    ``ValidationError`` naming each relation that did not hold or each field no instance
-    fills."""
+    with it. An action's effect may have happened whenever its task started: one heard
+    returned a validated record, one failed or cancelled may have had its effect and returned
+    none, and no record of the pass is admitted, which the group's note says. A pass that
+    constructs nothing is the refusal of the run: a ``ValidationError`` naming each relation
+    that did not hold or each field no instance fills."""
     return (await ran(route, request, deployment, proof)).route
 
 
@@ -2184,12 +2187,13 @@ async def ran[Q: Request, A: Reply[Fact]](
 ) -> Run[Q, A]:
     """``answer`` with everything the construction knew kept: the run, inside the route's span,
     whose ``tca.outcome`` is the outcome the run had, read from how it ended: ``answered``,
-    with ``tca.passes``; ``refused``, a ``ValidationError`` from a stall or a construction, the
-    business's no; ``failed``, a party's exception in its pass's group or any other, the span's
-    status set to error by the API; ``cancelled``, from outside, which is no error of the run
-    and leaves the status unset. Each record that entered a scope after its pass is one
-    ``admitted`` event on the span, with the record's class and path: an action heard in a pass
-    another action failed leaves none."""
+    with ``tca.passes``; ``refused``, the business's no, which the construction returns as a
+    value, as ``construct`` returns a refutable kind's refusal, and is raised from here;
+    ``failed``, anything raised, a construction that is not refutable refusing, a party's
+    exception in its pass's group or any other, the span's status set to error by the API;
+    ``cancelled``, from outside, which is no error of the run and leaves the status unset. Each
+    record that entered a scope after its pass is one ``admitted`` event on the span, with the
+    record's class and path: an action heard in a pass another action failed leaves none."""
     with tracer.start_as_current_span(
         route.__name__, attributes={"tca.request": type(request).__name__}
     ) as span:
@@ -2198,12 +2202,12 @@ async def ran[Q: Request, A: Reply[Fact]](
         except CancelledError:
             span.set_attribute("tca.outcome", "cancelled")
             raise
-        except ValidationError:
-            span.set_attribute("tca.outcome", "refused")
-            raise
         except Exception:
             span.set_attribute("tca.outcome", "failed")
             raise
+        if isinstance(found, ValidationError):
+            span.set_attribute("tca.outcome", "refused")
+            raise found
         span.set_attribute("tca.outcome", "answered")
         span.set_attribute("tca.passes", found.passes)
         return found
@@ -2211,8 +2215,9 @@ async def ran[Q: Request, A: Reply[Fact]](
 
 async def constructed[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof, span: Span
-) -> Run[Q, A]:
-    """The passes of ``ran``, admitting each record on the route's span."""
+) -> Run[Q, A] | ValidationError:
+    """The passes of ``ran``, admitting each record on the route's span: the run, or the
+    refusal of a pass that built nothing, as a value."""
     placements = proof.placements(route)
     root = Scope((), (), None)
     arrived(request, REQUEST, root)
@@ -2247,13 +2252,7 @@ async def constructed[Q: Request, A: Reply[Fact]](
             async with TaskGroup() as group:
                 tasks = [group.create_task(performed_in_span(p)) for p in performed]
         except BaseExceptionGroup as failed:
-            cancelled = [
-                ".".join(p.path)
-                for p, task in zip(performed, tasks, strict=True)
-                if task.cancelled()
-            ]
-            if cancelled:
-                failed.add_note(f"cancelled {', '.join(cancelled)}")
+            failed.add_note(outcomes_of(performed, tasks))
             raise
         for p, task in zip(performed, tasks, strict=True):
             record = task.result()
@@ -2264,5 +2263,22 @@ async def constructed[Q: Request, A: Reply[Fact]](
             )
         if not built:
             why = stalled(root, placements, refuted, proof)
-            raise ValidationError.from_exception_data(route.__name__, why)
+            return ValidationError.from_exception_data(route.__name__, why)
     return Run(route.model_validate(root.owned[(route.__name__,)]), root, passes)
+
+
+def outcomes_of(performed: list[Performed], tasks: list[Task[Record]]) -> str:
+    """What a failed pass's actions did, for the note on its group: which were heard, whose
+    effect happened and whose record was validated; which were cancelled, whose effect may
+    have happened; and that none was admitted. The failed ones are the group's exceptions,
+    each noted with its path; their effects may have happened too."""
+    heard = [
+        ".".join(p.path)
+        for p, t in zip(performed, tasks, strict=True)
+        if not t.cancelled() and t.exception() is None
+    ]
+    cancelled = [".".join(p.path) for p, t in zip(performed, tasks, strict=True) if t.cancelled()]
+    return (
+        f"heard {', '.join(heard) or 'none'}; cancelled {', '.join(cancelled) or 'none'};"
+        " admitted none"
+    )

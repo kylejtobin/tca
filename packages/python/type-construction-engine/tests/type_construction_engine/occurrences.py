@@ -1,8 +1,9 @@
 """A program in which one class occurs at many sites: a line in a cart, in the gifts, in a fixed
 pair and alone; a quote and a line total once per line wherever it is; a sum per carrier, each
 over its own lines; a share per line of the cart's total, and the cart's shares collected
-again; a screening heard as one of two records. Nothing here is written for the engine: no
-identifier, no source, no subclass per collection."""
+again; a screening heard as one of two records; a second route that concludes only when the
+screening clears. Nothing here is written for the engine: no identifier, no source, no subclass
+per collection."""
 
 import json
 from collections.abc import AsyncGenerator
@@ -293,6 +294,11 @@ class OrderDeclined(Reply[Declined]):
 
 class Checkout(Route[PlaceOrder, OrderPaid | OrderDeclined]):
     """Price an order and screen it."""
+
+
+class Cleared(Route[PlaceOrder, OrderPaid]):
+    """Price an order the screening clears; a flagged one has no conclusion here, and the run
+    is refused at Screened.clear."""
 
 
 class Deployment(Config):

@@ -15,11 +15,24 @@ import pytest
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import ValidationError
 
-from type_construction.engine import answer, config, hear, opened, proven, ran, scopes
+from type_construction.engine import (
+    Collected,
+    Placement,
+    Proof,
+    answer,
+    config,
+    hear,
+    models,
+    opened,
+    proven,
+    ran,
+    scopes,
+    symbolic,
+)
 from type_construction.world import Connection, Record
 
+from . import fixed, stalls
 from . import occurrences as program
-from . import stalls
 from . import test_engine as valued
 from .occurrences import PERFORMED, Checkout, PlaceOrder, Quote, Screen
 from .test_occurrences import ORDER, exporting
@@ -208,7 +221,7 @@ async def test_a_close_that_raises_after_a_failed_answer_closes_the_rest_and_kee
     (down,) = group.exceptions
     assert isinstance(down, ConnectionError)
     assert down.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.__notes__ == [f"cancelled Screen, {QUOTES}"]
+    assert group.__notes__ == [f"heard none; cancelled Screen, {QUOTES}; admitted none"]
     assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
 
 
@@ -310,7 +323,7 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     (failed,) = group.value.exceptions
     assert type(failed) is failure
     assert failed.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.value.__notes__ == [f"cancelled {QUOTES}"]
+    assert group.value.__notes__ == [f"heard Screen; cancelled {QUOTES}; admitted none"]
     if isinstance(failed, ValidationError):
         assert [(e["type"], e["loc"]) for e in failed.errors()] == [("decimal_parsing", ("price",))]
     assert sorted(flight.cancelled) == ["mug", "mug", "tea", "tea", "tea"]
@@ -417,3 +430,61 @@ async def test_a_refused_run_is_the_businesss_no_on_the_route_span_not_a_failure
     assert admitted(route) == ["request.each.[0].Asked.heard"]
     (asked,) = by_name(spans, "Asked")
     assert attributes(asked)["tca.outcome"] == "heard"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_premise_the_party_decided_against_refuses_the_run_at_that_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+    monkeypatch.setenv("FRAUD__SAYS", '{"status": "flagged", "reason": "velocity"}')
+    request = PlaceOrder.model_validate_json(ORDER)
+    with pytest.raises(ValidationError) as refusal:
+        await answer(program.Cleared, request, config(program)(), proven(program))
+    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == [
+        (
+            "missing",
+            ("Screened", "clear"),
+            "no instance fills Screened.clear at Screened, which holds Clear",
+        )
+    ]
+    (route,) = by_name(exporter.get_finished_spans(), "Cleared")
+    assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "refused"}
+    assert len(admitted(route)) == 7
+    assert "Screen.heard" in admitted(route)
+
+
+@pytest.mark.asyncio
+async def test_a_construction_that_is_not_refutable_refusing_is_a_failure_not_the_businesss_no(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    exporter = exporting()
+    lines = ("request", "cart", "lines", "[]")
+    both = Placement(
+        route=fixed.Checkout,
+        cls=fixed.Both,
+        scope=(),
+        singles={"cart": (("request", "cart"),)},
+        freshly={},
+        collections={"totals": Collected(site=lines[:-1], elements=((*lines, "LineTotal"),))},
+    )
+    unproven = Proof.model_construct(
+        program=fixed.__name__,
+        classes=models(fixed),
+        placed=(*symbolic(fixed.Checkout, models(fixed)).placed, both),
+        waiting=(),
+        faulted=(),
+    )
+    request = fixed.PlaceOrder.model_validate_json(
+        '{"cart": {"lines": [{"quantity": 1, "price": "1"}, {"quantity": 1, "price": "1"},'
+        ' {"quantity": 1, "price": "1"}]}}'
+    )
+    with pytest.raises(ValidationError) as failure:
+        await answer(fixed.Checkout, request, config(fixed)(), unproven)
+    assert failure.value.title == "Both at Both"
+    assert [(e["type"], e["loc"]) for e in failure.value.errors()] == [("too_long", ("totals",))]
+    (route,) = by_name(exporter.get_finished_spans(), "Checkout")
+    assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
+    assert route.status.status_code.name == "ERROR"
