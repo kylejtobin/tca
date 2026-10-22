@@ -12,7 +12,7 @@ A deployment sets connections through environment variables; a developer's check
 
 ## Evidence
 
-With `.env` containing `PAYMENTS__URL=https://p.test` and `PAYMENTS__KEY=k`, `ShopConfig()` constructed `payments.url.root` as `https://p.test/` and `payments.key.root` as a `SecretStr`. `SettingsConfigDict(**PRODUCT, ...)` passed basedpyright strict; `ConfigDict(**PRODUCT, validate_by_name=True, ...)` for `Record` did not, so `Record`'s config is written out in full.
+`SettingsConfigDict(**PRODUCT, ...)` passed basedpyright strict; `ConfigDict(**PRODUCT, validate_by_name=True, ...)` for `Record` did not, so `Record`'s config is written out in full.
 
 ## Consequences
 

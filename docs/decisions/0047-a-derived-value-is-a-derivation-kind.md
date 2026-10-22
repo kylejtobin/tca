@@ -16,7 +16,7 @@ A `@computed_field` on a fact returning the arithmetic, `self.price.amount.root 
 
 ## Evidence
 
-`LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(3)).root` is `Decimal("7.50")`. `Lines(of=(LineTotal 7.50, LineTotal 125.00)).root` is `Decimal("132.50")` and `Lines(of=()).root` is `Decimal(0)` for `class Lines(Sum[LineTotal])`. In the engine's shop, `LineTotal` was constructed once per line from the `UnitPrice` the catalog's record carried and the `Quantity` the line carried, and `Reduced` from `LineTotal` and its defaulted `Rate`; a one-line order of fifty gold dumped `{"total":"112.500","charges":["ch_1"],"cheapest":"125.00"}`.
+`LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(3)).root` is `Decimal("7.50")`. `Lines(of=(LineTotal 7.50, LineTotal 125.00)).root` is `Decimal("132.50")` and `Lines(of=()).root` is `Decimal(0)` for `class Lines(Sum[LineTotal])`. In the engine's test program, `Total(Sum[Amount])` over two elements the party valued at 2.50 was `5.00`, and over no element was `0`.
 
 ## Consequences
 

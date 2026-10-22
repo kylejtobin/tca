@@ -28,7 +28,7 @@ You own this model. The measure of every decision is whether a developer says le
 ## Where things are
 
 - `.agents/skills/tca-python-dev`: the developer's reference, what to write and what the engine does with it.
-- `.agents/skills/smell-check`: the six line patterns that mark procedure on a page; `just check` runs it on every program.
+- `.agents/skills/smell-check`: the seven line patterns that mark procedure on a page; `just check` runs it on every program.
 - `.agents/skills/tca-python-package`, `tca-infra`, `naming-guidelines`: packages, build, names.
 - `docs/product.md`: who this is for, the promise, the acceptance checks.
 - `docs/decisions/`: every decision with its evidence. `TODO.md`: what is not built, in order.

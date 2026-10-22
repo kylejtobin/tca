@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""smell-check: six line patterns that mark procedure on a TCA page, each with the type to write instead.
+"""smell-check: seven line patterns that mark procedure on a TCA page, each with the type to write instead.
 
 Usage: smell-check <path>...   Per hit: LABEL file:line: text, then the instruction. Exit 1 on any hit.
 """
@@ -38,6 +38,8 @@ RULES = [
      lambda m: REFLECTION[next(g for g in m.groups() if g)]),
     ("PROCEDURE", re.compile(r"^\s*(if|for|while|try|except|raise)\b|\b(None)\b"),
      lambda m: PROCEDURE[next(g for g in m.groups() if g)]),
+    ("COMPUTATION", re.compile(r"\b(sum|min|max|len|sorted|abs|round|any|all|map|filter|zip|enumerate)\(|^\s*return\b.*\s[-+*/%]\s"),
+     lambda m: "a computed field is a projection: it reads fields and constructs a declared class; a value computed from others is a derivation kind, a comparison a relation kind, a choice a selection kind, each declared once as a subclass"),
     ("PRIMITIVE", re.compile(r"^\s+(?!root\b)(\w+):\s*(str|int|float|bool|bytes|Decimal|datetime|date|UUID|timedelta)\b"),
      lambda m: f"`{m.group(1)}` has a meaning and a range the primitive does not carry: write `class {m.group(1).title().replace('_', '')}(Scalar[{m.group(2)}])` with its constraint in Field(...) and hold that"),
 ]

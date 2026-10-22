@@ -1,5 +1,5 @@
 Feature: Derivation, relation and selection kinds construct a value, a rule or a choice from what they hold
-  Decision records 0047, 0048, 0049. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
+  Decision records 0047, 0048, 0049. Every relation kind subclasses Relation and declares its constraints; every selection kind subclasses Selection. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
   Rate(Scalar[Decimal]) with root defaulted to 0.9, Sku(Scalar[str]), Line(Value) with sku and quantity;
   LineTotal(Times[UnitPrice, Quantity]); Reduced(Times[LineTotal, Rate]) with right defaulted to Rate();
   Lines(Sum[LineTotal]); Allowed(Between[Quantity, Quantity, Quantity]); Same(Equal[Quantity, Quantity]);
@@ -60,9 +60,13 @@ Feature: Derivation, relation and selection kinds construct a value, a rule or a
     When Cheapest(of=(cheap, dear, cheap_again)).chosen and Dearest(of=(cheap, dear, cheap_again)).chosen are read
     Then they are cheap and dear, by identity
 
-  Scenario: Least refuses no elements
-    When Cheapest(of=()) is constructed
-    Then ValidationError is raised with type too_short at loc ("of",)
+  Scenario: A selection with no element to choose from refuses with relation
+    When Cheapest(of=()), Dearest(of=()), Opening(of=()) and Sole(of=()) are constructed
+    Then each raises ValidationError with one error of type relation and message "no element to choose from"
+
+  Scenario: A relation kind declares its meaning as constraints between its operand fields
+    When AtMost.constraints, Beyond.constraints, Between.constraints and Equal.constraints are read
+    Then they are (value - bound <= 0,), (bound - value < 0,), (lower - value <= 0, value - upper <= 0) and (value - bound <= 0, bound - value <= 0)
 
   Scenario: First chooses by position over any element class
     Given tea and jam, two Lines

@@ -52,7 +52,6 @@ The interface is defined once. ``Route[Q, A]`` with the fields and docstrings on
 response schema and the OpenAPI document from the same classes. A docstring under
 a field is its description in both.
 
-Example, a shop that prices an order and charges for it::
 
     class Quantity(Scalar[int]):
         root: int = Field(gt=0)
@@ -91,7 +90,7 @@ from abc import abstractmethod
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import partial
-from typing import Generic, LiteralString, Self, TypeVar, override
+from typing import ClassVar, Generic, LiteralString, NamedTuple, Self, TypeVar, override
 from uuid import UUID, uuid4
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, model_validator
@@ -105,6 +104,7 @@ __all__ = [
     "Beyond",
     "Config",
     "Connection",
+    "Constraint",
     "Duration",
     "Equal",
     "Fact",
@@ -116,10 +116,12 @@ __all__ = [
     "Measure",
     "Only",
     "Record",
+    "Relation",
     "Reply",
     "Request",
     "Route",
     "Scalar",
+    "Selection",
     "Setting",
     "Sum",
     "Times",
@@ -385,6 +387,66 @@ def refused(message: LiteralString, value: BaseModel, bound: BaseModel) -> Pydan
     )
 
 
+class Constraint(NamedTuple):
+    """One linear constraint a relation kind places on two of its operands, by field name:
+    ``less - than <= by``, or ``less - than < by`` when ``strict``.
+
+    A relation kind declares its meaning as a tuple of these, and the proof reads them: with
+    every scalar class as one variable, since a run holds one instance per class, and every
+    scalar's ``Field`` bounds as constraints on its variable, the proof decides whether a
+    relation can ever hold, whether it can ever refuse, and whether two facts can both hold,
+    by the feasibility of a system of difference constraints. A derived value is a variable
+    with no bounds, so what the proof cannot see it treats as possible, and refuses nothing
+    it cannot prove.
+    """
+
+    less: str
+    """The field whose operand is the smaller side."""
+    than: str
+    """The field whose operand is the larger side."""
+    by: Decimal = Decimal(0)
+    """How far ``less`` may exceed ``than``: ``less - than`` is at most this."""
+    strict: bool = False
+    """Whether the inequality is strict."""
+
+
+class Relation(Fact):
+    """A rule over several values: a fact that constructs when the rule holds and refuses
+    with ``relation`` when it does not.
+
+    Every relation kind subclasses this and declares ``constraints``, its meaning as linear
+    constraints between its operand fields, beside the one ``model_validator`` that applies
+    the rule to the instance. The proof knows a relation can be absent from a run that holds
+    its operands, tells two relation kinds apart by their constraints, and refuses a union
+    two relations cannot tell apart; a relation kind that declares no constraints is one the
+    proof cannot decide, and it refuses the program that holds it.
+    """
+
+    constraints: ClassVar[tuple[Constraint, ...]] = ()
+    """The kind's meaning: what must hold among its operands for it to construct."""
+
+
+class Selection[E: BaseModel](Fact):
+    """A choice among elements: a fact over the elements a child run produced, whose
+    ``chosen`` is the one selected.
+
+    Every selection kind subclasses this. With no element there is nothing to choose, and the
+    selection refuses with ``relation``: a choice among nothing does not exist, and a fact
+    that holds it does not either.
+    """
+
+    of: tuple[E, ...]
+    """The elements chosen among, in element order."""
+
+    @model_validator(mode="after")
+    def chooses(self) -> Self:
+        """Refuse with ``relation`` when there is no element to choose from."""
+        if not self.of:
+            refusal = PydanticCustomError("relation", "no element to choose from")
+            raise refusal
+        return self
+
+
 class Times[A: Numeric, B: Numeric](Measure):
     """The product of two values.
 
@@ -418,7 +480,7 @@ class Sum[E: Numeric](Measure):
 
     The elements are what a child run produced once per element, collected in order::
 
-        class OrderTotal(Sum[LinePaid]): ...
+
     """
 
     of: tuple[E, ...]
@@ -430,7 +492,7 @@ class Sum[E: Numeric](Measure):
         return sum((Decimal(e.root) for e in self.of), Decimal(0))
 
 
-class AtMost[A: Numeric, B: Numeric](Fact):
+class AtMost[A: Numeric, B: Numeric](Relation):
     """A relation between two values: ``value`` is at most ``bound``.
 
     A rule that compares two values is declared as a relation kind with the two values as
@@ -468,6 +530,8 @@ class AtMost[A: Numeric, B: Numeric](Fact):
     can never hold, or can never refuse.
     """
 
+    constraints = (Constraint("value", "bound"),)
+
     value: A
     """The value the relation is about."""
     bound: B
@@ -482,10 +546,12 @@ class AtMost[A: Numeric, B: Numeric](Fact):
         return self
 
 
-class Beyond[A: Numeric, B: Numeric](Fact):
+class Beyond[A: Numeric, B: Numeric](Relation):
     """A relation between two values: ``value`` is beyond ``bound``. The complement of
     ``AtMost`` over the same two operands; see ``AtMost`` for how a rule is written with the
     two."""
+
+    constraints = (Constraint("bound", "value", strict=True),)
 
     value: A
     """The value the relation is about."""
@@ -501,7 +567,7 @@ class Beyond[A: Numeric, B: Numeric](Fact):
         return self
 
 
-class Between[A: Numeric, L: Numeric, U: Numeric](Fact):
+class Between[A: Numeric, L: Numeric, U: Numeric](Relation):
     """A relation among three values: ``value`` is at least ``lower`` and at most ``upper``.
 
     ::
@@ -512,6 +578,8 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Fact):
     value under the lower bound, written with the operands reversed, and ``Beyond[A, U]``
     for one over the upper.
     """
+
+    constraints = (Constraint("lower", "value"), Constraint("value", "upper"))
 
     value: A
     """The value the relation is about."""
@@ -533,13 +601,15 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Fact):
         return self
 
 
-class Equal[A: Numeric, B: Numeric](Fact):
+class Equal[A: Numeric, B: Numeric](Relation):
     """A relation between two values: ``value`` equals ``bound``, compared exactly.
 
     ::
 
         class Settled(Equal[AmountPaid, AmountDue]): ...
     """
+
+    constraints = (Constraint("value", "bound"), Constraint("bound", "value"))
 
     value: A
     """The value the relation is about."""
@@ -555,7 +625,7 @@ class Equal[A: Numeric, B: Numeric](Fact):
         return self
 
 
-class Least[E: Numeric](Fact):
+class Least[E: Numeric](Selection[E]):
     """The element whose value is least.
 
     A choice among elements is declared as a selection kind with the element class as its
@@ -567,20 +637,14 @@ class Least[E: Numeric](Fact):
     Ties go to the earliest element.
     """
 
-    of: tuple[E, ...] = Field(min_length=1)
-    """The elements chosen among, in element order; at least one."""
-
     @property
     def chosen(self) -> E:
         """The element whose value is least."""
         return min(self.of, key=lambda e: Decimal(e.root))
 
 
-class Greatest[E: Numeric](Fact):
+class Greatest[E: Numeric](Selection[E]):
     """The element whose value is greatest; see ``Least``. Ties go to the earliest element."""
-
-    of: tuple[E, ...] = Field(min_length=1)
-    """The elements chosen among, in element order; at least one."""
 
     @property
     def chosen(self) -> E:
@@ -588,12 +652,9 @@ class Greatest[E: Numeric](Fact):
         return max(self.of, key=lambda e: Decimal(e.root))
 
 
-class First[E: BaseModel](Fact):
+class First[E: BaseModel](Selection[E]):
     """The first element, in element order; see ``Least``. Any element class, not only a
     numeric one."""
-
-    of: tuple[E, ...] = Field(min_length=1)
-    """The elements chosen among, in element order; at least one."""
 
     @property
     def chosen(self) -> E:
@@ -601,7 +662,7 @@ class First[E: BaseModel](Fact):
         return self.of[0]
 
 
-class Only[E: BaseModel](Fact):
+class Only[E: BaseModel](Selection[E]):
     """The one element, when there is exactly one.
 
     A rule that a collection holds a single thing. With more than one, or none, it refuses
@@ -610,9 +671,6 @@ class Only[E: BaseModel](Fact):
 
         class Sole(Only[Quote]): ...
     """
-
-    of: tuple[E, ...]
-    """The elements, in element order."""
 
     @property
     def chosen(self) -> E:
@@ -754,7 +812,6 @@ class Config(BaseSettings):
     same names. A missing or malformed variable fails at startup with the field
     named::
 
-        class ShopConfig(Config):
             catalog: Catalog
             payments: Payments
     """

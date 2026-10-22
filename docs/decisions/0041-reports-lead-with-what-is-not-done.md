@@ -16,7 +16,7 @@ A report states first what is not done and why, whole. Checks are two recipes: `
 
 ## Evidence
 
-`uv run just check` and `uv run just audit` exit 0 on the host, with the import contracts reporting three kept, none broken, thirteen tests passing, and pip-audit reporting no vulnerability beyond the one ignored; the commit hook ran both on commit c1db904.
+`uv run just check` and `uv run just audit` exit 0 on the host, with the import contracts reporting three kept, none broken, twenty-five tests passing, and pip-audit reporting no vulnerability beyond the one ignored; the commit hook ran both on commit c1db904.
 
 ## Consequences
 

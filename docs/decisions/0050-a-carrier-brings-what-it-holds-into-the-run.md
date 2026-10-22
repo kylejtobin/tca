@@ -12,11 +12,11 @@ A derivation holding the record and the value and reading the operand by field n
 
 ## Decision
 
-A request, a record and a value carry: when one enters the run, the scalars and values its single fields hold enter under their classes, and what those values hold enters in turn. The request carries when the run is seeded; a record carries when its action's answer enters; a value carries when it is constructed in a pass or when it is an element of a child run (0044). The proof reads the same: `carried(cls)` is what a carrier brings with it, and `elements(cls)` brings each element's carried classes to the per-element scope. A fact, an action, a reply and a route do not carry. Exactly one carrying class holds each scalar or value class, and the proof refuses a second as `carrier`, so a scalar is named by its role: `UnitPrice` on the catalog's record, `OrderTotal` on the reply, never `Amount` on both.
+A request, a record and a value carry: when one enters the run, the scalars and values its single fields hold enter under their classes, and what those values hold enters in turn. The request carries when the run is seeded; a record carries when its action's answer enters; a value carries when it is constructed in a pass or when it is an element of a child run (0044). The proof reads the same: `carried(cls)` is what a carrier brings with it, and the elements a request or a record holds join with what each carries; which run a carried class belongs to is read by descent through its carrier (0044). A fact, an action, a reply and a route do not carry. Exactly one carrying class holds each scalar or value class, and the proof refuses a second as `carrier`, so a scalar is named by its role, never one name on two carriers.
 
 ## Evidence
 
-`prove(Checkout, shop)` placed `Sku` and `Quantity` once per element, carried by `Line`, and `UnitPrice` once per element, carried by `Price`; `LineTotal(Times[UnitPrice, Quantity])` constructed once per line from them, and the reply of a three-line order dumped `{"total":"15.00","charges":["ch_1","ch_1","ch_1"],"cheapest":"2.50"}`. `Reason`, carried by `Flagged`, was placed once per run.
+In the engine's test program, `Amount` is carried by `Heard`, which `Asked` hears once per element: `descends(Amount)` was `{Element}`, `Low(AtMost[Amount, Limit])` constructed once per element from the carried `Amount` and the defaulted `Limit`, and `Total(Sum[Amount])` summed two carried amounts to `5.00`. `Name`, carried by `Element`, entered each child run with its element. In the program with the faults, `Name` carried by both `Element` and `Heard` was refused at startup as `carrier` at `("Name",)`.
 
 ## Consequences
 

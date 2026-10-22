@@ -16,7 +16,7 @@ The engine depends on `opentelemetry-api`. `answer` is one span named for the ro
 
 ## Evidence
 
-Under the SDK with an in-memory exporter, a two-line order of the engine's shop produced one `Checkout` span with `tca.request=PlaceOrder` and `tca.passes=4`, and five children of it: one `Screen` with `tca.party=Fraud, tca.record=Clear`, two `Quote` with `tca.party=Catalog, tca.record=Price` and two `Charge` with `tca.party=Payments, tca.record=Charged`, every status unset, and no attribute value containing the sku, the price or the charge id.
+Under the SDK with an in-memory exporter, two elements through the engine's test program produced one `Operation` span with `tca.request=Elements` and `tca.passes=3`, and two child spans named `Asked` with `tca.party=Party` and `tca.record=Heard`; no attribute held the amount the party said.
 
 ## Consequences
 

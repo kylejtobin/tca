@@ -3,7 +3,7 @@
 
 Usage: new-package <name> <description>
 
-    <name>         the short name: lower-case words joined by hyphens, as in `shop` or `noun-list`.
+    <name>         the short name: lower-case words joined by hyphens, as in `noun-list`.
                    The distribution is type-construction-<name>, the module type_construction.<name>
                    with hyphens as underscores, and the tests package type_construction_<name>.
     <description>  one sentence, for pyproject.toml and the README.
@@ -79,7 +79,7 @@ def main(argv: list[str]) -> None:
         fail("usage: new-package <name> <description>")
     name, description = argv[1], argv[2].strip()
     if not re.fullmatch(r"[a-z][a-z0-9]*(-[a-z0-9]+)*", name):
-        fail("the name is lower-case words joined by hyphens, as in `shop` or `noun-list`")
+        fail("the name is lower-case words joined by hyphens, as in `noun-list`")
     if not description or '"' in description:
         fail("the description is one sentence with no double quotes")
 

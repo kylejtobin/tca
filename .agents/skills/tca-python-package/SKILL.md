@@ -11,7 +11,7 @@ Run it:
 .agents/skills/tca-python-package/new-package <name> <description>
 ```
 
-`<name>` is the short name in lower-case words joined by hyphens, `shop` or `noun-list`. `<description>` is one sentence in quotes. Everything else is derived: the distribution is `type-construction-<name>`, the module is `type_construction.<name>` with hyphens as underscores, the tests package is `type_construction_<name>`.
+`<name>` is the short name in lower-case words joined by hyphens, `noun-list`. `<description>` is one sentence in quotes. Everything else is derived: the distribution is `type-construction-<name>`, the module is `type_construction.<name>` with hyphens as underscores, the tests package is `type_construction_<name>`.
 
 It writes:
 

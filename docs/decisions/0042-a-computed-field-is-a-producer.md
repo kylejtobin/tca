@@ -16,7 +16,7 @@ A computed field whose return type names classes produces them. `LinePriced.amou
 
 ## Evidence
 
-For three teas at 2.50 the run held a `SmallAmount` and constructed `FullPrice`; for fifty gold it held a `LargeAmount` and constructed `Discounted`; a three-line order built one of each per line. A second fact whose computed field also returned `LargeAmount | SmallAmount` was refused at startup: "2 computed fields produce LargeAmount: LinePriced.amount, Twice.amount; exactly one must".
+`produced(Picked)`, for a fact with one computed field `which -> Amount | Limit`, returned `{"which": (Amount, Limit)}`, read from `model_computed_fields`. The proof's descent read follows a produced class to its producer, so a class a computed field returns belongs to the run its producer belongs to.
 
 ## Consequences
 

@@ -16,7 +16,7 @@ A page contains subclasses of the kinds, `StrEnum` subclasses, `@computed_field`
 
 ## Evidence
 
-The smell check on a page with one of each construct reported 10 hits across all six labels; on the demo page it reported none. See `tests/features/smell_check.feature`.
+The smell check on a page with one of each construct reported 11 hits across all seven labels; on the demo page it reported none. See `tests/features/smell_check.feature`.
 
 ## Consequences
 

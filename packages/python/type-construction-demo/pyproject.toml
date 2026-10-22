@@ -1,7 +1,7 @@
 [project]
 name = "type-construction-demo"
 version = "0.0.0"
-description = "The TCA demo program: the shop, the public reference the tca-python-demo pages are copied from."
+description = "The TCA demo program: the public reference the tca-python-demo pages are copied from."
 requires-python = ">=3.14"
 license = "LicenseRef-BSD-3-Clause-Commons-Clause"
 license-files = ["LICENSE"]

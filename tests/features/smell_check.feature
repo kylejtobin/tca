@@ -23,6 +23,10 @@ Feature: The smell check reports procedure on a page with the construct to write
   Scenario: Any, object and cast are WEAKENED
     Then it reports WEAKENED on "def helper(self, x: Any) -> object:" and on the cast line
 
+  Scenario: A computation in a computed field is COMPUTATION and names the kind to declare
+    Given the page also has the lines "return Total(sum((v.amount.root for v in self.of.valued), Decimal(0)))", "return Total(self.of.total.root * 2)" and "return Total(self.of.total.root)"
+    Then it reports COMPUTATION on the sum line and on the "* 2" line with "a computed field is a projection", and not on the projection
+
   Scenario: getattr is REFLECTION and names the field
     Then it reports REFLECTION on the getattr line with "a lookup by name"
 

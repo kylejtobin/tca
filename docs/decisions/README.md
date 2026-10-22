@@ -54,4 +54,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0048 | A rule over values is a relation kind, and its refusal is the other outcome |
 | 0049 | A choice among elements is a selection kind |
 | 0050 | A request, a record or a value carries the scalars and values it holds into the run |
-| 0051 | The proof refuses a union whose members it can see both constructing, and a relation it can see never holding or never refusing |
+| 0051 | The proof decides from the relations' constraints and the scalars' bounds whether two union members can both hold and whether a relation can ever hold or ever refuse |
+| 0052 | A class no field names is refused at startup, as the mirror of a field no class fills |
+| 0053 | A stalled run names the relation that did not hold and the field no class fills, in the run each was asked from |
+| 0054 | The pass's actions run in one task group, a client's exception propagates in a group, and a connection that fails to open closes what opened |

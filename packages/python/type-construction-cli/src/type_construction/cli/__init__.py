@@ -1,7 +1,5 @@
 """Runs a program's route from the command line.
 
-``shop checkout --sku tea --quantity 3`` runs the route ``Checkout`` of the program
-registered as ``shop``. The options are rendered from the request's JSON schema,
 ``Q.model_json_schema()``, the document FastAPI publishes as OpenAPI. The schema is
 parsed once into the node classes below; a discriminator chooses each node's class from
 the keys it carries, and each node knows how it renders: a primitive is one option with its
@@ -14,11 +12,9 @@ strict in code, and a field that was not given is reported by Pydantic as ``miss
 Connections come from the environment and ``.env`` through the program's ``Config``. The
 reply's computed fields are printed as JSON.
 
-``shop`` or ``shop --help`` lists the routes with their docstrings and the environment
-variables the config reads. ``shop checkout --help`` lists the request's options. A
 program that does not prove, a request that does not construct, or a deployment with a
-variable missing prints the ``ValidationError`` to standard error and exits 1. A route
-that does not exist exits 2.
+variable missing prints the ``ValidationError``
+to standard error and exits 1. A route that does not exist exits 2.
 
 The program is the module the project file names under
 ``[project.entry-points."type_construction.programs"]``; the entry's name is the command
@@ -450,14 +446,22 @@ def usage(
 
 def main(argv: list[str] | None = None, name: str | None = None) -> int:
     """Run one route of the program named by the command, or list the routes; a
-    ``ValidationError`` anywhere, from the proof, the request or the deployment, is printed
-    to standard error with exit code 1."""
+    ``ValidationError`` anywhere, from the proof, the request, the deployment or a party's
+    answer, is printed to standard error with exit code 1. A party's own exception propagates
+    in the ``ExceptionGroup`` the engine raised it in."""
     args = sys.argv[1:] if argv is None else argv
     prog = Path(sys.argv[0]).name if name is None else name
     try:
         return ran(prog, args, program(prog))
     except ValidationError as refusal:
         print(refusal, file=sys.stderr)
+        return 1
+    except ExceptionGroup as group:
+        refusals, others = group.split(ValidationError)
+        if refusals is None or others is not None:
+            raise
+        for refusal in refusals.exceptions:
+            print(refusal, file=sys.stderr)
         return 1
 
 

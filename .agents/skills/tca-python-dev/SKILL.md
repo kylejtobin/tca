@@ -50,7 +50,7 @@ The computation kinds, each a `Fact` you subclass with your classes as the param
 | `First[E]` | the first element | `.chosen` |
 | `Only[E]` | the one element, when there is exactly one | `.chosen` |
 
-`A`, `B`, `L`, `U` and `E` are a `Scalar` over `Decimal` or `int`, or another derivation; the checker refuses anything else. Ready-made: `Instant` and `Identity` construct themselves when declared on a fact; `Duration` is a positive `timedelta`. A `StrEnum` subclass is a closed word list.
+`A`, `B`, `L`, `U` and `E` are a `Scalar` over `Decimal` or `int`, or another derivation; the checker refuses anything else. Every relation kind subclasses `Relation` and declares its meaning as `Constraint`s between its operand fields, which the proof reads to decide what two outcomes can both hold; every selection kind subclasses `Selection` and refuses when there is nothing to choose. Ready-made: `Instant` and `Identity` construct themselves when declared on a fact; `Duration` is a positive `timedelta`. A `StrEnum` subclass is a closed word list.
 
 ## The five shapes
 
@@ -144,7 +144,7 @@ class Cheapest(Least[LineTotal]):
     """The line that costs least."""
 ```
 
-The engine collects every line's `LineTotal` and constructs `Cheapest` once; `self.of.cheapest.chosen` on the reply is the chosen one. `Only[E]` refuses unless there is exactly one element, the same way a relation refuses, so `Only[Quote]` and `Several[Quote]` held in a union are a choice on how many came back.
+The engine collects every line's `LineTotal` and constructs `Cheapest` once; `self.of.cheapest.chosen` on the reply is the chosen one. A selection over no element refuses, the same way a relation refuses: a choice among nothing does not exist, so declare the outcome for none, or refuse an empty collection at the request with `Field(min_length=1)`. `Only[E]` refuses unless there is exactly one element.
 
 ## A party that says no
 
@@ -194,18 +194,13 @@ In the program's `pyproject.toml`:
 
 ```toml
 [project.entry-points."type_construction.programs"]
-shop = "shop"
 
 [project.scripts]
-shop = "type_construction.cli:main"
 ```
 
 The entry's name is the command; its value is the module holding the routes and the config. Then:
 
 ```
-uv run shop --help                      # every route with its docstring; every variable the config reads
-uv run shop checkout --help             # every field of PlaceOrder with its docstring and its constraint
-uv run shop checkout --lines '{"sku":"tea","quantity":3}' --lines '{"sku":"gold","quantity":50}'
 ```
 
 A `Value` field is dotted; a tuple repeats; a tuple of values takes one JSON object per repeat; a `StrEnum` lists its choices. Connections come from the environment or `.env`: `PAYMENTS__URL`, `PAYMENTS__KEY`. A value outside a constraint exits 1 with the field named. The HTTP server, when built, serves the same routes from the same classes with the same descriptions in its OpenAPI document; choosing one or both changes no class.
@@ -214,14 +209,14 @@ A `Value` field is dotted; a tuple repeats; a tuple of values takes one JSON obj
 
 The contract. You rely on it; you never implement any of it.
 
-- **At startup, the proof.** Starts from each route's request, what it carries, and the config's connections, and asks, pass by pass, which classes can exist: a class joins when every required field names a class that has joined; an action's records, a request's or record's elements, and the scalars and values a request, a record or a value holds join with their class. Refuses the program, naming every fault at once in your class names: the field no class fills; a record two actions hear; a class two computed fields produce; a scalar two carriers hold; a party the config holds twice; two classes that hold each other; a route that would exist once per element; a tuple collecting a once-per-run class; two union members that could both construct; a relation its operands' constraints make certain or impossible.
+- **At startup, the proof.** Starts from each route's request, what it carries, and the config's connections, and asks, pass by pass, which classes can exist: a class joins when every required field names a class that has joined; an action's records, a request's or record's elements, and the scalars and values a request, a record or a value holds join with their class. Refuses the program, naming every fault at once in your class names: the field no class fills; the class no field holds; a record two actions hear; a class two computed fields produce; a scalar two carriers hold; a party the config holds twice; two classes that hold each other; a route that would exist once per element; a tuple collecting a once-per-run class; a class that would exist per element of two things; a record heard per element that holds a collection; a relation its operands' bounds make certain or impossible; a relation kind that declares no constraints; two union members that could both hold, decided from the relations' constraints and the scalars' bounds.
 - **Receive.** An HTTP body is validated strict as `Q` in JSON mode. A command line is validated leniently from text. Your classes stay strict in code.
-- **Construct.** Each pass asks Pydantic for every class not yet built, `model_validate` from the instances its fields name. A class whose fields are still missing, or whose relation does not hold, does not exist yet; a union member that never exists is never built, so the holder's union is the choice. A request, a record and a value bring the scalars and values they hold into the run. A per-element class is constructed once per element, in a child run that sees the parent's instances.
-- **Act.** An action constructs when the fact that intends it and its party exist; then `perform` runs through its library kind and the response is validated as `T`, a union choosing its member. The actions of one pass run together.
+- **Construct.** Each pass asks Pydantic for every class not yet built, `model_validate` from the instances its fields name, in the run the class belongs to, which is read from its fields: a class whose fields reach an element exists once per element, in a child run that sees the parent's instances; any other exists once. A class whose fields are still missing, or whose relation or selection does not hold, does not exist yet; a union member that never exists is never built, so the holder's union is the choice. A request, a record and a value bring the scalars and values they hold into the run. A collection with no element is the empty tuple, so a sum of nothing is zero and a choice among nothing refuses. A pass that builds nothing ends the request naming each relation that did not hold and each field no class fills.
+- **Act.** An action constructs when its fields are filled; then `perform` runs through its library kind and the response is validated as `T`, a union choosing its member. The actions of one pass run together in one task group; one client's exception cancels the others and propagates in an `ExceptionGroup`. The engine never retries, times out or compensates: those are the library kind's, and an idempotency key is a field on the action.
 - **Answer.** The reply constructs from its fact, the route constructs from the request and the reply, and that is the end of the run; the reply's computed fields are serialized.
-- **Lifecycle.** Every connection is opened once at startup and closed once at shutdown.
+- **Lifecycle.** Every connection is opened once at startup and closed once at shutdown; when one fails to open, those already opened are closed and the failure propagates.
 - **Observe.** Every answer is a span named for the route, with one child span per action carrying the party's and the record's class names. No contents are recorded. The deployment chooses the exporter.
-- **Fail.** A `ValidationError` or a client's exception propagates to the caller. A party's stated refusal is a `Record` in a union, not an exception.
+- **Fail.** A `ValidationError` propagates to the caller; a client's exception propagates in the pass's `ExceptionGroup`. A party's stated refusal is a `Record` in a union, not an exception.
 
 ## Questions developers ask
 
@@ -257,8 +252,8 @@ The contract. You rely on it; you never implement any of it.
 
 ## Done
 
-`just check` is green: the smell check on the program, basedpyright strict, the tests over the engine's shop, and the run of each route from the shell against the product's acceptance rows.
+`just check` is green: the smell check on the program, basedpyright strict, and the run of each route from the shell against the product's acceptance rows.
 
 ## Not built yet
 
-The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; the generated reference; contexts that persist across requests; the pytest-bdd binding of the feature files. The world, the engine and the command line exist and type-check, and the engine's shop, `packages/python/type-construction-engine/tests/type_construction_engine/shop.py`, runs under its tests with stand-in parties. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.
+The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; the generated reference; contexts that persist across requests; the pytest-bdd binding of the feature files. The world, the engine and the command line exist and type-check. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.

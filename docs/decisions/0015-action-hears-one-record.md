@@ -16,7 +16,7 @@ Finding the payload and the path by scanning an action's computed fields for a r
 
 ## Evidence
 
-`class Quote(Says[Catalog, Price])` gave `Quote.model_fields["party"].annotation is Catalog` through the library kind, and `class Charge(Post[Payments, Price, Charged])` gave `Payments`. `heard(Quote)` returned `(Price,)` and `heard(Screen)` returned `(Clear, Flagged)` for `Screen(Says[Fraud, Clear | Flagged])`. With the screen answering `{"status": "clear"}` the shop's route constructed `OrderPaid`; with `{"status": "flagged", "reason": "velocity"}` it constructed `OrderRefused`, which dumped `{"reason":"velocity"}`. `Says.perform` written as `return hear(self, self.party.says.root)` type-checked under basedpyright strict against `-> T`. A direct `Action[Catalog, Price]` subclass with no `perform` raises `TypeError: Can't instantiate abstract class`. A second class hearing `Price` was refused at startup: "2 actions hear Price: Quote, Requote; exactly one must".
+In the engine's test program, `class Asked(Tell[Party, Heard])` gave `Asked.model_fields["party"].annotation is Party` through the library kind, and `heard(Asked)` returned `(Heard,)`; for an action declared `Tell[Party, Heard | Other]`, `heard` returned `(Heard, Other)`. `Tell.perform` written as `return hear(self, self.party.says.root)` type-checked under basedpyright strict against `-> T`. A direct `Action[Party, Heard]` subclass with no `perform`, and a `Connection` subclass with no `open` or `close`, each raised `TypeError` naming the class as abstract when constructed.
 
 ## Consequences
 

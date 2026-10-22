@@ -1,175 +1,179 @@
 Feature: The engine proves a program at startup and answers a route by construction
-  Decision records 0015, 0021, 0029, 0030, 0042, 0044, 0045, 0046, 0047, 0048, 0049, 0050, 0051. Program module
-  shop, tests/type_construction_engine/shop.py: Sku, Quantity (gt 0), UnitPrice (gt 0), Threshold with default 100,
-  Rate with default 0.9, ChargeId, Reason, OrderTotal (ge 0), CheapestLine (ge 0); Said(Setting[str]);
-  Speaker(Connection) with says: Said and open and close that do nothing; Catalog, Payments and Fraud (Speaker);
-  Line(Value) with sku and quantity; PlaceOrder(Request) with lines: tuple[Line, ...]; Price(Record) with amount:
-  UnitPrice; Charged(Record) with charge alias "id"; Clear(Record) with status Literal "clear"; Flagged(Record) with
-  status Literal "flagged" and reason: Reason; Says[P: Speaker, T: Record](Action[P, T]) whose perform returns
-  hear(self, self.party.says.root); Quote(Says[Catalog, Price]) holding line; Screen(Says[Fraud, Clear | Flagged])
-  holding order; LineTotal(Times[UnitPrice, Quantity]); Small(AtMost[LineTotal, Threshold]) and
-  Large(Beyond[LineTotal, Threshold]), each with bound defaulted to Threshold(); Reduced(Times[LineTotal, Rate]) with
-  right defaulted to Rate(); FullPrice(line, tier: Small, due: LineTotal); Discounted(line, tier: Large, due: Reduced);
-  Charge(Says[Payments, Charged]) holding priced: Discounted | FullPrice; LinePaid(priced, charged);
-  Cheapest(Least[LineTotal]); Screened(order, clear: Clear); Refused(order, flagged: Flagged); Paid(screened, lines:
-  tuple[LinePaid, ...], cheapest); OrderPaid(Reply[Paid]) with computed total -> OrderTotal summing each line's
-  due.root, charges, and cheapest -> CheapestLine from cheapest.chosen.root; OrderRefused(Reply[Refused]) with
-  computed reason; Checkout(Route[PlaceOrder, OrderPaid | OrderRefused]); ShopConfig(catalog, payments, fraud). The
-  environment holds CATALOG__SAYS='{"amount": "2.50"}', PAYMENTS__SAYS='{"id": "ch_1"}' and
-  FRAUD__SAYS='{"status": "clear"}'.
+  Decision records 0015, 0021, 0029, 0030, 0042, 0044, 0045, 0046, 0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054. The
+  program is the test module tests/type_construction_engine/test_engine.py: Name(Scalar[str]); Element(Value) with name;
+  Elements(Request) with each: tuple[Element, ...]; Said(Setting[str]); Party(Connection) with says: Said and open and
+  close that do nothing; Amount(Scalar[Decimal], gt 0); Heard(Record) with amount: Amount; Tell[P: Party, T:
+  Record](Action[P, T]) whose perform returns hear(self, self.party.says.root); Asked(Tell[Party, Heard]) holding
+  element; Limit(Scalar[Decimal]) with default 10; Low(AtMost[Amount, Limit]) and High(Beyond[Amount, Limit]), each
+  with bound defaulted to Limit(); Cheap(element, low: Low); Dear(element, high: High); Total(Sum[Amount]);
+  Concluded(valued: tuple[Cheap | Dear, ...], total: Total); Capped(Scalar[Decimal], le 30); Answered(Reply[Concluded])
+  with a computed field total -> Capped from total.root; Operation(Route[Elements, Answered]); Parties(Config) with party: Party. The environment holds PARTY__SAYS='{"amount": "2.50"}'. The program
+  faults.py beside it holds every fault the proof refuses in one module: SmallAmount (gt 0, le 100) and LargeAmount (gt
+  100) carried by Elements; Name carried by Heard as well as by Element; Low with no complement; Unheard(Record) held by
+  Concluded and heard by no action; Impossible(Beyond[SmallAmount, LargeAmount]),
+  Certain(AtMost[SmallAmount, LargeAmount]) and Never(Equal[SmallAmount, LargeAmount]); AtOrUnder(AtMost[Amount, Limit])
+  and Exactly(Equal[Amount, Limit]) held by Either.which as a union; Near[A, B](Relation) declaring no constraints with
+  Undecided(Near[Amount, Limit]); Stray(Scalar[str]) held by nothing; Reasked, a second Tell[Party, Heard]; Parties
+  holding party and backup, both Party; Egg(chicken: Chicken, elements) and Chicken(egg: Egg); Wrong(cheap: Cheap),
+  AnsweredWrong(Reply[Wrong]) and Misplaced(Route[Elements, AnsweredWrong]); Collects(every: tuple[Concluded, ...]);
+  and Heard holding tags: tuple[Tag, ...] while heard once per element.
 
   Scenario: A program's classes are the ones its module defines
-    Given vars(shop) holds Says, Says[Catalog, Price], Quote and the imported Fact
-    When classes(shop) is read
-    Then it holds Quote and not Says, not Says[Catalog, Price] and not Fact
+    Given vars(program) holds Tell, Tell[Party, Heard], Asked and the imported Fact
+    When classes(program) is read
+    Then it holds Asked and not Tell, not Tell[Party, Heard] and not Fact
+
+  Scenario: A class whose forward reference is unresolved is rebuilt before it is read
+    Given faults' Egg(chicken: "Chicken") defined before Chicken, with no model_rebuild in the module
+    When proven is called on faults
+    Then Egg.model_fields["chicken"].annotation is the class Chicken, and the cycle is reported
+
+  Scenario: The proof is read once per process
+    When prove(Operation, program) is read twice and proven(program) is called twice
+    Then the same set is returned both times and proven returns None both times
 
   Scenario: A route's request class is read from its request field
-    When asked(Checkout) is read
-    Then it is PlaceOrder
+    When asked(Operation) is read
+    Then it is Elements
 
   Scenario: An action's records are read through the library kind's type variables
-    When heard(Quote) and heard(Screen) are read
-    Then they are (Price,) and (Clear, Flagged)
+    When heard(Asked) is read
+    Then it is (Heard,)
+    And for an action declared Tell[Party, Heard | Other], heard returns (Heard, Other)
 
-  Scenario: An action's party is the annotation of its party field
-    When Quote.model_fields["party"].annotation is read
-    Then it is Catalog
+  Scenario: A computed field produces the classes its return type names
+    Given Picked(Fact) with amount: Amount and a computed field which -> Amount | Limit
+    When produced(Picked) is read
+    Then it is {"which": (Amount, Limit)}
 
-  Scenario: The proof is the classes a route constructs, once per run and once per element
-    When prove(Checkout, shop) is read
-    Then once per run holds PlaceOrder, Catalog, Payments, Fraud, Screen, Clear, Flagged, Reason, Screened, Refused, Cheapest, Paid, OrderPaid, OrderTotal, CheapestLine, OrderRefused and Checkout
-    And once per element holds Line, Sku, Quantity, Quote, Price, UnitPrice, LineTotal, Small, Large, Reduced, Discounted, FullPrice, Charge, Charged, ChargeId and LinePaid
+  Scenario: The proof is the set of classes that join from the request
+    When prove(Operation, program) is read
+    Then it holds Elements, Element, Name, Party, Asked, Heard, Amount, Low, High, Cheap, Dear, Total, Concluded, Answered, Capped and Operation
 
-  Scenario: A carrier's scalars join the run with it
-    When prove(Checkout, shop) is read
-    Then Sku and Quantity are once per element, carried by Line, and UnitPrice is once per element, carried by Price
-    And Reason is once per run, carried by Flagged
+  Scenario: Scope is read as the element a class descends from
+    When descends(Cheap, program), descends(Asked, program) and descends(Amount, program) are read
+    Then each is {Element}, through Cheap's element field, Asked's element field, and Heard, which carries Amount and is heard by Asked
+    And descends(Total, program) and descends(Operation, program) are empty
 
-  Scenario: The proof reports every root fault at once
-    Given shop whose Paid also holds unheard: Unheard, a record no action hears, and weight: Weight, a scalar nothing carries
-    When proven is called on it
-    Then ValidationError is raised with type missing at loc ("Paid", "unheard") and type missing at loc ("Paid", "weight")
+  Scenario: A class no field names is refused as the mirror of missing
+    When proven is called on faults
+    Then ValidationError is raised with type unused at loc ("Stray",) and message "no field holds Stray; hold it or delete it"
+    And Heard, which no field holds but which carries Amount, is not reported, since what it carries is held
 
-  Scenario: A record no action hears is reported once, at the field that holds what it carries
-    Given shop without Quote
-    When proven is called on it
-    Then ValidationError is raised with one error of type missing at loc ("LineTotal", "left") and message "no class fills LineTotal.left, which holds UnitPrice"
+  Scenario: A record no action hears is reported at the field that holds it
+    When proven is called on faults
+    Then ValidationError is raised with type missing at loc ("Concluded", "unheard")
 
   Scenario: A record two actions hear is refused
-    Given shop with a second Says[Catalog, Price] subclass Requote
-    When proven is called on it
-    Then ValidationError is raised with type hearer at loc ("Price",) and message "2 actions hear Price: Quote, Requote; exactly one must"
-
-  Scenario: A class two computed fields produce is refused
-    Given shop whose OrderRefused also has a computed field returning OrderTotal
-    When proven is called on it
-    Then ValidationError is raised with type producer at loc ("OrderTotal",) and message "2 computed fields produce OrderTotal: OrderPaid.total, OrderRefused.total; exactly one must"
+    When proven is called on faults
+    Then ValidationError is raised with type hearer at loc ("Heard",)
 
   Scenario: A scalar two carriers hold is refused
-    Given shop whose Charged also holds amount: UnitPrice
-    When proven is called on it
-    Then ValidationError is raised with type carrier at loc ("UnitPrice",) and message "2 classes carry UnitPrice: Charged, Price; exactly one must"
+    When proven is called on faults
+    Then ValidationError is raised with type carrier at loc ("Name",), carried by Element and by Heard
 
   Scenario: A party class held twice in the config is refused
-    Given shop whose config holds catalog: Catalog and backup: Catalog
-    When proven is called on it
-    Then ValidationError is raised with type party at loc ("Catalog",) and message "2 config fields hold Catalog: backup, catalog; exactly one must"
+    When proven is called on faults
+    Then ValidationError is raised with type party at loc ("Party",)
 
-  Scenario: Two classes that hold each other are refused as a cycle
-    Given shop with Egg(chicken: Chicken, order: PlaceOrder) and Chicken(egg: Egg)
-    When proven is called on it
-    Then ValidationError is raised with type cycle at loc ("Egg",) and at loc ("Chicken",)
+  Scenario: Two classes that hold each other are refused as a cycle, beside the root faults
+    When proven is called on faults
+    Then ValidationError is raised with type cycle at loc ("Egg",) and at loc ("Chicken",), and Answered, which waits on Concluded's missing Unheard, is not reported as a cycle
 
-  Scenario: Two union members the proof can see both constructing are refused
-    Given shop with Large rewritten as AtMost[LineTotal, Threshold], so Discounted and FullPrice both hold an AtMost over the same operands under tier
-    When proven is called on it
-    Then ValidationError is raised with exactly type overlap at loc ("Charge", "priced") and type overlap at loc ("LinePaid", "priced")
+  Scenario: A relation its operands' bounds decide is refused
+    When proven is called on faults
+    Then ValidationError is raised with type relation at loc ("Impossible",) and message "Impossible never holds, by the constraints on its operands"
+    And type relation at loc ("Certain",) and message "Certain never refuses, by the constraints on its operands"
+    And type relation at loc ("Never",) and "never holds"
 
-  Scenario: A relation its operands' constraints decide is refused
-    Given shop whose Price also carries small: SmallAmount (gt 0, le 100) and large: LargeAmount (gt 100), with Impossible(Beyond[SmallAmount, LargeAmount]), Certain(AtMost[SmallAmount, LargeAmount]), Never(Equal[SmallAmount, LargeAmount]) and Outside(Between[LargeAmount, SmallAmount, SmallAmount]) held by Holder
-    When proven is called on it
-    Then ValidationError is raised with type relation at loc ("Impossible",) with message "Impossible never holds, by the constraints on its operands"
-    And type relation at loc ("Certain",) with message "Certain never refuses, by the constraints on its operands"
-    And type relation at loc ("Never",) with "never holds" and type relation at loc ("Outside",) with "never holds"
+  Scenario: Two union members the proof decides can both hold are refused
+    When proven is called on faults
+    Then ValidationError is raised with type overlap at loc ("Either", "which"), since Equal implies AtMost over the same operands
 
-  Scenario: A small order constructs FullPrice
-    When answer(Checkout, PlaceOrder.model_validate_json('{"lines": [{"sku": "tea", "quantity": 3}]}'), ShopConfig(), shop) is awaited
-    Then the route's reply dumps {"total":"7.50","charges":["ch_1"],"cheapest":"7.50"}
-    And reply.of.lines[0].priced is a FullPrice holding a Small whose value is the LineTotal 7.50
-    And Large was asked for and refused with relation, and Discounted was never built
-    And Quote, Screen and Charge were each performed once
+  Scenario: Two facts told apart by complementary relations are decided disjoint
+    When coexist(Cheap, Dear, program) is read
+    Then it is False, since Low and High over Amount and Limit cannot both hold
+    And coexist(Cheap, Cheap, program) is True
 
-  Scenario: A large order constructs Discounted
-    When answer is awaited for one line of gold 50
-    Then the route's reply dumps {"total":"112.500","charges":["ch_1"],"cheapest":"125.00"}
-    And reply.of.lines[0].priced is a Discounted holding a Large and a Reduced whose root is 112.500
+  Scenario: A relation kind that declares no constraints is refused as undecidable
+    When proven is called on faults
+    Then ValidationError is raised with type undecidable at loc ("Undecided",) and message "Undecided declares no constraints, so the proof cannot tell what it decides"
 
-  Scenario: A derivation is constructed from the operands its carriers brought
-    When answer is awaited for one line of tea 3
-    Then LineTotal was constructed once from the UnitPrice carried by Price and the Quantity carried by Line, with root 7.50
+  Scenario: A scalar over int has no value between two integers
+    Given Unit(Scalar[int]) with gt 0 and lt 2, One(Scalar[int]) with ge 1 and le 1, and Same(Equal[Unit, One])
+    When never(Same) is read
+    Then it is "refuses", since both can only be 1
 
-  Scenario: A party that says no answers the other reply
-    Given FRAUD__SAYS='{"status": "flagged", "reason": "velocity"}'
-    When answer is awaited for one line of tea 3
-    Then the route's reply is an OrderRefused that dumps {"reason":"velocity"}
-    And Screened and Paid were never built
+  Scenario: The solver decides difference constraints with strictness
+    When feasible is called with x - 0 <= 5 and 0 - x <= -5
+    Then it is True
+    When feasible is called with x - 0 <= 5 and 0 - x < -5
+    Then it is False
 
-  Scenario: An action with no library kind cannot be constructed
-    Given class Bare(Action[Catalog, Price]) with line: Line and no perform
-    When Bare(party=catalog, line=line) is constructed
-    Then TypeError is raised naming Bare as abstract
+  Scenario: Each element is valued in its own run and collected in order
+    When answer(Operation, Elements.model_validate_json('{"each": [{"name": "a"}, {"name": "b"}]}'), Parties(), program) is awaited
+    Then Concluded.valued holds two Cheap, for a and b in that order, and Total's root is 5.00
+    And Asked was performed once per element, together
 
-  Scenario: Independent actions are performed together
-    Given each perform sleeping 0.2 s
-    When answer is awaited for one line
-    Then Quote and Screen start at 0.0 s and end at 0.2 s, and Charge starts at 0.2 s
+  Scenario: The relation that holds decides the outcome
+    Given PARTY__SAYS='{"amount": "25"}'
+    When answer is awaited for one element
+    Then Concluded.valued[0] is a Dear holding a High, and Low was asked for and refused with relation
 
-  Scenario: Connections open once before answers and close once after, last opened first
-    Given Catalog, Payments and Fraud connections whose open and close record their names
-    When two one-line answers are awaited inside opened(ShopConfig())
-    Then the record is open:Catalog, open:Payments, open:Fraud, six performs, close:Fraud, close:Payments, close:Catalog
-    And the performs used three distinct connection instances
+  Scenario: No element collects the empty tuple
+    When answer is awaited for no elements
+    Then Concluded.valued is the empty tuple and Total's root is 0
 
-  Scenario: A connection without a library kind cannot be constructed
-    Given class Bare(Connection) with says: Said and no open or close
-    When Bare(says=...) is constructed
-    Then TypeError is raised naming Bare as abstract
+  Scenario: A computed field whose scalar refuses propagates the refusal
+    Given PARTY__SAYS='{"amount": "25"}'
+    When answer is awaited for two elements, so the total is 50 and Capped refuses it
+    Then ValidationError is raised out of answer with one error of type less_than_equal at loc ()
 
-  Scenario: A client set as a private attribute leaves the connection frozen and unserialized
-    Given class Http(Connection) with _client: httpx.AsyncClient = PrivateAttr() set in open()
-    When open() is awaited on a constructed instance
-    Then the client is set, assigning a field raises frozen_instance, model_dump_json() omits the client, and hash() works
+  Scenario: A stalled run names the relation that did not hold
+    Given faults, whose only outcome for an element is Cheap, PARTY__SAYS and BACKUP__SAYS with an amount of 25 over the limit, and a request with small 50 and large 150
+    When answer is awaited for one element
+    Then ValidationError is raised with type relation at loc ("Low",) and message "Low did not hold: Amount exceeds Limit"
 
-  Scenario: A three-line order fans out per line and collects in order
-    Given each perform sleeping 0.2 s
-    When answer is awaited for lines tea 3, milk 1, jam 2
-    Then Quote, LineTotal, Small, FullPrice, Charge and LinePaid are constructed once per line, and Screen, Cheapest and Paid once
-    And three Quotes and the Screen start at 0.0 s and three Charges start at 0.2 s
-    And the route's reply dumps {"total":"15.00","charges":["ch_1","ch_1","ch_1"],"cheapest":"2.50"}
-
-  Scenario: Each line chooses its own outcome by the relation that holds
-    When answer is awaited for lines tea 3, gold 50, jam 2
-    Then the lines hold FullPrice, Discounted, FullPrice
-    And the route's reply dumps {"total":"125.000","charges":["ch_1","ch_1","ch_1"],"cheapest":"5.00"}
-
-  Scenario: A selection is constructed once from every element's value
-    When answer is awaited for lines tea 3, gold 50, jam 2
-    Then Cheapest holds three LineTotals in element order and its chosen is the jam line's, with root 5.00
-
-  Scenario: A reply's fact that holds an element directly is refused
-    Given shop with Wrong(order, one: LinePaid), OrderWrong(Reply[Wrong]) and Checkout(Route[PlaceOrder, OrderWrong])
-    When proven is called on it
-    Then ValidationError is raised with type scope at loc ("Checkout",) and message "Checkout exists once per element; a route exists once per run, so its reply's fact collects elements as tuple[X, ...] instead of holding one"
+  Scenario: A route that descends from an element is refused
+    When proven is called on faults
+    Then ValidationError is raised with type scope at loc ("Misplaced",), since Wrong holds Cheap, which exists once per element
 
   Scenario: A tuple that collects a once-per-run class is refused
-    Given shop with Collects(orders: tuple[Paid, ...]), OrderCollects(Reply[Collects]) and Checkout(Route[PlaceOrder, OrderCollects])
-    When proven is called on it
-    Then ValidationError is raised with type scope at loc ("Collects", "orders") and message "Collects.orders collects Paid, which exists once per run; hold it directly"
+    When proven is called on faults
+    Then ValidationError is raised with type scope at loc ("Collects", "every"), since Concluded descends from nothing
+
+  Scenario: A record heard once per element that holds a collection is refused
+    When proven is called on faults
+    Then ValidationError is raised with type scope at loc ("Heard",)
+
+  Scenario: An action or a connection without a library kind cannot be constructed
+    Given class Bare(Action[Party, Heard]) with element: Element and no perform, and class Mute(Connection) with says: Said and no open or close
+    When Bare(party=party, element=element) and Mute(says=said) are constructed
+    Then TypeError is raised naming each as abstract
+
+  Scenario: A failing action cancels the pass's others and propagates in a group
+    Given the party raising ConnectionError on every perform
+    When answer is awaited for two elements
+    Then ExceptionGroup is raised whose exceptions are two ConnectionError
+
+  Scenario: Connections open once before answers and close once after, last opened first
+    Given Fine and Later, two parties whose open and close record their names, in a config in that order
+    When two one-element answers are awaited inside opened(config)
+    Then the record is open:Fine, open:Later, the two answers, close:Later, close:Fine
+
+  Scenario: A client set as a private attribute leaves the connection frozen and unserialized
+    Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set in open()
+    When open() is awaited on a constructed instance
+    Then the client is set, assigning says raises frozen_instance, model_dump_json() is {"says":"{}"}, and hash() is an int
+
+  Scenario: A connection that fails to open closes what opened before it
+    Given a config of Fine, whose open and close record, and Down, whose open raises ConnectionError
+    When opened(config) is entered
+    Then ConnectionError is raised and the record is open:Fine, open:Down, close:Fine
 
   Scenario: An answer is one span per route and one per performed action
     Given the OpenTelemetry SDK with an in-memory exporter
-    When answer is awaited for lines tea 3 and gold 50
-    Then the root span is named Checkout with attributes tca.request "PlaceOrder" and tca.passes 4
-    And its children are one span named Screen with tca.party "Fraud" and tca.record "Clear", two named Quote with tca.party "Catalog" and tca.record "Price", and two named Charge with tca.party "Payments" and tca.record "Charged"
-    And every status is unset
-    And no attribute holds a request's or a record's contents
+    When answer is awaited for two elements
+    Then the root span is named Operation with attributes tca.request "Elements" and tca.passes 3
+    And its children are two spans named Asked with tca.party "Party" and tca.record "Heard"
+    And no attribute holds the amount the party said
