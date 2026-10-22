@@ -163,6 +163,35 @@ Feature: The engine proves a program at startup, placing every class, and answer
     When opened(config) is entered
     Then ConnectionError is raised and the record is open:Fine, open:Down, close:Fine
 
+  Scenario: A close that raises after a failed answer closes the rest and keeps the failure as its context
+    Given the occurrences program's Catalog and Fraud recording their open and close, Fraud's close raising OSError, and the solo line's Quote raising ConnectionError once its six siblings wait at a gate
+    When answer is awaited inside opened(deployment)
+    Then OSError is raised, its __context__ is the ExceptionGroup of the one ConnectionError noted "at request.solo.lines.[0].Quote", the six siblings were cancelled
+    And the record is open:Catalog, open:Fraud, close:Fraud, close:Catalog
+
+  Scenario: A cancellation that lands during shutdown does not keep the other connections open
+    Given Fraud's close waiting until cancelled, and every action of the pass waiting at a gate
+    When the task running answer inside opened(deployment) is cancelled, and cancelled again once Fraud's close is waiting
+    Then CancelledError propagates, all seven actions were cancelled while waiting, and the record is open:Catalog, open:Fraud, close:Fraud, close:Catalog
+
+  Scenario: A deadline cancels the pass in flight and the opened deployment answers again
+    Given every action of the pass waiting at a gate
+    When answer is awaited under asyncio.timeout inside opened(deployment), then the gate is opened and ran is awaited
+    Then TimeoutError is raised with all seven actions cancelled and nothing closed, and the second answer takes 4 passes and replies {"cart":"10.00","gifts":"4","pair":"14.50","solo":"10"}
+    And every performed action held the very connection instance open was called on, and each of the six Quote occurrences holds deployment.catalog by identity
+
+  Scenario: One action failing mid-pass cancels its siblings and the group holds it alone
+    Given the solo line's Quote yielding once and then raising ConnectionError, or answering '{"price": "a lot"}', while its six siblings wait at a gate
+    When answer is awaited under the SDK with an in-memory exporter
+    Then ExceptionGroup is raised holding exactly the ConnectionError, or the ValidationError with decimal_parsing at ("price",), noted "at request.solo.lines.[0].Quote"
+    And the six siblings were cancelled while waiting, the route span has status ERROR and no tca.passes, all seven action spans are its children, only the solo Quote's has status ERROR, and none carries tca.record
+
+  Scenario: Two answers interleaving across passes keep their evidence and traces apart
+    Given the engine program's party valuing an element at what its name says, every Asked waiting at one gate and Notify at another
+    When ran is awaited for {"each": [{"name": "2"}, {"name": "3"}]} and for {"each": [{"name": "25"}]} as two tasks, the Asked gate opened once three wait, the first awaited, then the Notify gate opened and the second awaited
+    Then the replies are {"total":"5"} and {"total":"25"}, each route holds its own request by identity, the Dear holds the second request's element by identity
+    And the spans form two traces, every action span a child of its own trace's Operation span, Notify performed in pass 2, and both runs take 4 passes
+
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
     Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set in open()
     When open() is awaited on a constructed instance

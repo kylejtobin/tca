@@ -58,14 +58,15 @@ The run ends when the route constructs. A pass that builds nothing raises one
 each field no occurrence fills.
 
 ``opened`` opens each connection once and closes each once around whatever a server kind runs
-inside it. Every answer is one OpenTelemetry span named for the route, with one child per
-performed action; the engine depends on ``opentelemetry-api`` only. The engine keeps nothing
-about a program between runs: the proof is a value the server computes once and passes in.
+inside it, whatever the body raised and whatever a close raises. Every answer is one
+OpenTelemetry span named for the route, with one child per performed action; the engine
+depends on ``opentelemetry-api`` only. The engine keeps nothing about a program between runs:
+the proof is a value the server computes once and passes in.
 """
 
 from asyncio import TaskGroup
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
@@ -1804,16 +1805,15 @@ def connections(deployment: Config) -> tuple[Connection, ...]:
 @asynccontextmanager
 async def opened(deployment: Config) -> AsyncGenerator[None]:
     """Open every connection once before the body and close every one once after it, last
-    opened first; when an open raises, close what was opened and let it propagate."""
-    opened_: list[Connection] = []
-    try:
+    opened first, whatever the body raised, including its cancellation. An open that raises or
+    is cancelled closes what was opened before it; a close that raises does not keep the
+    connections opened before it open, and its exception propagates with the body's as its
+    context. Each close is a callback on one ``AsyncExitStack``, which runs every callback."""
+    async with AsyncExitStack() as closing:
         for connection in connections(deployment):
             await connection.open()
-            opened_.append(connection)
+            closing.push_async_callback(connection.close)
         yield
-    finally:
-        for connection in reversed(opened_):
-            await connection.close()
 
 
 type Provenance = dict[str, tuple[Site, ...]]
@@ -2005,12 +2005,16 @@ def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
 
 
 class Refuted(NamedTuple):
-    """A relation or a selection that refused in a scope this pass, at its concrete path."""
+    """A relation or a selection that refused in a scope this pass."""
 
     placed: Placement
     scope: Scope
-    path: Site
     refusal: ValidationError
+
+    @property
+    def path(self) -> Site:
+        """The concrete path of the occurrence that refused."""
+        return self.scope.at((*self.scope.site, self.placed.cls.__name__))
 
 
 def stalled(
@@ -2122,14 +2126,22 @@ class Run[Q: Request, A: Reply[Fact]](NamedTuple):
 
 
 class Performed(NamedTuple):
-    """An action constructed this pass: the instance, the scope and site it was constructed
-    at, its concrete path, and the pass."""
+    """An action constructed this pass: the instance, the scope it was constructed in, and
+    the pass."""
 
     action: Action[Connection, Record]
     scope: Scope
-    site: Site
-    path: Site
     pass_: int
+
+    @property
+    def site(self) -> Site:
+        """The declared site of the action: its scope's and its own name."""
+        return (*self.scope.site, type(self.action).__name__)
+
+    @property
+    def path(self) -> Site:
+        """The concrete path of the action occurrence."""
+        return self.scope.at(self.site)
 
 
 def construct(placed: Placement, given: Given, path: Site) -> BaseModel | ValidationError:
@@ -2190,16 +2202,15 @@ async def constructed[Q: Request, A: Reply[Fact]](
                 found = supplied(placed, scope)
                 if found is None:
                     continue
-                path = scope.at(site)
-                instance = construct(placed, found.given, path)
+                instance = construct(placed, found.given, scope.at(site))
                 if isinstance(instance, ValidationError):
-                    refuted.append(Refuted(placed, scope, path, instance))
+                    refuted.append(Refuted(placed, scope, instance))
                     continue
                 built = True
                 scope.owned[site] = instance
                 scope.provenance[site] = found.provenance
                 if is_performed(instance):
-                    performed.append(Performed(instance, scope, site, path, passes))
+                    performed.append(Performed(instance, scope, passes))
         async with TaskGroup() as group:
             tasks = [group.create_task(performed_in_span(p)) for p in performed]
         for p, task in zip(performed, tasks, strict=True):
