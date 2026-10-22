@@ -11,6 +11,8 @@ of a choice that holds nothing deciding it. The same scalar on two carriers, the
 heard by two actions and the same element class in two collections are not faults by
 themselves: only a field that could be filled from two of them is."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import override
 
@@ -99,12 +101,9 @@ class Party(Connection):
     says: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Heard(Record):

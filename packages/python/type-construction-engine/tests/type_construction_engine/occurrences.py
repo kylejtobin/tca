@@ -5,6 +5,8 @@ again; a screening heard as one of two records. Nothing here is written for the 
 identifier, no source, no subclass per collection."""
 
 import json
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Literal, override
 
@@ -98,12 +100,9 @@ class Catalog(Connection):
     prices: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Fraud(Connection):
@@ -112,12 +111,9 @@ class Fraud(Connection):
     says: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 PERFORMED: list[str] = []

@@ -3,6 +3,8 @@ discount the coupon makes: the proof must not take the coupon as present, since 
 action hears admits its absence. ``Priced`` and ``Told`` are the legitimate use: the reply
 reads the coupon the party gave, or nothing."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import override
 
@@ -57,12 +59,9 @@ class Party(Connection):
     says: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Quoted(Record):

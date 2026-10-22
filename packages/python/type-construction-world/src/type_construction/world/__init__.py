@@ -46,6 +46,7 @@ stay strict; the call chooses the mode.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -773,22 +774,31 @@ class Connection(BaseModel):
     fields are ``Setting`` subclasses: address, credential, limits, read from the environment.
     A ``Config`` holds one field per connection.
 
-    ``open`` and ``close`` are abstract: the library kind implements them, holding what it
-    opened, a client, in a ``PrivateAttr``, outside validation and outside the frozen fields.
-    The server kind calls ``open`` once for every connection at startup and ``close`` once at
-    shutdown, through the engine's ``opened``. A connection with no library kind cannot be
-    constructed.
+    ``open`` is abstract: the library kind implements it as an asynchronous context manager,
+    with ``@asynccontextmanager``, acquiring what reaching the party needs in an ``async with``
+    of its own, holding it in a ``PrivateAttr`` outside validation and outside the frozen
+    fields, and yielding once::
+
+        @override
+        @asynccontextmanager
+        async def open(self) -> AsyncGenerator[None]:
+            async with httpx.AsyncClient(base_url=self.url.root) as client:
+                self._client = client
+                yield
+
+    What an ``async with`` acquired, it releases: when a later acquisition in the same
+    ``open`` fails, when the open is cancelled, when the body raises, and when a later release
+    raises. So every acquisition has its owner by construction, and nothing else keeps a
+    list of what to close. The server kind enters every connection's ``open`` once at startup
+    and exits each once at shutdown, through the engine's ``opened``. A connection with no
+    library kind cannot be constructed.
     """
 
     model_config = PRODUCT
 
     @abstractmethod
-    async def open(self) -> None:
-        """Open what reaching the party needs, once, at startup."""
-
-    @abstractmethod
-    async def close(self) -> None:
-        """Close what ``open`` opened, once, at shutdown."""
+    def open(self) -> AbstractAsyncContextManager[None]:
+        """What reaching the party needs, acquired on entry and released on exit."""
 
 
 class Action[P: Connection, T: Record](BaseModel):

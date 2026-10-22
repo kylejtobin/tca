@@ -5,7 +5,8 @@ when the answer failed, when a close raises and when a cancellation lands during
 
 import asyncio
 import json
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, TypeIs
@@ -33,6 +34,13 @@ OPENED: list[int] = []
 
 HELD: list[int] = []
 """The identity of the party each performed action held."""
+
+CANCELLED = (
+    "cancelled Screen, request.cart.lines.[0].Quote, request.cart.lines.[1].Quote,"
+    " request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
+)
+"""The note a pass leaves on its group when the solo line's quote fails: the six actions
+cancelled with it, in the order they were constructed."""
 
 
 class Flight:
@@ -103,24 +111,25 @@ def recording(
     closing: asyncio.Event | None = None,
     broken: bool = False,
 ) -> None:
-    """Put an ``open`` and a ``close`` on a party class that record themselves: the close
-    signals ``closing`` and then waits until cancelled, or raises when ``broken``."""
+    """Put an ``open`` on a party class that records its entry and its exit: the exit signals
+    ``closing`` and then waits until cancelled, or raises when ``broken``."""
 
-    async def open_(self: Connection) -> None:
+    @asynccontextmanager
+    async def open_(self: Connection) -> AsyncGenerator[None]:
         LOG.append(f"open:{cls.__name__}")
         OPENED.append(id(self))
-
-    async def close(self: Connection) -> None:
-        LOG.append(f"close:{cls.__name__}")
-        if closing is not None:
-            closing.set()
-            await asyncio.Event().wait()
-        if broken:
-            gone = OSError("socket already gone")
-            raise gone
+        try:
+            yield
+        finally:
+            LOG.append(f"close:{cls.__name__}")
+            if closing is not None:
+                closing.set()
+                await asyncio.Event().wait()
+            if broken:
+                gone = OSError("socket already gone")
+                raise gone
 
     monkeypatch.setattr(cls, "open", open_)
-    monkeypatch.setattr(cls, "close", close)
 
 
 @pytest.fixture
@@ -192,6 +201,7 @@ async def test_a_close_that_raises_after_a_failed_answer_closes_the_rest_and_kee
     (down,) = group.exceptions
     assert isinstance(down, ConnectionError)
     assert down.__notes__ == ["at request.solo.lines.[0].Quote"]
+    assert group.__notes__ == [CANCELLED]
     assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
 
 
@@ -281,6 +291,7 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     (failed,) = group.value.exceptions
     assert type(failed) is failure
     assert failed.__notes__ == ["at request.solo.lines.[0].Quote"]
+    assert group.value.__notes__ == [CANCELLED]
     if isinstance(failed, ValidationError):
         assert [(e["type"], e["loc"]) for e in failed.errors()] == [("decimal_parsing", ("price",))]
     assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
@@ -294,6 +305,8 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     assert parented(actions, route)
     (broken,) = [s for s in actions if s.status.status_code.name == "ERROR"]
     assert site(broken) == "request.solo.lines.[0].Quote"
+    assert attributes(broken)["tca.outcome"] == "failed"
+    assert {attributes(s)["tca.outcome"] for s in actions if s is not broken} == {"cancelled"}
     assert all("tca.record" not in attributes(s) for s in actions)
 
 
@@ -345,6 +358,7 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
             assert parented([s], routes[trace_of(s)])
     (notify,) = by_name(spans, "Notify")
     assert attributes(notify)["tca.pass"] == 2
+    assert {attributes(s)["tca.outcome"] for s in spans if s.name != "Operation"} == {"heard"}
     traced = sorted(
         sorted(site(s) for s in spans if trace_of(s) == trace and s.name != "Operation")
         for trace in routes

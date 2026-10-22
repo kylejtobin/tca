@@ -57,14 +57,15 @@ The run ends when the route constructs. A pass that builds nothing raises one
 ``ValidationError`` naming each relation that did not hold, with the ordering observed, or
 each field no occurrence fills.
 
-``opened`` opens each connection once and closes each once around whatever a server kind runs
-inside it, whatever the body raised and whatever a close raises. Every answer is one
-OpenTelemetry span named for the route, with one child per performed action; the engine
-depends on ``opentelemetry-api`` only. The engine keeps nothing about a program between runs:
+``opened`` enters each connection's ``open`` once and exits each once around whatever a server
+kind runs inside it, whatever the body raised and whatever an exit raises. Every answer is one
+OpenTelemetry span named for the route, with one child per performed action carrying the
+outcome the task had, heard, failed or cancelled; the engine depends on ``opentelemetry-api``
+only. The engine keeps nothing about a program between runs:
 the proof is a value the server computes once and passes in.
 """
 
-from asyncio import TaskGroup
+from asyncio import CancelledError, Task, TaskGroup
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -1804,15 +1805,15 @@ def connections(deployment: Config) -> tuple[Connection, ...]:
 
 @asynccontextmanager
 async def opened(deployment: Config) -> AsyncGenerator[None]:
-    """Open every connection once before the body and close every one once after it, last
-    opened first, whatever the body raised, including its cancellation. An open that raises or
-    is cancelled closes what was opened before it; a close that raises does not keep the
-    connections opened before it open, and its exception propagates with the body's as its
-    context. Each close is a callback on one ``AsyncExitStack``, which runs every callback."""
-    async with AsyncExitStack() as closing:
+    """Enter every connection's ``open`` once before the body and exit every one once after it,
+    last entered first, whatever the body raised, including its cancellation. Each is an
+    asynchronous context on one ``AsyncExitStack``, which exits every context it entered: an
+    open that raises or is cancelled, partway through its own acquisitions or not, releases what
+    it acquired itself, and the stack exits what was entered before it; an exit that raises does
+    not keep the others open, and its exception propagates with the body's as its context."""
+    async with AsyncExitStack() as entered:
         for connection in connections(deployment):
-            await connection.open()
-            closing.push_async_callback(connection.close)
+            await entered.enter_async_context(connection.open())
         yield
 
 
@@ -2079,8 +2080,11 @@ def stalled(
 
 async def performed_in_span(performed: Performed) -> Record:
     """Perform one action occurrence inside a span named for its class, carrying the party's
-    class name, the occurrence's concrete path, the pass it was built in, and, once heard, the
-    record's class name and path; a client's exception is noted with the path and propagates."""
+    class name, the occurrence's concrete path, the pass it was built in, and ``tca.outcome``,
+    which is the outcome its task has: ``heard``, with the record's class name and path;
+    ``failed``, the client's exception noted with the path and propagating, the span's status
+    set to error by the API; ``cancelled``, which is not the action's error and leaves the
+    status unset."""
     action = performed.action
     attributes = {
         "tca.party": type(action.party).__name__,
@@ -2090,9 +2094,14 @@ async def performed_in_span(performed: Performed) -> Record:
     with tracer.start_as_current_span(type(action).__name__, attributes=attributes) as span:
         try:
             record = await action.perform()
+        except CancelledError:
+            span.set_attribute("tca.outcome", "cancelled")
+            raise
         except Exception as failure:
+            span.set_attribute("tca.outcome", "failed")
             failure.add_note(f"at {'.'.join(performed.path)}")
             raise
+        span.set_attribute("tca.outcome", "heard")
         span.set_attribute("tca.record", type(record).__name__)
         span.set_attribute("tca.heard", ".".join((*performed.path, HEARD)))
         return record
@@ -2108,10 +2117,12 @@ async def answer[Q: Request, A: Reply[Fact]](
     Each pass asks Pydantic for every placement not yet constructed in a scope whose bound sites
     are present; a relation or a selection that refuses does not hold in that scope yet; any
     other refusal propagates. The pass's actions are performed together in one task group,
-    across every scope, and each record enters the scope its action was built in; a library
-    kind's exception cancels the group's other actions and propagates in an ``ExceptionGroup``.
-    A pass that constructs nothing raises a ``ValidationError`` naming each relation that did
-    not hold or each field no instance fills."""
+    across every scope, and each record enters the scope its action was built in once every
+    action of the pass was heard; a library kind's exception cancels the group's other actions
+    and propagates in an ``ExceptionGroup``, noted with the paths of the actions cancelled
+    with it, each of which may have had its effect. A pass that constructs nothing raises a
+    ``ValidationError`` naming each relation that did not hold or each field no instance
+    fills."""
     return (await ran(route, request, deployment, proof)).route
 
 
@@ -2211,8 +2222,19 @@ async def constructed[Q: Request, A: Reply[Fact]](
                 scope.provenance[site] = found.provenance
                 if is_performed(instance):
                     performed.append(Performed(instance, scope, passes))
-        async with TaskGroup() as group:
-            tasks = [group.create_task(performed_in_span(p)) for p in performed]
+        tasks: list[Task[Record]] = []
+        try:
+            async with TaskGroup() as group:
+                tasks = [group.create_task(performed_in_span(p)) for p in performed]
+        except BaseExceptionGroup as failed:
+            cancelled = [
+                ".".join(p.path)
+                for p, task in zip(performed, tasks, strict=True)
+                if task.cancelled()
+            ]
+            if cancelled:
+                failed.add_note(f"cancelled {', '.join(cancelled)}")
+            raise
         for p, task in zip(performed, tasks, strict=True):
             arrived(task.result(), (*p.site, HEARD), p.scope)
         if not built:

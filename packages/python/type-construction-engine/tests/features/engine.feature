@@ -15,7 +15,8 @@ Feature: The engine proves a program at startup, placing every class, and answer
   teller: Teller. The environment holds PARTY__SAYS='{"amount": "2.50", "parts": [{"share": "0.5"}, {"share":
   "0.5"}]}' and TELLER__SAYS='{"word": "dear"}'. faults.py beside it holds every fault the proof refuses in one
   module; stalls.py holds a program whose one outcome, Cheap holding Low, a party's answer refutes; lifecycle.py
-  holds parties Fine, Down and Later that record their opening and closing, and the configs Opened and Lifecycle.
+  holds parties Fine, Down, Slow and Later whose open, an asynchronous context manager, records what it acquires
+  and releases, and the configs Opened, Hanging and Lifecycle.
 
   Scenario: A program's classes are the ones its module defines
     Given vars(program) holds Tell, Tell[Party, Heard], Asked and the imported Fact
@@ -158,15 +159,20 @@ Feature: The engine proves a program at startup, placing every class, and answer
     When two one-element answers are awaited inside opened(config)
     Then the record is open:Fine, open:Later, the two answers, close:Later, close:Fine
 
-  Scenario: A connection that fails to open closes what opened before it
-    Given lifecycle's Fine and Down in Opened
+  Scenario: An open that fails releases what it acquired and what opened before it
+    Given lifecycle's Fine and Down in Opened, Down acquiring its client and then failing its handshake
     When opened(config) is entered
-    Then ConnectionError is raised and the record is open:Fine, open:Down, close:Fine
+    Then ConnectionError is raised and the record is open:Fine, open:Down, close:Down, close:Fine
+
+  Scenario: A cancellation during an open releases it and what opened before it
+    Given lifecycle's Fine and Slow in Hanging, Slow's handshake never answering
+    When the task entering opened(config) is cancelled once the record is open:Fine, open:Slow
+    Then CancelledError propagates and the record is open:Fine, open:Slow, close:Slow, close:Fine
 
   Scenario: A close that raises after a failed answer closes the rest and keeps the failure as its context
     Given the occurrences program's Catalog and Fraud recording their open and close, Fraud's close raising OSError, and the solo line's Quote raising ConnectionError once its six siblings wait at a gate
     When answer is awaited inside opened(deployment)
-    Then OSError is raised, its __context__ is the ExceptionGroup of the one ConnectionError noted "at request.solo.lines.[0].Quote", the six siblings were cancelled
+    Then OSError is raised, its __context__ is the ExceptionGroup of the one ConnectionError noted "at request.solo.lines.[0].Quote", the group noted with the six cancelled occurrences, the six siblings were cancelled
     And the record is open:Catalog, open:Fraud, close:Fraud, close:Catalog
 
   Scenario: A cancellation that lands during shutdown does not keep the other connections open
@@ -184,24 +190,25 @@ Feature: The engine proves a program at startup, placing every class, and answer
     Given the solo line's Quote yielding once and then raising ConnectionError, or answering '{"price": "a lot"}', while its six siblings wait at a gate
     When answer is awaited under the SDK with an in-memory exporter
     Then ExceptionGroup is raised holding exactly the ConnectionError, or the ValidationError with decimal_parsing at ("price",), noted "at request.solo.lines.[0].Quote"
-    And the six siblings were cancelled while waiting, the route span has status ERROR and no tca.passes, all seven action spans are its children, only the solo Quote's has status ERROR, and none carries tca.record
+    And the group is noted "cancelled Screen, request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote, request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
+    And the six siblings were cancelled while waiting, the route span has status ERROR and no tca.passes, all seven action spans are its children, only the solo Quote's has status ERROR with tca.outcome "failed", the six others have tca.outcome "cancelled", and none carries tca.record
 
   Scenario: Two answers interleaving across passes keep their evidence and traces apart
     Given the engine program's party valuing an element at what its name says, every Asked waiting at one gate and Notify at another
     When ran is awaited for {"each": [{"name": "2"}, {"name": "3"}]} and for {"each": [{"name": "25"}]} as two tasks, the Asked gate opened once three wait, the first awaited, then the Notify gate opened and the second awaited
     Then the replies are {"total":"5"} and {"total":"25"}, each route holds its own request by identity, the Dear holds the second request's element by identity
-    And the spans form two traces, every action span a child of its own trace's Operation span, Notify performed in pass 2, and both runs take 4 passes
+    And the spans form two traces, every action span a child of its own trace's Operation span with tca.outcome "heard", Notify performed in pass 2, and both runs take 4 passes
 
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
-    Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set in open()
-    When open() is awaited on a constructed instance
+    Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set before open() yields
+    When open() is entered on a constructed instance
     Then the client is set, assigning says raises frozen_instance, model_dump_json() is {"says":"{}"}, and hash() is an int
 
   Scenario: An answer is one span per route and one per performed action
     Given the OpenTelemetry SDK with an in-memory exporter
     When answer is awaited for two elements
     Then the root span is named Operation with attributes tca.request "Elements" and tca.passes 4
-    And its children are two spans named Asked with tca.party "Party" and tca.record "Heard"
+    And its children are two spans named Asked with tca.party "Party", tca.outcome "heard" and tca.record "Heard"
     And no attribute holds the amount the party said
 
   Scenario: A reply's word that refuses refuses when the reply is serialized

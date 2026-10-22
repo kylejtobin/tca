@@ -69,6 +69,7 @@ def test_a_route_under_logfire_is_one_trace_of_the_engines_spans(tmp_path: Path)
         site = s["attributes"]["tca.site"]
         assert s["attributes"]["tca.pass"] == 1
         assert s["attributes"]["tca.heard"] == f"{site}.heard"
+        assert s["attributes"]["tca.outcome"] == "heard"
         assert s["attributes"]["tca.record"] == ("Clear" if site == "Screen" else "Price")
         assert s["attributes"]["tca.party"] == ("Fraud" if site == "Screen" else "Catalog")
         assert s["status"] == "UNSET"

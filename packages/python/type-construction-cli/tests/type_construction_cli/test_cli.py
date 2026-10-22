@@ -2,6 +2,8 @@
 renders, a route, a stand-in party, and nothing else."""
 
 import sys
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
@@ -126,12 +128,9 @@ class Party(Connection):
     retries: Retries
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Word(Scalar[str]):

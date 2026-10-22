@@ -6,7 +6,10 @@ The engine reads a program as the classes its module defines, so this module is 
 a third, whose one outcome a party's answer refutes; ``lifecycle.py`` holds parties that record
 their opening and closing, and is not a program."""
 
+import asyncio
 import sys
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -94,12 +97,9 @@ class Party(Connection):
     says: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Teller(Party):
@@ -623,7 +623,7 @@ def test_a_relations_ordering_is_computed_admitted_by_its_literal_and_never_give
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("party")
-async def test_opened_closes_what_it_opened_when_a_later_open_raises() -> None:
+async def test_an_open_that_fails_releases_what_it_acquired_and_what_opened_before_it() -> None:
     lifecycle.LOG.clear()
     said = lifecycle.Said("{}")
     with pytest.raises(ConnectionError):
@@ -631,7 +631,28 @@ async def test_opened_closes_what_it_opened_when_a_later_open_raises() -> None:
             lifecycle.Opened(fine=lifecycle.Fine(says=said), down=lifecycle.Down(says=said))
         ):
             pass
-    assert lifecycle.LOG == ["open:Fine", "open:Down", "close:Fine"]
+    assert lifecycle.LOG == ["open:Fine", "open:Down", "close:Down", "close:Fine"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("party")
+async def test_a_cancellation_during_an_open_releases_it_and_what_opened_before_it() -> None:
+    lifecycle.LOG.clear()
+    said = lifecycle.Said("{}")
+
+    async def starting() -> None:
+        async with opened(
+            lifecycle.Hanging(fine=lifecycle.Fine(says=said), slow=lifecycle.Slow(says=said))
+        ):
+            lifecycle.LOG.append("body")
+
+    server = asyncio.ensure_future(starting())
+    while lifecycle.LOG != ["open:Fine", "open:Slow"]:
+        await asyncio.sleep(0)
+    server.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await server
+    assert lifecycle.LOG == ["open:Fine", "open:Slow", "close:Slow", "close:Fine"]
 
 
 @pytest.mark.asyncio
@@ -709,6 +730,7 @@ async def test_an_answer_is_one_span_per_route_and_one_per_performed_action() ->
                     "tca.party": "Party",
                     "tca.site": f"request.each.[{i}].Asked",
                     "tca.pass": 1,
+                    "tca.outcome": "heard",
                     "tca.record": "Heard",
                     "tca.heard": f"request.each.[{i}].Asked.heard",
                 },
@@ -728,21 +750,23 @@ async def test_a_client_in_a_private_attribute_leaves_the_connection_frozen() ->
         _client: object | None = PrivateAttr(default=None)
 
         @override
-        async def open(self) -> None:
+        @asynccontextmanager
+        async def open(self) -> AsyncGenerator[None]:
             self._client = object()
+            yield
 
         def holds_a_client(self) -> bool:
             """Whether open set the client."""
             return self._client is not None
 
     keyed = Keyed(says=Said("{}"))
-    await keyed.open()
-    assert keyed.holds_a_client()
-    with pytest.raises(ValidationError) as refusal:
-        keyed.says = Said("x")  # type: ignore[misc]
-    assert [e["type"] for e in refusal.value.errors()] == ["frozen_instance"]
-    assert keyed.model_dump_json() == '{"says":"{}"}'
-    assert isinstance(hash(keyed), int)
+    async with keyed.open():
+        assert keyed.holds_a_client()
+        with pytest.raises(ValidationError) as refusal:
+            keyed.says = Said("x")  # type: ignore[misc]
+        assert [e["type"] for e in refusal.value.errors()] == ["frozen_instance"]
+        assert keyed.model_dump_json() == '{"says":"{}"}'
+        assert isinstance(hash(keyed), int)
 
 
 @pytest.mark.asyncio

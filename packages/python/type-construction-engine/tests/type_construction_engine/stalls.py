@@ -1,6 +1,8 @@
 """A program whose one outcome for an element is Cheap: an amount the party says over the limit
 refutes Low, and the run stalls naming it."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import override
 
@@ -51,12 +53,9 @@ class Party(Connection):
     says: Said
 
     @override
-    async def open(self) -> None:
-        pass
-
-    @override
-    async def close(self) -> None:
-        pass
+    @asynccontextmanager
+    async def open(self) -> AsyncGenerator[None]:
+        yield
 
 
 class Amount(Scalar[Decimal]):
