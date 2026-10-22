@@ -150,8 +150,15 @@ Feature: The engine proves a program at startup, placing every class, and answer
     Given a placement of stalls' Low in the element scope, and one of Largest over the parts
     When construct is called with Amount 11 and Limit, with Amount 11 alone, with an ordering given, and with a Limit as the value
     Then the first returns the ValidationError with literal_error at ("ordering",), and each of the others raises Pydantic's ValidationError for Low noted "at request.each.[0].Low", the one with uncomputed among its errors included
-    When construct is called for Largest with no parts, and with a Limit among them
-    Then the first returns the ValidationError with too_short at ("of",), and the second raises Pydantic's for Largest, noted "at request.each.[0].Largest", with model_type and too_short
+    When construct is called for Largest with no parts, with of omitted, and with a Limit among the parts
+    Then the first returns the ValidationError with too_short at ("of",), and each of the others raises Pydantic's for Largest, noted "at request.each.[0].Largest", the last with model_type and too_short
+    When construct is called for SoloTotal, an Only, with no line total, with two, with one, with of omitted, and with a Solo as the element
+    Then the first returns the ValidationError with missing at ("of", 0), the second with too_long at ("of",), the third constructs, and each of the others raises Pydantic's for SoloTotal, noted "at SoloTotal"
+
+  Scenario: Ordinary construction resolves no producer, and a refused run does
+    Given the engine's producer recording each site it resolves
+    When ran is awaited for the order, then answer for Cleared with the screening flagged
+    Then the first answers in 4 passes with no site resolved, and the second refuses having resolved ("Screen", "heard") among others
 
   Scenario: A selection's shape is its tuple annotation
     When Least[Amount](of=()) is constructed

@@ -15,6 +15,7 @@ import pytest
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, ValidationError
 
+from type_construction import engine
 from type_construction.engine import (
     Collected,
     Placement,
@@ -699,8 +700,64 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
     refuted = construct(largest, {"of": ()}, path)
     assert isinstance(refuted, ValidationError)
     assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("too_short", ("of",))]
-    with pytest.raises(ValidationError) as failure:
-        construct(largest, {"of": (valued.Limit(),)}, path)
-    assert failure.value.title == "Largest"
-    assert failure.value.__notes__ == ["at request.each.[0].Largest"]
+    for malformed_of in ({}, {"of": (valued.Limit(),)}):
+        with pytest.raises(ValidationError) as failure:
+            construct(largest, malformed_of, path)  # type: ignore[arg-type]
+        assert failure.value.title == "Largest"
+        assert failure.value.__notes__ == ["at request.each.[0].Largest"]
     assert [e["type"] for e in failure.value.errors()] == ["model_type", "too_short"]
+    only = Placement(
+        route=program.Checkout,
+        cls=program.SoloTotal,
+        scope=(),
+        singles={"solo": (("request", "solo"),)},
+        freshly={},
+        collections={
+            "of": Collected(
+                site=("request", "solo", "lines"),
+                elements=(("request", "solo", "lines", "[0]", "LineTotal"),),
+            )
+        },
+    )
+    solo = program.Solo(lines=(program.Line(sku=program.Sku("a"), quantity=program.Quantity(1)),))
+    total = program.LineTotal(left=program.UnitPrice(Decimal(1)), right=program.Quantity(1))
+    refuted = construct(only, {"solo": solo, "of": ()}, ("SoloTotal",))
+    assert isinstance(refuted, ValidationError)
+    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("missing", ("of", 0))]
+    refuted = construct(only, {"solo": solo, "of": (total, total)}, ("SoloTotal",))
+    assert isinstance(refuted, ValidationError)
+    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("too_long", ("of",))]
+    assert isinstance(
+        construct(only, {"solo": solo, "of": (total,)}, ("SoloTotal",)), program.SoloTotal
+    )
+    for malformed_only in ({"solo": solo}, {"solo": solo, "of": (solo,)}):
+        with pytest.raises(ValidationError) as failure:
+            construct(only, malformed_only, ("SoloTotal",))  # type: ignore[arg-type]
+        assert failure.value.__notes__ == ["at SoloTotal"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_ordinary_construction_resolves_no_producer_and_a_refused_run_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved: list[tuple[str, ...]] = []
+    producing = engine.producer
+
+    def counting(
+        site: tuple[str, ...], scope: engine.Scope, placements: tuple[Placement, ...]
+    ) -> tuple[engine.Occurrence, tuple[str, ...]] | None:
+        """``producer`` that records each site it is asked to resolve."""
+        resolved.append(site)
+        return producing(site, scope, placements)
+
+    monkeypatch.setattr(engine, "producer", counting)
+    request = PlaceOrder.model_validate_json(ORDER)
+    done = await ran(Checkout, request, config(program)(), proven(program))
+    assert done.passes == 4
+    assert resolved == []
+    monkeypatch.setenv("FRAUD__SAYS", '{"status": "flagged", "reason": "velocity"}')
+    with pytest.raises(ValidationError):
+        await answer(program.Cleared, request, config(program)(), proven(program))
+    assert resolved
+    assert ("Screen", "heard") in resolved
