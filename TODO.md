@@ -27,6 +27,8 @@ Proof must derive its conclusions from the same Pydantic declarations and bindin
 
 Eliminate class-global assumptions, false ambiguities, invented evidence, and duplicated proof logic.
 
+Verify that proof depends only on the program's declarations and their type semantics, not on specific connection implementations, transports, or infrastructure providers.
+
 **Outcome:** Route-local proof accurately represents the construction possibilities and constraints of each route.
 
 ### Task 5: Occurrence-Bound Effect Authorization - Not Done
@@ -58,6 +60,8 @@ Test repeated and nested occurrences, conditional evidence, invalid inputs, comp
 Verify occurrence provenance, actionable diagnostics, OpenTelemetry trace continuity, and optional Logfire interoperability across ordinary Python execution and Pydantic validation.
 
 Remove superseded abstractions, compatibility machinery, duplicate validation paths, dead code, and obsolete tests. Reconcile architecture documentation with the final design.
+
+Verify infrastructure independence by substituting concrete implementations of typed capabilities without modifying engine construction, proof, or effect authorization. Preserve the ability to project programs onto different interfaces and execution infrastructure without introducing a plugin registry or parallel execution model.
 
 **Outcome:** A coherent, production-ready type-construction engine with one authoritative declarative model and minimal necessary machinery.
 
