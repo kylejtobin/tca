@@ -1,12 +1,15 @@
 """A program with every fault the proof refuses, in one module: a record no action hears, two
-classes that hold each other through a forward reference the engine resolves, a scalar two
-carriers hold, a record two actions hear, a party the config holds twice, a class whose fields
-name two sibling elements, a collection of a once-per-run class, a route that would exist once
-per element, a scalar nothing holds, a bare primitive on a fact, a request that holds a fact, a
-deployment that holds a business value, two deployments, two union members the proof cannot tell
-apart, relations their operands' intervals decide, a relation kind that compares nothing, two
-records one action hears that no field tells apart, and an action performed on one branch of a
-choice that holds nothing deciding it."""
+classes that hold each other through a forward reference the engine resolves, a fact that
+holds a scalar two carriers in its scope both hold, an action toward a party the config holds
+twice, a bare sum over an element class two collections hold, a class whose fields name two
+sibling elements, a collection of a once-per-run class, a route that would exist once per
+element, a scalar nothing holds, a bare primitive on a fact, a request that holds a fact, a
+deployment that holds a business value, two deployments, two union members the proof cannot
+tell apart, relations their operands' intervals decide, a relation kind that compares nothing,
+two records one action hears that no field tells apart, and an action performed on one branch
+of a choice that holds nothing deciding it. The same scalar on two carriers, the same record
+heard by two actions and the same element class in two collections are not faults by
+themselves: only a field that could be filled from two of them is."""
 
 from decimal import Decimal
 from typing import override
@@ -127,9 +130,47 @@ class Asked(Tell[Party, Heard]):
 
 
 class Reasked(Tell[Party, Heard]):
-    """A second action hearing the same record."""
+    """A second action hearing the same record, about a second: legitimate, since a second's
+    scope and an element's are apart."""
+
+    second: Second
+
+
+class Named(Fact):
+    """A fact that holds the name an element and the record about it both carry: ambiguous at
+    ``name``, since both are in its scope."""
 
     element: Element
+    name: Name
+
+
+class Spare(Party):
+    """A party the deployment holds twice."""
+
+
+class Ping(Scalar[str]):
+    """What the spare party says."""
+
+    root: str = Field(min_length=1)
+
+
+class Pinged(Record):
+    """The spare party's answer."""
+
+    ping: Ping
+
+
+class Spared(Tell[Spare, Pinged]):
+    """An action toward the spare party: ambiguous at ``party``, held twice by the config."""
+
+    element: Element
+
+
+class Pung(Fact):
+    """An element the spare party answered about."""
+
+    element: Element
+    pinged: Pinged
 
 
 class Word(Scalar[str]):
@@ -335,13 +376,14 @@ class Direct(Request):
 
 
 class Total(Sum[Amount]):
-    """Every element's amount, summed; once per run."""
+    """A bare sum over the amounts: ambiguous at ``of``, since the party says an amount about
+    each element and about each second, and nothing held says which collection."""
 
 
 class Collects(Fact):
     """A collection of a class that exists once per run."""
 
-    every: tuple[Total, ...]
+    every: tuple[Certain, ...]
 
 
 class Concluded(Fact):
@@ -360,6 +402,9 @@ class Concluded(Fact):
     bare: tuple[Bare, ...]
     twins: tuple[Twin, ...]
     eggs: Egg
+    named: tuple[Named, ...]
+    pings: tuple[Pung, ...]
+    collects: Collects
 
 
 class Answered(Reply[Concluded]):
@@ -371,11 +416,12 @@ class Operation(Route[Elements, Answered]):
 
 
 class Parties(Config):
-    """The party, held twice, and a business value the deployment does not hold."""
+    """The party, the spare held twice, and a business value the deployment does not hold."""
 
     party: Party
-    backup: Party
-    limit: Limit
+    spare: Spare
+    standby: Spare
+    word: Word
 
 
 class Backups(Config):

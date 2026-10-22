@@ -1,44 +1,61 @@
-"""The engine: reads a program's classes, proves them at startup, and answers a route by
-construction.
+"""The engine: reads a program's classes, proves each route at startup by constructing it
+symbolically, and answers a route by constructing it from instances at the same sites.
 
 A program is one module. The engine reads each class's fields once, and that read is the only
 thing it knows: ``holds`` is the classes each single field names, ``collects`` the classes each
-tuple field names, ``premises`` the required single fields, ``declares`` the elements a request
-or a record holds as a tuple, ``heard`` the records an action declares as ``Action[P, T]``,
-``carried`` the scalars and values a request, a record or a value brings with it. A class is a
-proposition and its fields are its premises; an instance is a proof; ``model_dump`` of the
-reply is the derivation of the answer.
+tuple field names, ``premises`` the required single fields, ``heard`` the records an action
+declares as ``Action[P, T]``. A class is a proposition and its fields are its premises; an
+instance is a proof; ``model_dump`` of the reply is the derivation of the answer.
 
-The proof places every class. A placement is a path of element classes: ``()`` is once per run,
-``(E,)`` once per element ``E`` of the request or record that declares it, ``(E, I)`` once per
-inner element ``I`` of each ``E``. The request, its scalars and values, the deployment's
-connections and the constants are placed at ``()``. An element is placed one level under what
-declares it; a record where its hearer is; a scalar or value where its carrier is; every other
-class at the finest placement its premises name, and one level above a class it collects. The
-passes stop when no class can be placed, and ``Proof`` is constructed from what was placed and
-what was left waiting. Its validator refuses the program with one ``ValidationError`` naming
-every fault: ``missing``, a field no class fills; ``cycle``, classes that wait on each other;
-``twice``, a class with two sources; ``unplaceable``, a class whose fields name sibling
-elements; ``collects``, a tuple over a class not one level below; ``route``, a route that would
-exist once per element; ``unreached``, a class the reply of no route leads to; ``unmodeled``, a
-field that names no kind; ``boundary``, a request that holds what does not arrive; ``config``,
-no one deployment; ``ambiguous``, two union members not proven exclusive; ``never``, a
-relation its operands' intervals make certain or impossible; ``undiscriminated``, two records
-one action hears that no field tells apart; ``undecided``, an action performed on one branch of
-a choice and not the other that holds nothing deciding the choice.
+The unit of construction is the occurrence: one thing at one declared site in one invocation.
+A site is the path of field names and positions from a root: ``("request", "cart", "lines",
+"[]")`` is an element of the cart's lines, ``("request", "pair", "[1]")`` the second of a fixed
+pair, ``("deployment", "payments")`` a connection, ``("Limit",)`` a constant. A class
+constructed in a scope has the site of that scope and its own name; a record an action hears
+has the action's site and ``heard``. Two instances of one class at two sites are two
+occurrences, whatever their values; one occurrence bound into several holders stays one. A
+scope opens at a root and at every element of a tuple, owns the occurrences declared or built
+there, and sees its ancestors'; a product field opens no scope.
 
-A run is the same construction over instances. A scope is the instances at one placement,
-seeing its ancestors' instances; the request's scope is ``()``, and each element of a request
-or a record gets a child scope under the scope the holder arrived in, holding the element and
-what it carries. A pass asks Pydantic for every class of the route not yet in its scope whose
-premises are present, ``cls.model_validate(supplied)``: a single field is the present member, a
-fresh scalar is constructed for the holder, and a tuple field is every child scope's instance in
-element order once every child holds one, the empty tuple for no element. A relation or a
-selection that refuses is refuted in that scope and asked again next pass; any other refusal
-propagates. The pass's actions are performed together in one task group and each record enters
-the scope its action was built in. The run ends when the route constructs. A pass that builds
-nothing raises one ``ValidationError`` naming each relation that did not hold, with the
-ordering observed, or each field no class fills.
+Binding is read from the declarations and nothing else. A single field binds to the occurrences
+of its classes visible in the scope; a class with two visible sites is ambiguous, and the
+consuming field is refused, not the reuse of the class. A tuple field gathers one collection:
+the collections reached through the class's bound premises, by their product fields, or, for a
+class whose premises reach none, the collections the scope itself holds; a collection is a
+candidate when every element's scope holds one of the field's classes, and two candidates are
+ambiguous at that field. A class is constructed in each scope that owns one of its bound
+premises or holds the collection it gathers; a class with neither is constructed once, at the
+root. Nothing chooses by field name, by declaration order, by trial validation, or by what
+arrived first.
+
+The proof constructs each route symbolically from its own request, the deployment and the
+constants: the declared tree of the request and the deployment is the tree of symbols, the
+passes construct every class the route's reply leads to wherever it binds, an action's records
+enter as alternatives, and at the fixed point every construction is bound again against the
+whole tree, so a candidate that appeared late is still seen. ``Proof`` is constructed from the
+placements, what was left waiting and the faults; its validator refuses the program with one
+``ValidationError`` naming every fault: ``missing``, a field no occurrence fills; ``collects``,
+a tuple over a class no collection's elements hold; ``unplaceable``, a class whose fields are
+never visible from one scope; ``cycle``, classes that wait on each other; ``route``, a route
+whose reply exists per element; ``ambiguous``, a field with two candidates, or two union
+members not proven exclusive; ``unreached``, a class the reply of no route leads to;
+``unmodeled``, a field that names no kind; ``boundary``, a request that holds what does not
+arrive; ``config``, no one deployment; ``never``, a relation its operands' intervals make
+certain or impossible; ``undiscriminated``, two records one action hears that no field tells
+apart; ``undecided``, an action performed on one branch of a choice that holds nothing deciding
+it.
+
+A run is the same construction over instances at the same sites. The request and the deployment
+arrive and are walked into scopes; each pass asks Pydantic for every placement of the route not
+yet constructed in a scope at its site whose bound sites are present, ``cls.model_validate``
+over the instances found there, a fresh scalar constructed for the holder, and a tuple field
+every element scope's instance at the bound sites, in element order, the empty tuple for no
+element. A relation or a selection that refuses is refuted in that scope and asked again next
+pass; any other refusal propagates. The pass's actions are performed together in one task group
+and each record enters the scope its action was built in, its elements fanning out under it.
+The run ends when the route constructs. A pass that builds nothing raises one
+``ValidationError`` naming each relation that did not hold, with the ordering observed, or
+each field no occurrence fills.
 
 ``opened`` opens each connection once and closes each once around whatever a server kind runs
 inside it. Every answer is one OpenTelemetry span named for the route, with one child per
@@ -47,9 +64,9 @@ about a program between runs: the proof is a value the server computes once and 
 """
 
 from asyncio import TaskGroup
-from collections import ChainMap
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from itertools import combinations, product
@@ -81,13 +98,14 @@ from type_construction.world import (
 )
 
 __all__ = [
+    "Collected",
     "Fault",
     "Placement",
     "Proof",
+    "Site",
     "Waiting",
     "answer",
     "asked",
-    "carried",
     "classes",
     "coexist",
     "collects",
@@ -106,9 +124,10 @@ __all__ = [
     "routes",
 ]
 
-type Path = tuple[type[BaseModel], ...]
-"""Where a class lives: ``()`` once per run, ``(E,)`` once per element ``E``, ``(E, I)`` once per
-inner element ``I`` of each ``E``."""
+type Site = tuple[str, ...]
+"""Where an occurrence is declared: the field names and positions from a root, ``"[]"`` for an
+element of ``tuple[E, ...]`` and ``"[0]"`` for the first of a fixed tuple; a class name for a
+class constructed in a scope, or a constant; ``"heard"`` for what an action heard."""
 
 type Options = tuple[type[BaseModel], ...]
 """The classes a field may hold: a union's members, else the one class."""
@@ -126,6 +145,15 @@ ZERO = object()
 
 SIGN = {-1: "<", 0: "=", 1: ">"}
 """How an observed ordering is rendered in a stall."""
+
+REQUEST: Site = ("request",)
+"""The site of what arrived: the route's own field for it."""
+
+DEPLOYMENT: Site = ("deployment",)
+"""The site of the deployment."""
+
+HEARD = "heard"
+"""The last step of a record's site: what its action heard."""
 
 tracer = trace.get_tracer("type_construction.engine")
 """Spans named by the program's classes: one per answer, named for the route, with one child per
@@ -206,6 +234,11 @@ def is_enum(cls: object) -> TypeIs[type[Enum]]:
 def is_literal(annotation: object) -> bool:
     """Whether an annotation is a ``Literal``."""
     return get_origin(annotation) is Literal
+
+
+def is_elements(value: object) -> TypeIs[tuple[object, ...]]:
+    """Whether a field's value is a tuple of elements."""
+    return isinstance(value, tuple)
 
 
 def is_performed(instance: BaseModel) -> TypeIs[Action[Connection, Record]]:
@@ -292,6 +325,18 @@ def elements(annotation: object) -> tuple[object, ...]:
     return tuple(a for a in get_args(annotation) if a is not Ellipsis)
 
 
+def fixed(annotation: object) -> bool:
+    """Whether a tuple annotation fixes its positions: ``tuple[X, X]`` and ``tuple[X]`` do,
+    ``tuple[X, ...]`` does not."""
+    return Ellipsis not in get_args(annotation)
+
+
+def position(annotation: object, index: int) -> str:
+    """The site step of one element of a tuple: its index for a fixed tuple, ``"[]"`` for
+    every element of a variable one."""
+    return f"[{index}]" if fixed(annotation) else "[]"
+
+
 def holds(cls: type[BaseModel]) -> dict[str, Options]:
     """Each single field and the classes it may hold; empty for a field that names no class."""
     return {
@@ -334,12 +379,22 @@ def fresh(cls: type[BaseModel]) -> bool:
 
 
 def premises(cls: type[BaseModel]) -> dict[str, Options]:
-    """Each required single field that names classes the run must hold before the class is
+    """Each required single field that names classes the scope must hold before the class is
     asked for: a fresh class is constructed for the holder instead."""
     return {
         name: classes_
         for name, classes_ in holds(cls).items()
         if classes_ and cls.model_fields[name].is_required() and not all(fresh(c) for c in classes_)
+    }
+
+
+def freshly(cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
+    """Each required single field whose class is fresh, and that class: constructed for the
+    holder when the holder is asked for."""
+    return {
+        name: classes_[0]
+        for name, classes_ in holds(cls).items()
+        if classes_ and cls.model_fields[name].is_required() and all(fresh(c) for c in classes_)
     }
 
 
@@ -353,39 +408,42 @@ def brought(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
     )
 
 
-def carried(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
-    """The scalars and values a carrying class brings into the run: what it holds directly, and
-    what the values among those carry in turn."""
-    direct = brought(cls)
-    return direct.union(*(carried(c) for c in direct if is_value(c)))
-
-
-def carried_by(instance: BaseModel) -> dict[type[BaseModel], BaseModel]:
-    """The scalar and value instances a carrying instance holds, keyed by class, and what those
-    values carry in turn."""
-    if not carries(type(instance)):
-        return {}
-    direct: dict[type[BaseModel], BaseModel] = {
-        type(value): value
-        for name, classes_ in holds(type(instance)).items()
-        if any(is_scalar(c) or is_value(c) for c in classes_)
-        and isinstance(value := getattr(instance, name), BaseModel)
-    }
-    return direct | {k: v for value in direct.values() for k, v in carried_by(value).items()}
-
-
 def declares(cls: type[BaseModel]) -> Options:
-    """The element classes a request or a record holds as tuples, each the root of a child
-    scope; nothing for any other class."""
-    if not issubclass(cls, (Request, Record)):
+    """The element classes a carrying class holds as tuples: what arrives, what a party says,
+    and a composite part each declare elements; nothing for any other class."""
+    if not carries(cls):
         return ()
     return tuple(c for classes_ in collects(cls).values() for c in classes_)
+
+
+def arrives(cls: type[BaseModel]) -> bool:
+    """Whether a class is data that arrives: a scalar, a value, or an enumeration."""
+    return is_scalar(cls) or is_value(cls)
+
+
+def built(cls: type[BaseModel]) -> bool:
+    """Whether a class is one the engine constructs from premises: a fact, an action, a reply
+    or a route. What arrives, what a party says, and what the deployment holds are never
+    built."""
+    return not (
+        arrives(cls)
+        or is_request(cls)
+        or is_record(cls)
+        or is_connection(cls)
+        or is_config(cls)
+        or is_setting(cls)
+    )
 
 
 def asked[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]]) -> type[Request]:
     """The request class a route declares as ``Route[Q, A]``: the class of its ``request``."""
     (request,) = (m for m in members(route.model_fields["request"].annotation) if is_request(m))
     return request
+
+
+def replied[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]]) -> Options:
+    """The reply classes a route declares as ``Route[Q, A]``: the classes of its ``reply``."""
+    return options(route.model_fields["reply"].annotation)
 
 
 def parametrized(cls: type[BaseModel]) -> Iterator[tuple[type[BaseModel], tuple[object, ...]]]:
@@ -443,6 +501,11 @@ def hearers(classes_: Iterable[type[BaseModel]]) -> dict[type[BaseModel], type[B
     return found
 
 
+def hearers_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> Options:
+    """Every action that hears a record class."""
+    return tuple(a for a in classes_ if is_action(a) and cls in heard(a))
+
+
 def carriers_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> Options:
     """The carrying classes that hold a scalar or value directly."""
     return tuple(c for c in classes_ if cls in brought(c))
@@ -451,16 +514,6 @@ def carriers_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> Op
 def declarers_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> Options:
     """The requests and records that hold a class as elements."""
     return tuple(c for c in classes_ if cls in declares(c))
-
-
-def holders_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> list[tuple[str, str]]:
-    """Each class and field that names a class, singly or as an element."""
-    return [
-        (c.__name__, name)
-        for c in classes_
-        for name, classes__ in (*holds(c).items(), *collects(c).items())
-        if cls in classes__
-    ]
 
 
 def producers_of(
@@ -489,19 +542,19 @@ def deployed(classes_: Iterable[type[BaseModel]]) -> list[tuple[type[BaseModel],
     ]
 
 
-def sources(cls: type[BaseModel], classes_: tuple[type[BaseModel], ...]) -> tuple[str, ...]:
-    """Where a class's instances come from without being built from premises: a route's
-    request, a carrier, a declarer, a hearer, a config field, a default root. A class with two
-    is refused; one with none is built, is a word a computed field says, or is a fault its
-    holder reports."""
-    found = ["a request"] if cls in requests(classes_) else []
-    found += [f"carried by {c.__name__}" for c in carriers_of(cls, classes_)]
-    found += [f"an element of {c.__name__}" for c in declarers_of(cls, classes_)]
-    found += [f"heard by {a.__name__}" for a in classes_ if is_action(a) and cls in heard(a)]
-    found += [by for c, by in deployed(classes_) if c is cls]
-    found += ["a constant"] if constant(cls) else []
-    found += ["fresh"] if fresh(cls) else []
-    return tuple(found)
+def sourced(cls: type[BaseModel], classes_: tuple[type[BaseModel], ...]) -> bool:
+    """Whether a class's instances come from somewhere other than its premises: a route's
+    request, a carrier, a declarer, a hearer, a config field, a default root. Such a class is
+    never asked for; it arrives, is said, or is declared."""
+    return (
+        cls in requests(classes_)
+        or bool(carriers_of(cls, classes_))
+        or bool(declarers_of(cls, classes_))
+        or any(is_action(a) and cls in heard(a) for a in classes_)
+        or any(c is cls for c, _ in deployed(classes_))
+        or constant(cls)
+        or fresh(cls)
+    )
 
 
 def fault(
@@ -512,31 +565,269 @@ def fault(
     return InitErrorDetails(type=PydanticCustomError(code, message, context), loc=loc, input=loc[0])
 
 
-class Placement(BaseModel):
-    """One class and where it lives."""
+def names(classes_: Iterable[type[BaseModel]]) -> str:
+    """The classes' names joined as a union, for a message."""
+    return " | ".join(c.__name__ for c in classes_)
+
+
+@dataclass(eq=False)
+class Context:
+    """One scope of the symbolic tree: opened at a root or an element, owning the symbols
+    declared or constructed there, seeing its parent's. ``many`` when it stands for every
+    element of ``tuple[E, ...]``."""
+
+    site: Site
+    parent: Context | None
+    many: bool = field(kw_only=True)
+    owned: list[Symbol] = field(default_factory=list["Symbol"])
+    children: list[Context] = field(default_factory=list["Context"])
+
+    @property
+    def chain(self) -> Iterator[Context]:
+        """This context and its ancestors, nearest first."""
+        found: Context | None = self
+        while found is not None:
+            yield found
+            found = found.parent
+
+    def visible(self, cls: type[BaseModel]) -> list[Symbol]:
+        """Every symbol of a class this context sees: its own and its ancestors'."""
+        return [s for c in self.chain for s in c.owned if s.cls is cls]
+
+    def opened(self, site: Site, *, many: bool) -> Context:
+        """A child context under this one."""
+        child = Context(site, self, many=many)
+        self.children.append(child)
+        return child
+
+
+@dataclass(frozen=True)
+class Gathered:
+    """One collection as a class gathers it: the site of the tuple field, the symbol that
+    holds it, and the element symbols, alternatives among them."""
+
+    site: Site
+    holder: Symbol
+    elements: tuple[Symbol, ...]
+
+    @property
+    def contexts(self) -> tuple[Context, ...]:
+        """The element contexts, in order, each once."""
+        return tuple(dict.fromkeys(e.context for e in self.elements))
+
+
+@dataclass(eq=False)
+class Symbol:
+    """One occurrence of the proof: a class at a site in a context. What arrived or was heard
+    holds the symbols of its contents; what was constructed holds the symbols it was bound to,
+    which are references, not new occurrences."""
+
+    cls: type[BaseModel]
+    site: Site
+    context: Context
+    held: dict[str, tuple[Symbol, ...]] = field(default_factory=dict[str, tuple["Symbol", ...]])
+    collected: dict[str, Gathered] = field(default_factory=dict[str, Gathered])
+
+
+def declared_symbol(
+    cls: type[BaseModel], site: Site, context: Context, lineage: frozenset[type[BaseModel]]
+) -> Symbol:
+    """The symbol of a class that arrives at a site, with the symbols of everything it declares:
+    each single field's classes at the field's site, as alternatives, and each tuple field's
+    element classes in element contexts under this one, one for ``tuple[E, ...]``, one per
+    position for a fixed tuple. A class already on the lineage is not descended into."""
+    symbol = Symbol(cls, site, context)
+    context.owned.append(symbol)
+    if cls in lineage:
+        return symbol
+    lineage = lineage | {cls}
+    for name, classes_ in holds(cls).items():
+        symbol.held[name] = tuple(
+            declared_symbol(c, (*site, name), context, lineage) for c in classes_
+        )
+    for name, info in cls.model_fields.items():
+        if get_origin(info.annotation) is not tuple:
+            continue
+        found: list[Symbol] = []
+        for index, element in enumerate(elements(info.annotation)):
+            step = position(info.annotation, index)
+            child = context.opened((*site, name, step), many=not fixed(info.annotation))
+            found.extend(declared_symbol(c, child.site, child, lineage) for c in options(element))
+        symbol.collected[name] = Gathered((*site, name), symbol, tuple(found))
+    return symbol
+
+
+class Ambiguity(NamedTuple):
+    """A field with more than one candidate: what the proof refuses at the consuming field."""
+
+    field: str
+    message: str
+
+
+@dataclass(frozen=True)
+class Binding:
+    """How a class binds in a context: the symbols of each premise, alternatives among them,
+    the fresh classes constructed for the holder, and the collection each tuple field gathers;
+    ``anchored`` when the context owns a premise or holds a gathered collection."""
+
+    singles: dict[str, tuple[Symbol, ...]]
+    freshly: dict[str, type[BaseModel]]
+    collections: dict[str, Gathered]
+    anchored: bool
+
+
+def single(name: str, classes_: Options, context: Context) -> tuple[Symbol, ...] | Ambiguity | None:
+    """The visible symbols of a single field's classes: one site per class, else ambiguous;
+    ``None`` while none is visible."""
+    found = [s for c in classes_ for s in context.visible(c)]
+    for cls in classes_:
+        sites = list(dict.fromkeys(s.site for s in found if s.cls is cls))
+        if len(sites) > 1:
+            where = ", ".join(".".join(s) for s in sites)
+            return Ambiguity(name, f"{cls.__name__} is at {len(sites)} sites here: {where}")
+    return tuple(found) or None
+
+
+def reached_from(symbols: Iterable[Symbol]) -> dict[Site, Gathered]:
+    """Every collection reached from symbols through product fields, by site: what a bound
+    premise holds, and what that holds in turn."""
+    found: dict[Site, Gathered] = {}
+    seen: set[int] = set()
+    todo = list(symbols)
+    while todo:
+        symbol = todo.pop()
+        if id(symbol) in seen:
+            continue
+        seen.add(id(symbol))
+        found.update({g.site: g for g in symbol.collected.values()})
+        todo.extend(s for alternatives in symbol.held.values() for s in alternatives)
+    return found
+
+
+def held_by(context: Context) -> dict[Site, Gathered]:
+    """Every collection the context's own symbols hold, by site."""
+    return {g.site: g for s in context.owned for g in s.collected.values()}
+
+
+def chosen(classes_: Options, context: Context) -> list[Symbol]:
+    """The symbols of the given classes an element context owns."""
+    return [s for s in context.owned if s.cls in classes_]
+
+
+def gather(
+    name: str, classes_: Options, pool: Mapping[Site, Gathered]
+) -> Gathered | Ambiguity | None:
+    """The one collection among a pool whose every element context owns one of a tuple field's
+    classes, with those elements gathered in order; ambiguous with two such collections, or an
+    element context owning a class at two sites; ``None`` while there is none."""
+    complete = [g for g in pool.values() if all(chosen(classes_, c) for c in g.contexts)]
+    if len(complete) > 1:
+        where = ", ".join(".".join(g.site) for g in complete)
+        return Ambiguity(name, f"{names(classes_)} is collected by {len(complete)}: {where}")
+    if not complete:
+        return None
+    (found,) = complete
+    picked: list[Symbol] = []
+    for element in found.contexts:
+        own = chosen(classes_, element)
+        for cls in classes_:
+            sites = list(dict.fromkeys(s.site for s in own if s.cls is cls))
+            if len(sites) > 1:
+                where = ", ".join(".".join(s) for s in sites)
+                return Ambiguity(
+                    name, f"{cls.__name__} is at {len(sites)} sites per element: {where}"
+                )
+        picked.extend(own)
+    return Gathered(found.site, found.holder, tuple(picked))
+
+
+def bind(cls: type[BaseModel], context: Context) -> Binding | Ambiguity | None:
+    """How a class binds in a context, read from its fields: each required single field to the
+    visible symbols of its classes, each tuple field to one collection reached through the
+    bound premises or, when they reach none, held by the context; ``None`` while a field has
+    nothing; the ambiguity of the first field with more than one candidate."""
+    singles: dict[str, tuple[Symbol, ...]] = {}
+    for name, classes_ in premises(cls).items():
+        found = single(name, classes_, context)
+        if found is None or isinstance(found, Ambiguity):
+            return found
+        singles[name] = found
+    pool = reached_from(s for found in singles.values() for s in found) or held_by(context)
+    collections: dict[str, Gathered] = {}
+    for name, classes_ in collects(cls).items():
+        found = gather(name, classes_, pool)
+        if found is None or isinstance(found, Ambiguity):
+            return found
+        collections[name] = found
+    anchors = [
+        *(s for found in singles.values() for s in found),
+        *(g.holder for g in collections.values()),
+    ]
+    anchored = any(a.context is context for a in anchors) if anchors else context.parent is None
+    return Binding(singles, freshly(cls), collections, anchored)
+
+
+def contexts(root: Context) -> Iterator[Context]:
+    """A context and every context under it, parents first."""
+    yield root
+    for child in root.children:
+        yield from contexts(child)
+
+
+def symbolized(cls: type[BaseModel], context: Context, binding: Binding) -> Symbol:
+    """The symbol of a class constructed in a context: at the context's site under its own name,
+    holding what it was bound to. An action's records enter the context as alternatives at the
+    action's ``heard`` site, with everything they declare."""
+    symbol = Symbol(
+        cls, (*context.site, cls.__name__), context, binding.singles, binding.collections
+    )
+    context.owned.append(symbol)
+    if is_action(cls):
+        for record in heard(cls):
+            declared_symbol(record, (*symbol.site, HEARD), context, frozenset())
+    return symbol
+
+
+class Collected(BaseModel):
+    """Where a placement's tuple field gathers: the collection's site, and the sites of the
+    elements it takes, one per element class."""
 
     model_config = ConfigDict(frozen=True, strict=True)
+    site: Site
+    elements: tuple[Site, ...]
+
+
+class Placement(BaseModel):
+    """One class constructed in one route, in the scope at a site, and where each field binds:
+    the sites of each single field's candidates, the fresh class of each fresh field, and the
+    collection each tuple field gathers. The run constructs exactly this."""
+
+    model_config = ConfigDict(frozen=True, strict=True)
+    route: type[BaseModel]
     cls: type[BaseModel]
-    path: Path
+    scope: Site
+    singles: dict[str, tuple[Site, ...]]
+    freshly: dict[str, type[BaseModel]]
+    collections: dict[str, Collected]
 
 
 class Waiting(BaseModel):
-    """The absent case, as a value: what a class waited on when the proof's passes stopped. An
-    empty ``on`` is a class with no source at all."""
+    """The absent case, as a value: a class a route's passes never constructed, the first field
+    that had nothing, and the classes among that field's that the passes could have built."""
 
     model_config = ConfigDict(frozen=True, strict=True)
+    route: type[BaseModel]
     cls: type[BaseModel]
     field: str
     on: Options
 
 
 class Fault(BaseModel):
-    """A fault the passes found while placing a class, kept until the proof reports it with the
-    rest."""
+    """A fault the passes found, kept until the proof reports it with the rest."""
 
     model_config = ConfigDict(frozen=True, strict=True)
-    code: Literal["unplaceable", "collects", "route"]
-    cls: type[BaseModel]
+    code: Literal["missing", "collects", "unplaceable", "route", "ambiguous"]
+    loc: tuple[str, ...]
     message: str
 
 
@@ -544,151 +835,278 @@ PLACED = frozenset[type[BaseModel]]()
 """The empty set of classes."""
 
 
-def seeds(classes_: tuple[type[BaseModel], ...]) -> dict[type[BaseModel], Path]:
-    """What is placed at ``()`` before any pass: every route's request and what it carries, the
-    deployment's connections, and every constant and fresh scalar."""
-    placed: dict[type[BaseModel], Path] = {}
-    for request in requests(classes_):
-        placed[request] = ()
-        placed.update(dict.fromkeys(carried(request), ()))
-    placed.update(dict.fromkeys((c for c, _ in deployed(classes_)), ()))
-    placed.update(dict.fromkeys((c for c in classes_ if constant(c) or fresh(c)), ()))
-    return placed
+def reached(
+    start: type[BaseModel], classes_: Iterable[type[BaseModel]]
+) -> frozenset[type[BaseModel]]:
+    """Every class a class leads to: through its fields, the words of its computed fields, the
+    carriers of what it holds, the hearer of a record, the declarer of an element, and so on
+    from each."""
+    classes_ = tuple(classes_)
+    found: set[type[BaseModel]] = set()
+    todo = [start]
+    while todo:
+        cls = todo.pop()
+        if cls in found:
+            continue
+        found.add(cls)
+        named = (*holds(cls).values(), *collects(cls).values(), *produces(cls).values())
+        todo.extend(c for classes__ in named for c in classes__)
+        todo.extend(carriers_of(cls, classes_))
+        todo.extend(declarers_of(cls, classes_))
+        todo.extend(hearers_of(cls, classes_))
+    return frozenset(found)
 
 
-def under(
-    holder: type[BaseModel],
+def built_by(
+    route: type[Route[Request, Reply[Fact]]], classes_: tuple[type[BaseModel], ...]
+) -> tuple[type[BaseModel], ...]:
+    """The classes a route's run constructs from premises: those its reply leads to that are
+    built and come from nowhere else, in definition order. A record is only ever heard, and
+    a value only ever arrives; one with no hearer or carrier is what its holder reports as
+    missing."""
+    reach = reached(route, classes_)
+    return tuple(c for c in classes_ if c in reach and built(c) and not sourced(c, classes_))
+
+
+def rooted(
+    route: type[Route[Request, Reply[Fact]]], classes_: tuple[type[BaseModel], ...]
+) -> Context:
+    """The root context of a route's symbolic tree: its request, the deployment and every
+    constant, with everything the first two declare."""
+    root = Context((), None, many=False)
+    declared_symbol(asked(route), REQUEST, root, PLACED)
+    for deployment in classes_:
+        if is_config(deployment):
+            declared_symbol(deployment, DEPLOYMENT, root, PLACED)
+    for c in classes_:
+        if constant(c):
+            root.owned.append(Symbol(c, (c.__name__,), root))
+    return root
+
+
+class Symbolic(NamedTuple):
+    """What constructing a route symbolically produced."""
+
+    placed: list[Placement]
+    waiting: list[Waiting]
+    faulted: list[Fault]
+
+
+def placement(
+    route: type[Route[Request, Reply[Fact]]],
     cls: type[BaseModel],
-    placed: Mapping[type[BaseModel], Path],
-    *,
-    deeper: bool,
-) -> Path | Waiting:
-    """Where a class another class places lives: one level under the holder when it is an
-    element, else where the holder is; ``Waiting`` on the holder while it is unplaced."""
-    if holder not in placed:
-        return Waiting(cls=cls, field="", on=(holder,))
-    return (*placed[holder], cls) if deeper else placed[holder]
+    context: Context,
+    binding: Binding,
+) -> Placement:
+    """A binding as the run reads it: sites in place of symbols."""
+    return Placement(
+        route=route,
+        cls=cls,
+        scope=context.site,
+        singles={
+            n: tuple(dict.fromkeys(s.site for s in found)) for n, found in binding.singles.items()
+        },
+        freshly=binding.freshly,
+        collections={
+            n: Collected(site=g.site, elements=tuple(dict.fromkeys(e.site for e in g.elements)))
+            for n, g in binding.collections.items()
+        },
+    )
 
 
-def sourced(
-    cls: type[BaseModel],
-    placed: Mapping[type[BaseModel], Path],
-    classes_: tuple[type[BaseModel], ...],
-) -> Path | Waiting | None:
-    """The placement of a class another class places: an element one level under its declarer,
-    a record where its hearer is, a scalar or value where its carrier is, a word where the
-    computed field that says it is; ``Waiting`` while that class is unplaced, waiting on nothing
-    for a record no action hears or a scalar nothing carries; ``None`` for a class that is built
-    from its premises."""
-    if declarers := declarers_of(cls, classes_):
-        return under(declarers[0], cls, placed, deeper=True)
-    if is_record(cls):
-        hearer = hearers(classes_).get(cls)
-        if hearer is None:
-            return Waiting(cls=cls, field="", on=())
-        return under(hearer, cls, placed, deeper=False)
-    holders = [*carriers_of(cls, classes_), *(c for c, _ in producers_of(cls, classes_))]
-    if holders:
-        return under(holders[0], cls, placed, deeper=False)
-    return Waiting(cls=cls, field="", on=()) if is_scalar(cls) or is_request(cls) else None
-
-
-def candidates(
-    cls: type[BaseModel], placed: Mapping[type[BaseModel], Path]
-) -> tuple[list[Path], list[Path]] | Waiting | Fault:
-    """The placements a built class's fields name: those of its premises, and one level above
-    each class it collects; ``Waiting`` on the first field with nothing placed; a ``collects``
-    fault for a tuple over a class placed once per run."""
-    paths: list[Path] = []
-    for name, classes_ in premises(cls).items():
-        present = [placed[c] for c in classes_ if c in placed]
-        if not present:
-            return Waiting(cls=cls, field=name, on=classes_)
-        paths.extend(present)
-    below: list[Path] = []
-    for name, classes_ in collects(cls).items():
-        present = [placed[c] for c in classes_ if c in placed]
-        if not present:
-            return Waiting(cls=cls, field=name, on=classes_)
-        if any(not p for p in present):
-            once = ", ".join(c.__name__ for c in classes_ if c in placed and not placed[c])
-            return Fault(
-                code="collects",
-                cls=cls,
-                message=f"{cls.__name__}.{name} collects {once}, which exists once per run;"
-                " hold it directly",
-            )
-        below.extend(p[:-1] for p in present)
-    return paths, below
-
-
-def place(
-    cls: type[BaseModel],
-    placed: Mapping[type[BaseModel], Path],
-    classes_: tuple[type[BaseModel], ...],
-) -> Path | Waiting | Fault:
-    """The proof's step: where a class lives, read from its fields. A class another class places
-    lives where ``sourced`` says. Any other lives at the finest placement its premises name,
-    which every other must be a prefix of, and one level above each class it collects, which
-    must be exactly that level."""
-    if (found := sourced(cls, placed, classes_)) is not None:
-        return found
-    named = candidates(cls, placed)
-    if not isinstance(named, tuple):
-        return named
-    paths, below = named
-    finest = max((*paths, *below), key=len, default=())
-    if any(finest[: len(p)] != p for p in paths) or any(p != finest for p in below):
-        each = " and ".join(sorted({p[-1].__name__ for p in (*paths, *below) if p}))
-        return Fault(
-            code="unplaceable",
-            cls=cls,
-            message=f"{cls.__name__} would exist once per element of {each}; a class exists"
-            " per element of one",
-        )
-    if is_route(cls) and finest:
-        return Fault(
-            code="route",
-            cls=cls,
-            message=f"{cls.__name__} would exist once per {finest[-1].__name__}; a route exists"
-            " once per run, so its reply's fact collects elements as tuple[X, ...] instead of"
-            " holding one",
-        )
-    return finest
-
-
-def placements(
-    classes_: tuple[type[BaseModel], ...],
-) -> tuple[dict[type[BaseModel], Path], dict[type[BaseModel], Waiting], list[Fault]]:
-    """The proof's passes: ask ``place`` for every class not yet placed, keep what is placed,
-    and stop when a pass places nothing. Deployment values are the environment's and are not
-    placed."""
-    placed = seeds(classes_)
-    pending = [c for c in classes_ if c not in placed and not is_setting(c) and not is_config(c)]
-    waiting: dict[type[BaseModel], Waiting] = {}
-    faults: list[Fault] = []
+def symbolic(
+    route: type[Route[Request, Reply[Fact]]], classes_: tuple[type[BaseModel], ...]
+) -> Symbolic:
+    """The proof's construction of one route: passes over the symbolic tree constructing every
+    class the route builds wherever it binds, until a pass constructs nothing; then every
+    construction bound again against the whole tree, which is what the placements say, and
+    every class never constructed explained."""
+    root = rooted(route, classes_)
+    asked_for = built_by(route, classes_)
+    constructed: list[tuple[type[BaseModel], Context]] = []
+    done: dict[Context, set[type[BaseModel]]] = {}
     moved = True
     while moved:
         moved = False
-        for cls in list(pending):
-            match place(cls, placed, classes_):
-                case Waiting() as found:
-                    waiting[cls] = found
-                case Fault() as found:
-                    faults.append(found)
-                    pending.remove(cls)
-                    waiting.pop(cls, None)
-                case found:
-                    placed[cls] = found
-                    pending.remove(cls)
-                    waiting.pop(cls, None)
+        for context in list(contexts(root)):
+            for cls in asked_for:
+                if cls in done.setdefault(context, set()):
+                    continue
+                found = bind(cls, context)
+                if isinstance(found, Binding) and found.anchored:
+                    symbolized(cls, context, found)
+                    constructed.append((cls, context))
+                    done[context].add(cls)
                     moved = True
-    return placed, waiting, faults
+    placed: list[Placement] = []
+    faulted: list[Fault] = []
+    for cls, context in constructed:
+        found = bind(cls, context)
+        if isinstance(found, Binding):
+            placed.append(placement(route, cls, context, found))
+        elif isinstance(found, Ambiguity):
+            faulted.append(ambiguity(cls, found))
+        if is_route(cls) and context.parent is not None:
+            faulted.append(misrouted(cls, context))
+    never_built = [c for c in asked_for if not any(c is b for b, _ in constructed)]
+    waiting, faults = unexplained(route, never_built, classes_, root)
+    return Symbolic(placed, waiting, [*faulted, *faults])
+
+
+def ambiguity(cls: type[BaseModel], found: Ambiguity) -> Fault:
+    """The fault of a field with more than one candidate."""
+    return Fault(
+        code="ambiguous",
+        loc=(cls.__name__, found.field),
+        message=f"{cls.__name__}.{found.field} has two sources: {found.message}; hold what"
+        " tells them apart",
+    )
+
+
+def misrouted(cls: type[BaseModel], context: Context) -> Fault:
+    """The fault of a route constructed anywhere but the root."""
+    return Fault(
+        code="route",
+        loc=(cls.__name__,),
+        message=f"{cls.__name__} would exist once per {'.'.join(context.site)}; a route exists"
+        " once per run, so its reply's fact collects elements as tuple[X, ...] instead of"
+        " holding one",
+    )
+
+
+def anywhere(root: Context, classes_: Options) -> bool:
+    """Whether a symbol of any of the classes exists in the tree."""
+    return any(s.cls in classes_ for c in contexts(root) for s in c.owned)
+
+
+def collected_anywhere(root: Context, classes_: Options) -> bool:
+    """Whether a collection whose every element context owns one of the classes exists in the
+    tree."""
+    return any(
+        all(chosen(classes_, e) for e in g.contexts)
+        for c in contexts(root)
+        for s in c.owned
+        for g in s.collected.values()
+    )
+
+
+def bringers(
+    cls: type[BaseModel], classes_: tuple[type[BaseModel], ...]
+) -> frozenset[type[BaseModel]]:
+    """The built classes that would bring a class that is not built: the actions that hear a
+    record, and the bringers of what carries or declares a scalar, a value or an element."""
+    found: set[type[BaseModel]] = set()
+    todo = [cls]
+    seen: set[type[BaseModel]] = set()
+    while todo:
+        c = todo.pop()
+        if c in seen:
+            continue
+        seen.add(c)
+        found.update(hearers_of(c, classes_))
+        todo.extend((*carriers_of(c, classes_), *declarers_of(c, classes_)))
+    return frozenset(found)
+
+
+def blockers(
+    classes_: Options, never_built: list[type[BaseModel]], every: tuple[type[BaseModel], ...]
+) -> Options:
+    """The never-built classes a field waits on: those among its own classes, and those that
+    would bring one of them."""
+    wanted = set(classes_) | {b for c in classes_ for b in bringers(c, every)}
+    return tuple(c for c in never_built if c in wanted)
+
+
+def unexplained(
+    route: type[Route[Request, Reply[Fact]]],
+    never_built: list[type[BaseModel]],
+    every: tuple[type[BaseModel], ...],
+    root: Context,
+) -> tuple[list[Waiting], list[Fault]]:
+    """Why each class the passes never constructed was not: a context that finds a field
+    ambiguous is that fault; a field whose classes occur nowhere waits on the never-built
+    classes that would bring them, and with none is ``missing``; a tuple field no collection's
+    elements fill waits the same way, and with none is ``collects``; a class whose every field
+    has a candidate somewhere but never all from one scope is ``unplaceable``, or ``route`` for
+    a route whose reply is under an element. ``cycle`` is left to the proof."""
+    waiting: list[Waiting] = []
+    faults: list[Fault] = []
+    for cls in never_built:
+        found = [bind(cls, c) for c in contexts(root)]
+        if any(isinstance(f, Ambiguity) for f in found):
+            faults.extend(ambiguity(cls, f) for f in found if isinstance(f, Ambiguity))
+            continue
+        blocked = False
+        for name, classes_ in premises(cls).items():
+            if anywhere(root, classes_):
+                continue
+            blocked = True
+            if on := blockers(classes_, never_built, every):
+                waiting.append(Waiting(route=route, cls=cls, field=name, on=on))
+            else:
+                faults.append(unfilled_field(cls, name, classes_))
+        for name, classes_ in collects(cls).items():
+            if collected_anywhere(root, classes_):
+                continue
+            blocked = True
+            if on := blockers(classes_, never_built, every):
+                waiting.append(Waiting(route=route, cls=cls, field=name, on=on))
+            else:
+                faults.append(uncollected(cls, name, classes_))
+        if not blocked:
+            faults.append(apart(cls, root))
+    return waiting, faults
+
+
+def unfilled_field(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
+    """The fault of a field whose classes occur nowhere in a route and come from nothing."""
+    return Fault(
+        code="missing",
+        loc=(cls.__name__, name),
+        message=f"no class fills {cls.__name__}.{name}, which holds {names(classes_)}",
+    )
+
+
+def uncollected(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
+    """The fault of a tuple field no collection's elements fill."""
+    return Fault(
+        code="collects",
+        loc=(cls.__name__, name),
+        message=f"{cls.__name__}.{name} collects {names(classes_)}, which the elements of no"
+        " collection hold; a collection is one level down, under a tuple the request or a"
+        " record declares",
+    )
+
+
+def apart(cls: type[BaseModel], root: Context) -> Fault:
+    """The fault of a class whose fields each have a candidate somewhere, never all from one
+    scope: a route whose reply is under an element, else a class over sibling elements."""
+    if is_route(cls):
+        under = [
+            ".".join(s.context.site)
+            for c in contexts(root)
+            for s in c.owned
+            if s.cls in replied(cls) and c.parent is not None
+        ]
+        return Fault(
+            code="route",
+            loc=(cls.__name__,),
+            message=f"{cls.__name__} would exist once per {', '.join(under)}; a route exists"
+            " once per run, so its reply's fact collects elements as tuple[X, ...] instead of"
+            " holding one",
+        )
+    fields = ", ".join(f"{cls.__name__}.{n}" for n in (*premises(cls), *collects(cls)))
+    return Fault(
+        code="unplaceable",
+        loc=(cls.__name__,),
+        message=f"{fields} are never visible from one scope; a class over two sibling elements"
+        " is an element of its own",
+    )
 
 
 class Proof(BaseModel):
-    """Every class placed, constructed at startup; its validator refuses the program with every
-    fault at once."""
+    """Every route constructed symbolically, at startup; its validator refuses the program with
+    every fault at once."""
 
     model_config = ConfigDict(frozen=True, strict=True)
     program: str
@@ -698,63 +1116,42 @@ class Proof(BaseModel):
     faulted: tuple[Fault, ...]
 
     @property
-    def paths(self) -> dict[type[BaseModel], Path]:
-        """Each placed class and where it lives."""
-        return {p.cls: p.path for p in self.placed}
-
-    def path(self, cls: type[BaseModel]) -> Path:
-        """Where a placed class lives."""
-        return self.paths[cls]
-
-    @property
     def routes(self) -> tuple[type[Route[Request, Reply[Fact]]], ...]:
         """The program's routes."""
         return tuple(c for c in self.classes if is_route(c))
 
-    def reached(self, start: type[BaseModel]) -> frozenset[type[BaseModel]]:
-        """Every class a class leads to: through its fields, the words of its computed fields,
-        the carriers of what it holds, the hearer of a record, the declarer of an element, and
-        so on from each."""
-        found: set[type[BaseModel]] = set()
-        todo = [start]
-        hearers_ = hearers(self.classes)
-        while todo:
-            cls = todo.pop()
-            if cls in found:
-                continue
-            found.add(cls)
-            named = (*holds(cls).values(), *collects(cls).values(), *produces(cls).values())
-            todo.extend(c for classes_ in named for c in classes_)
-            todo.extend(carriers_of(cls, self.classes))
-            todo.extend(declarers_of(cls, self.classes))
-            if cls in hearers_:
-                todo.append(hearers_[cls])
-        return frozenset(found)
+    def placements(self, route: type[BaseModel]) -> tuple[Placement, ...]:
+        """Every placement of a route, in construction order."""
+        return tuple(p for p in self.placed if p.route is route)
 
     def built[Q: Request, A: Reply[Fact]](
         self, route: type[Route[Q, A]]
     ) -> tuple[type[BaseModel], ...]:
-        """The classes a route's run constructs from premises: those its reply leads to that
-        are not scalars and have no source of their own, in definition order."""
-        reach = self.reached(route)
-        return tuple(
-            c
-            for c in self.classes
-            if c in reach and c in self.paths and not is_scalar(c) and not sources(c, self.classes)
-        )
+        """The classes a route's run constructs, in definition order."""
+        placed = {p.cls for p in self.placements(route)}
+        return tuple(c for c in self.classes if c in placed)
+
+    def sites[Q: Request, A: Reply[Fact]](
+        self, route: type[Route[Q, A]], cls: type[BaseModel]
+    ) -> tuple[Site, ...]:
+        """The sites at which a route constructs a class."""
+        return tuple((*p.scope, cls.__name__) for p in self.placements(route) if p.cls is cls)
 
     @property
     def constants(self) -> tuple[type[BaseModel], ...]:
         """The scalars that exist in every run by being declared."""
         return tuple(c for c in self.classes if constant(c))
 
+    def reached(self, start: type[BaseModel]) -> frozenset[type[BaseModel]]:
+        """Every class a class leads to; see ``reached``."""
+        return reached(start, self.classes)
+
     @model_validator(mode="after")
     def sound(self) -> Self:
         """Refuse the program with one ``ValidationError`` naming every fault."""
         details = [
-            *unfilled(self),
-            *(fault(f.code, "{why}", (f.cls.__name__,), why=f.message) for f in self.faulted),
-            *twice(self),
+            *(fault(f.code, "{why}", f.loc, why=f.message) for f in unique(self.faulted)),
+            *cycles(self),
             *unreached(self),
             *unmodeled(self),
             *boundary(self),
@@ -769,54 +1166,31 @@ class Proof(BaseModel):
         return self
 
 
-def unfilled(proof: Proof) -> list[InitErrorDetails]:
-    """One ``missing`` error per field that holds a class with no source, at ``(class, field)``,
-    and one ``cycle`` error per waiting class that no such root explains: one whose every
-    unfilled field names a class that only another unexplained waiting class would bring."""
-    waiting = {w.cls: w for w in proof.waiting}
-    sourceless = [w.cls for w in proof.waiting if not w.on]
-    explained = set(sourceless) | {f.cls for f in proof.faulted}
+def unique(faults: Iterable[Fault]) -> list[Fault]:
+    """The faults with each code and location once: a class two routes build is reported
+    once."""
+    found: dict[tuple[str, tuple[str, ...]], Fault] = {}
+    for f in faults:
+        found.setdefault((f.code, f.loc), f)
+    return list(found.values())
+
+
+def cycles(proof: Proof) -> list[InitErrorDetails]:
+    """One ``cycle`` error per waiting class that no fault explains: one whose every unfilled
+    field names a class that only another unexplained waiting class would bring."""
+    explained = {f.loc[0] for f in proof.faulted}
+    waiting = list(proof.waiting)
     moved = True
     while moved:
         moved = False
-        for w in waiting.values():
-            if w.cls not in explained and any(c in explained for c in w.on):
-                explained.add(w.cls)
+        for w in waiting:
+            if w.cls.__name__ not in explained and any(c.__name__ in explained for c in w.on):
+                explained.add(w.cls.__name__)
                 moved = True
     return [
-        *(
-            fault(
-                "missing",
-                "no class fills {cls}.{name}, which holds {holds}",
-                (holder, name),
-                cls=holder,
-                name=name,
-                holds=absent.__name__,
-            )
-            for absent in sourceless
-            for holder, name in holders_of(absent, proof.classes)
-        ),
-        *(
-            fault("cycle", "{cls} holds a class that holds it", (c.__name__,), cls=c.__name__)
-            for c in waiting
-            if c not in explained
-        ),
-    ]
-
-
-def twice(proof: Proof) -> list[InitErrorDetails]:
-    """One ``twice`` error per class with more than one source."""
-    return [
-        fault(
-            "twice",
-            "{cls} has {n} sources: {by}; exactly one",
-            (c.__name__,),
-            cls=c.__name__,
-            n=len(found),
-            by=", ".join(found),
-        )
-        for c in proof.classes
-        if len(found := sources(c, proof.classes)) > 1
+        fault("cycle", "{cls} holds a class that holds it", (name,), cls=name)
+        for name in dict.fromkeys(w.cls.__name__ for w in waiting)
+        if name not in explained
     ]
 
 
@@ -873,21 +1247,16 @@ def unmodeled(proof: Proof) -> list[InitErrorDetails]:
         )
         for c in proof.classes
         if not is_scalar(c)
-        for name, field in c.model_fields.items()
+        for name, info in c.model_fields.items()
         if not owned(c, name)
         for member in (
-            elements(field.annotation)
-            if get_origin(field.annotation) is tuple
-            else (field.annotation,)
+            elements(info.annotation)
+            if get_origin(info.annotation) is tuple
+            else (info.annotation,)
         )
         for member in members(member)
         if not modeled(c, member)
     ]
-
-
-def arrives(cls: type[BaseModel]) -> bool:
-    """Whether a class is data that arrives: a scalar, a value, or an enumeration."""
-    return is_scalar(cls) or is_value(cls)
 
 
 def boundary(proof: Proof) -> list[InitErrorDetails]:
@@ -948,12 +1317,12 @@ def bounds(cls: type[BaseModel]) -> Interval:
     """A scalar's interval from the ``gt``, ``ge``, ``lt`` and ``le`` metadata on its root. A
     scalar over ``int`` has no value between two integers, so its strict bounds are the next
     integer's non-strict ones."""
-    field = cls.model_fields.get("root")
-    if field is None:
+    info = cls.model_fields.get("root")
+    if info is None:
         return Interval()
-    whole = field.annotation is int
+    whole = info.annotation is int
     found = Interval()
-    for meta in field.metadata:
+    for meta in info.metadata:
         match meta:
             case Gt(gt=int() | float() | Decimal() as v):
                 low = Decimal(str(v))
@@ -1034,10 +1403,10 @@ def comparisons(cls: type[BaseModel]) -> list[tuple[Options, Options, frozenset[
         (
             holds(cls)[factory.left],
             holds(cls)[factory.right],
-            frozenset(get_args(field.annotation)),
+            frozenset(get_args(info.annotation)),
         )
-        for field in cls.model_fields.values()
-        if isinstance(factory := field.default_factory, Comparison)
+        for info in cls.model_fields.values()
+        if isinstance(factory := info.default_factory, Comparison)
     ]
 
 
@@ -1148,11 +1517,11 @@ def contradicts(a: type[BaseModel], b: type[BaseModel]) -> bool:
 def counts(cls: type[BaseModel]) -> tuple[int, int | None]:
     """How many elements a selection admits: a fixed tuple's length twice, else its
     ``min_length`` and ``max_length``."""
-    field = cls.model_fields["of"]
-    if Ellipsis not in get_args(field.annotation):
-        return len(get_args(field.annotation)), len(get_args(field.annotation))
+    info = cls.model_fields["of"]
+    if fixed(info.annotation):
+        return len(get_args(info.annotation)), len(get_args(info.annotation))
     low, high = 0, None
-    for meta in field.metadata:
+    for meta in info.metadata:
         match meta:
             case MinLen(min_length=n):
                 low = n
@@ -1215,11 +1584,11 @@ def coexist(a: type[BaseModel], b: type[BaseModel], classes_: Iterable[type[Base
 
 def unions(cls: type[BaseModel]) -> dict[str, Options]:
     """Each field of a class that holds a choice: a single field or a tuple field with more than
-    one class."""
+    one class; a fixed tuple's positions of one class are no choice."""
     return {
-        name: classes_
+        name: distinct
         for name, classes_ in (*holds(cls).items(), *collects(cls).items())
-        if len(classes_) > 1
+        if len(distinct := tuple(dict.fromkeys(classes_))) > 1
     }
 
 
@@ -1246,9 +1615,9 @@ def ambiguous(proof: Proof) -> list[InitErrorDetails]:
 def keys(cls: type[BaseModel], *, required: bool) -> frozenset[str]:
     """The names a record validates by: each field's alias, or its name."""
     return frozenset(
-        str(field.validation_alias or field.alias or name)
-        for name, field in cls.model_fields.items()
-        if field.is_required() or not required
+        str(info.validation_alias or info.alias or name)
+        for name, info in cls.model_fields.items()
+        if info.is_required() or not required
     )
 
 
@@ -1312,10 +1681,10 @@ def undecided(proof: Proof) -> list[InitErrorDetails]:
             for a, b in combinations(classes_, 2):
                 if coexist(a, b, proof.classes):
                     continue
-                for chosen, other in ((a, b), (b, a)):
-                    reach, reach_ = proof.reached(chosen), proof.reached(other)
+                for chosen_, other in ((a, b), (b, a)):
+                    reach, reach_ = proof.reached(chosen_), proof.reached(other)
                     settles = deciders(
-                        PLACED.union(*choices(chosen, PLACED)),
+                        PLACED.union(*choices(chosen_, PLACED)),
                         PLACED.union(*choices(other, PLACED)),
                         proof.classes,
                     )
@@ -1328,7 +1697,7 @@ def undecided(proof: Proof) -> list[InitErrorDetails]:
                             action=action.__name__,
                             cls=c.__name__,
                             name=name,
-                            chosen=chosen.__name__,
+                            chosen=chosen_.__name__,
                             other=other.__name__,
                         )
                         for action in proof.classes
@@ -1341,16 +1710,17 @@ def undecided(proof: Proof) -> list[InitErrorDetails]:
 
 
 def proven(program: ModuleType) -> Proof:
-    """The proof of a program: every class placed by the passes, constructed as a ``Proof``,
-    whose validator refuses the program with every fault at once."""
+    """The proof of a program: every route constructed symbolically from its own request, the
+    deployment and the constants, as a ``Proof``, whose validator refuses the program with
+    every fault at once."""
     classes_ = models(program)
-    placed, waiting, faults = placements(classes_)
+    found = [symbolic(r, classes_) for r in classes_ if is_route(r)]
     return Proof(
         program=program.__name__,
         classes=classes_,
-        placed=tuple(Placement(cls=c, path=p) for c, p in placed.items()),
-        waiting=tuple(waiting.values()),
-        faulted=tuple(faults),
+        placed=tuple(p for s in found for p in s.placed),
+        waiting=tuple(w for s in found for w in s.waiting),
+        faulted=tuple(f for s in found for f in s.faulted),
     )
 
 
@@ -1378,83 +1748,135 @@ async def opened(deployment: Config) -> AsyncGenerator[None]:
             await connection.close()
 
 
-class Scope(NamedTuple):
-    """The instances at one placement in a run: its own, over its ancestors', and the child
-    scopes under it, one list per element class, in element order."""
+@dataclass(eq=False)
+class Scope:
+    """One scope of a run: opened at a root or an element, owning the instances at the sites
+    declared or constructed there and the collections those instances hold, seeing its parent's.
+    The same shape as the proof's ``Context``, over instances."""
 
-    path: Path
-    have: ChainMap[type[BaseModel], BaseModel]
-    children: dict[type[BaseModel], list[Scope]]
+    site: Site
+    parent: Scope | None
+    owned: dict[Site, BaseModel] = field(default_factory=dict[Site, BaseModel])
+    collections: dict[Site, tuple[Scope, ...]] = field(
+        default_factory=dict[Site, tuple["Scope", ...]]
+    )
+    children: list[Scope] = field(default_factory=list["Scope"])
+
+    @property
+    def chain(self) -> Iterator[Scope]:
+        """This scope and its ancestors, nearest first."""
+        found: Scope | None = self
+        while found is not None:
+            yield found
+            found = found.parent
+
+    def find(self, site: Site) -> BaseModel | None:
+        """The instance at a site this scope sees, or ``None``."""
+        for scope in self.chain:
+            if (found := scope.owned.get(site)) is not None:
+                return found
+        return None
+
+    def collection(self, site: Site) -> tuple[Scope, ...] | None:
+        """The element scopes of a collection this scope sees, or ``None``."""
+        for scope in self.chain:
+            if (found := scope.collections.get(site)) is not None:
+                return found
+        return None
+
+    @property
+    def classes(self) -> frozenset[type[BaseModel]]:
+        """The classes of every instance this scope sees."""
+        return frozenset(type(i) for s in self.chain for i in s.owned.values())
 
 
-def fanned(scope: Scope, holder: BaseModel) -> None:
-    """One child scope per element of each tuple a request or a record holds, holding the
-    element and what it carries over the parent's instances; an element class with no element
-    gets an empty list, so a collection over it is the empty tuple."""
-    for name, classes_ in collects(type(holder)).items():
-        for cls in classes_:
-            scope.children.setdefault(cls, [])
-        for item in getattr(holder, name):
-            if isinstance(item, BaseModel):
-                have = ChainMap({type(item): item, **carried_by(item)}, scope.have)
-                child = Scope((*scope.path, type(item)), have, {})
-                scope.children.setdefault(type(item), []).append(child)
+def arrived(instance: BaseModel, site: Site, scope: Scope) -> None:
+    """Enter what arrived into a scope at its site, with everything it holds: each model a single
+    field holds at the field's site, and each tuple of models as a collection, one child scope
+    per element at the element's site, holding the element and what it holds in turn."""
+    scope.owned[site] = instance
+    for name, info in type(instance).model_fields.items():
+        value: object = getattr(instance, name)
+        if isinstance(value, BaseModel):
+            arrived(value, (*site, name), scope)
+        elif is_elements(value):
+            opened_: list[Scope] = []
+            for index, element in enumerate(value):
+                if isinstance(element, BaseModel):
+                    child = Scope((*site, name, position(info.annotation, index)), scope)
+                    scope.children.append(child)
+                    arrived(element, child.site, child)
+                    opened_.append(child)
+            scope.collections[(*site, name)] = tuple(opened_)
 
 
-def scopes(scope: Scope) -> Iterator[Scope]:
+def scopes(root: Scope) -> Iterator[Scope]:
     """A scope and every scope under it, parents first."""
-    yield scope
-    for children in scope.children.values():
-        for child in children:
-            yield from scopes(child)
+    yield root
+    for child in root.children:
+        yield from scopes(child)
 
 
-def present(classes_: Options, have: Mapping[type[BaseModel], BaseModel]) -> BaseModel | None:
-    """The instance of the first class among those a field may hold that the run has, or a
-    fresh one when a fresh class is among them; ``None`` when there is none yet."""
-    for cls in classes_:
-        if cls in have:
-            return have[cls]
-    for cls in classes_:
-        if fresh(cls):
-            return cls()
-    return None
+type Supplied = dict[str, BaseModel | tuple[BaseModel, ...]]
+"""What a scope supplies for a placement's fields."""
 
 
-def gathered(classes_: Options, scope: Scope, proof: Proof) -> tuple[BaseModel, ...] | None:
-    """Every instance of a collected class from the child scopes made for the element it lives
-    under, in element order, once the element's holder has arrived and every child holds one;
-    the empty tuple for no element; ``None`` while any is absent."""
-    found: list[BaseModel] = []
-    for element in {proof.path(c)[len(scope.path)] for c in classes_}:
-        if element not in scope.children:
+def found_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[BaseModel]:
+    """The instances of the classes a scope sees at any of the sites: two alternatives share a
+    site, and the one that arrived is the one whose class the field declares."""
+    return [i for s in sites if (i := scope.find(s)) is not None and type(i) in classes_]
+
+
+def owned_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[BaseModel]:
+    """The instances of the classes a scope owns at any of the sites."""
+    return [i for s in sites if (i := scope.owned.get(s)) is not None and type(i) in classes_]
+
+
+def present(found: list[BaseModel], placed: Placement, name: str) -> BaseModel | None:
+    """The one instance found for a field; ``None`` for none; a refusal for more than one, which
+    the proof excludes and the run refuses rather than choose."""
+    if len(found) > 1:
+        raise ValidationError.from_exception_data(
+            placed.cls.__name__,
+            [
+                fault(
+                    "ambiguous",
+                    "{cls}.{name} found {n} instances where the proof bound one",
+                    (placed.cls.__name__, name),
+                    cls=placed.cls.__name__,
+                    name=name,
+                    n=len(found),
+                )
+            ],
+        )
+    return found[0] if found else None
+
+
+def supplied(placed: Placement, scope: Scope) -> Supplied | None:
+    """What a scope supplies for a placement: the instance at each single field's bound site, a
+    fresh instance for each fresh field, and for each tuple field every element scope's instance
+    at the bound element sites, in element order; ``None`` while any is absent, so the class is
+    asked again next pass."""
+    given: Supplied = {}
+    for name, sites in placed.singles.items():
+        instance = present(found_at(sites, holds(placed.cls)[name], scope), placed, name)
+        if instance is None:
             return None
-        for child in scope.children[element]:
-            instance = present(classes_, child.have.maps[0])
+        given[name] = instance
+    for name, cls in placed.freshly.items():
+        given[name] = cls()
+    for name, collected in placed.collections.items():
+        element_scopes = scope.collection(collected.site)
+        if element_scopes is None:
+            return None
+        picked: list[BaseModel] = []
+        for element in element_scopes:
+            classes_ = collects(placed.cls)[name]
+            instance = present(owned_at(collected.elements, classes_, element), placed, name)
             if instance is None:
                 return None
-            found.append(instance)
-    return tuple(found)
-
-
-def supplied(
-    cls: type[BaseModel], scope: Scope, proof: Proof
-) -> dict[str, BaseModel | tuple[BaseModel, ...]] | None:
-    """What the scope has for a class's fields: the present member of each single field, and
-    every child's instance for each tuple field; ``None`` while a required field has nothing,
-    so the class is asked again next pass."""
-    given: dict[str, BaseModel | tuple[BaseModel, ...]] = {}
-    for name, classes_ in holds(cls).items():
-        instance = present(classes_, scope.have)
-        if instance is not None:
-            given[name] = instance
-        elif classes_ and cls.model_fields[name].is_required():
-            return None
-    for name, classes_ in collects(cls).items():
-        instances = gathered(classes_, scope, proof)
-        if instances is None:
-            return None
-        given[name] = instances
+            picked.append(instance)
+        given[name] = tuple(picked)
     return given
 
 
@@ -1463,8 +1885,8 @@ def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
     operands, as ``value Amount > bound Limit``, or Pydantic's message for a selection."""
     for error in refusal.errors():
         loc = error["loc"]
-        field = cls.model_fields.get(str(loc[0])) if loc else None
-        factory = field.default_factory if field is not None else None
+        info = cls.model_fields.get(str(loc[0])) if loc else None
+        factory = info.default_factory if info is not None else None
         if isinstance(factory, Comparison) and isinstance(error["input"], int):
             left, right = holds(cls)[factory.left][0], holds(cls)[factory.right][0]
             sign = SIGN[error["input"]]
@@ -1472,54 +1894,63 @@ def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
     return "; ".join(error["msg"] for error in refusal.errors())
 
 
+class Refuted(NamedTuple):
+    """A relation or a selection that refused in a scope this pass."""
+
+    placed: Placement
+    scope: Scope
+    refusal: ValidationError
+
+
 def stalled(
     root: Scope,
-    asked_for: tuple[type[BaseModel], ...],
-    refuted: dict[type[BaseModel], tuple[Scope, ValidationError]],
+    placements: tuple[Placement, ...],
+    refuted: list[Refuted],
     proof: Proof,
 ) -> list[InitErrorDetails]:
     """Why a pass constructed nothing: one ``relation`` error per class whose refusal said it did
     not hold, with what was observed, leaving out one whose complement holds in the same scope,
-    since that choice was decided; else one ``missing`` error per required field no class fills
-    in the scope the class is asked from; else ``cycle``."""
-    causes = {
-        cls: refusal
-        for cls, (scope, refusal) in refuted.items()
-        if not deciders(frozenset({cls}), frozenset(scope.have), proof.classes)
-    } or {cls: refusal for cls, (_, refusal) in refuted.items()}
+    since that choice was decided; else one ``missing`` error per field no instance fills in
+    the scope the class is asked from; else ``cycle``."""
+    causes = [
+        r
+        for r in refuted
+        if not deciders(frozenset({r.placed.cls}), r.scope.classes, proof.classes)
+    ] or refuted
     details = [
         fault(
             "relation",
             "{cls} did not hold: {why}",
-            (cls.__name__,),
-            cls=cls.__name__,
-            why=rendered(cls, refusal),
+            (r.placed.cls.__name__,),
+            cls=r.placed.cls.__name__,
+            why=rendered(r.placed.cls, r.refusal),
         )
-        for cls, refusal in causes.items()
+        for r in causes
     ]
     if details:
         return details
     pending = [
-        (scope, cls)
+        (scope, placed)
         for scope in scopes(root)
-        for cls in asked_for
-        if proof.path(cls) == scope.path and cls not in scope.have.maps[0]
+        for placed in placements
+        if placed.scope == scope.site and (*scope.site, placed.cls.__name__) not in scope.owned
     ]
-    unbuilt = {cls for _, cls in pending}
+    unbuilt = {placed.cls for _, placed in pending}
     heard_ = hearers(proof.classes)
-    for scope, cls in pending:
-        for name, classes_ in premises(cls).items():
-            if present(classes_, scope.have) is None and not any(
+    for scope, placed in pending:
+        for name, sites in placed.singles.items():
+            classes_ = holds(placed.cls)[name]
+            if not found_at(sites, classes_, scope) and not any(
                 c in unbuilt or c in heard_ for c in classes_
             ):
                 details.append(
                     fault(
                         "missing",
                         "no class fills {cls}.{name}, which holds {holds}",
-                        (cls.__name__, name),
-                        cls=cls.__name__,
+                        (placed.cls.__name__, name),
+                        cls=placed.cls.__name__,
                         name=name,
-                        holds=" | ".join(c.__name__ for c in classes_),
+                        holds=names(classes_),
                     )
                 )
     return details or [
@@ -1542,20 +1973,41 @@ async def performed_in_span(action: Action[Connection, Record]) -> Record:
 async def answer[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof
 ) -> Route[Q, A]:
-    """Construct the route from the request: the route's classes, pass by pass, in the scope
-    each lives in, until the route itself constructs, holding the request and the reply.
+    """Construct the route from the request: the route's placements, pass by pass, in every
+    scope at each placement's site, until the route itself constructs, holding the request and
+    the reply.
 
-    Each pass asks Pydantic for every class of the route not yet in its scope whose premises are
-    present; a relation or a selection that refuses does not hold in that scope yet; any other
-    refusal propagates. The pass's actions are performed together in one task group, across
-    every scope, and each record enters the scope its action was built in; a library kind's
-    exception cancels the group's other actions and propagates in an ``ExceptionGroup``. A pass
-    that constructs nothing raises a ``ValidationError`` naming each relation that did not hold
-    or each field no class fills."""
+    Each pass asks Pydantic for every placement not yet constructed in a scope whose bound sites
+    are present; a relation or a selection that refuses does not hold in that scope yet; any
+    other refusal propagates. The pass's actions are performed together in one task group,
+    across every scope, and each record enters the scope its action was built in; a library
+    kind's exception cancels the group's other actions and propagates in an ``ExceptionGroup``.
+    A pass that constructs nothing raises a ``ValidationError`` naming each relation that did
+    not hold or each field no instance fills."""
     with tracer.start_as_current_span(
         route.__name__, attributes={"tca.request": type(request).__name__}
     ) as span:
         return await constructed(route, request, deployment, proof, span)
+
+
+class Performed(NamedTuple):
+    """An action constructed this pass, and the scope and site it was constructed at."""
+
+    action: Action[Connection, Record]
+    scope: Scope
+    site: Site
+
+
+def construct(placed: Placement, given: Supplied) -> BaseModel | ValidationError:
+    """Ask Pydantic for a placement with what a scope supplied: the instance, or the refusal of
+    a relation or a selection, which says only that it does not hold here; any other refusal
+    propagates."""
+    try:
+        return placed.cls.model_validate(given)
+    except ValidationError as refusal:
+        if refutable(placed.cls):
+            return refusal
+        raise
 
 
 async def constructed[Q: Request, A: Reply[Fact]](
@@ -1566,54 +2018,40 @@ async def constructed[Q: Request, A: Reply[Fact]](
     span: trace.Span,
 ) -> Route[Q, A]:
     """The body of ``answer``, inside its span."""
-    asked_for = proof.built(route)
-    root = Scope(
-        (),
-        ChainMap(
-            {
-                type(request): request,
-                **carried_by(request),
-                **{type(c): c for c in connections(deployment)},
-                **{c: c() for c in proof.constants},
-            }
-        ),
-        {},
-    )
-    fanned(root, request)
+    placements = proof.placements(route)
+    root = Scope((), None)
+    arrived(request, REQUEST, root)
+    arrived(deployment, DEPLOYMENT, root)
+    for c in proof.constants:
+        root.owned[(c.__name__,)] = c()
     passes = 0
-    while route not in root.have:
+    while (route.__name__,) not in root.owned:
         passes += 1
-        performed: list[tuple[Action[Connection, Record], Scope]] = []
-        refuted: dict[type[BaseModel], tuple[Scope, ValidationError]] = {}
+        performed: list[Performed] = []
+        refuted: list[Refuted] = []
         built = False
-        for scope in scopes(root):
-            for cls in asked_for:
-                if proof.path(cls) != scope.path or cls in scope.have.maps[0]:
+        for scope in list(scopes(root)):
+            for placed in placements:
+                site = (*scope.site, placed.cls.__name__)
+                if placed.scope != scope.site or site in scope.owned:
                     continue
-                given = supplied(cls, scope, proof)
+                given = supplied(placed, scope)
                 if given is None:
                     continue
-                try:
-                    instance = cls.model_validate(given)
-                except ValidationError as refusal:
-                    if refutable(cls):
-                        refuted[cls] = (scope, refusal)
-                        continue
-                    raise
+                instance = construct(placed, given)
+                if isinstance(instance, ValidationError):
+                    refuted.append(Refuted(placed, scope, instance))
+                    continue
                 built = True
-                scope.have[cls] = instance
-                scope.have.update(carried_by(instance))
+                scope.owned[site] = instance
                 if is_performed(instance):
-                    performed.append((instance, scope))
+                    performed.append(Performed(instance, scope, site))
         async with TaskGroup() as group:
-            tasks = [group.create_task(performed_in_span(action)) for action, _ in performed]
-        for (_, scope), task in zip(performed, tasks, strict=True):
-            record = task.result()
-            scope.have[type(record)] = record
-            scope.have.update(carried_by(record))
-            fanned(scope, record)
+            tasks = [group.create_task(performed_in_span(p.action)) for p in performed]
+        for p, task in zip(performed, tasks, strict=True):
+            arrived(task.result(), (*p.site, HEARD), p.scope)
         if not built:
-            why = stalled(root, asked_for, refuted, proof)
+            why = stalled(root, placements, refuted, proof)
             raise ValidationError.from_exception_data(route.__name__, why)
     span.set_attribute("tca.passes", passes)
-    return route.model_validate(root.have[route])
+    return route.model_validate(root.owned[(route.__name__,)])

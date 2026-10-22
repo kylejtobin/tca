@@ -332,5 +332,5 @@ def test_the_programs_help_lists_the_deployments_variables_from_the_config() -> 
 
 def test_the_proof_is_computed_once_and_passed_to_the_run() -> None:
     proof = proven(PROGRAM)
-    assert proof.path(Counted) == (Element,)
-    assert proof.path(Concluded) == ()
+    assert proof.sites(Question, Counted) == (("request", "each", "[]", "Counted"),)
+    assert proof.sites(Question, Concluded) == (("Concluded",),)

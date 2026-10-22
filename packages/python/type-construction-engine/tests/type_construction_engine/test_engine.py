@@ -280,27 +280,56 @@ async def operate(elements: str) -> Answered:
     return route.reply
 
 
-def test_the_proof_places_every_class_by_its_fields(proof: Proof) -> None:
-    assert proof.path(Elements) == ()
-    assert proof.path(Element) == (Element,)
-    assert proof.path(Name) == (Element,)
-    assert proof.path(Asked) == (Element,)
-    assert proof.path(Heard) == (Element,)
-    assert proof.path(Amount) == (Element,)
-    assert proof.path(Part) == (Element, Part)
-    assert proof.path(Share) == (Element, Part)
-    assert proof.path(Portion) == (Element, Part)
-    assert proof.path(Portions) == (Element,)
-    assert proof.path(Largest) == (Element,)
-    assert proof.path(Limit) == ()
-    assert proof.path(Low) == (Element,)
-    assert proof.path(Notify) == (Element,)
-    assert proof.path(Noted) == (Element,)
-    assert proof.path(Cheap) == (Element,)
-    assert proof.path(Total) == ()
-    assert proof.path(Concluded) == ()
-    assert proof.path(Operation) == ()
+ELEMENT = ("request", "each", "[]")
+"""The site of each element's scope."""
+
+PART = (*ELEMENT, "Asked", "heard", "parts", "[]")
+"""The site of each part's scope, under the record the party said about the element."""
+
+
+def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof) -> None:
+    placed = {(p.cls, p.scope): p for p in proof.placements(Operation)}
+    assert set(placed) == {
+        (Asked, ELEMENT),
+        (Low, ELEMENT),
+        (High, ELEMENT),
+        (Notify, ELEMENT),
+        (Portion, PART),
+        (Portions, ELEMENT),
+        (Largest, ELEMENT),
+        (Cheap, ELEMENT),
+        (Dear, ELEMENT),
+        (Total, ()),
+        (Concluded, ()),
+        (Answered, ()),
+        (Operation, ()),
+    }
+    assert placed[Asked, ELEMENT].singles == {
+        "party": (("deployment", "party"),),
+        "element": (ELEMENT,),
+    }
+    assert placed[Low, ELEMENT].singles == {
+        "value": ((*ELEMENT, "Asked", "heard", "amount"),),
+        "bound": (("Limit",),),
+    }
+    assert placed[Portion, PART].singles == {
+        "left": ((*PART, "share"),),
+        "right": ((*ELEMENT, "Asked", "heard", "amount"),),
+    }
+    assert placed[Portions, ELEMENT].collections["of"].site == PART[:-1]
+    assert placed[Portions, ELEMENT].collections["of"].elements == ((*PART, "Portion"),)
+    assert placed[Dear, ELEMENT].singles["noted"] == ((*ELEMENT, "Notify", "heard"),)
+    assert placed[Total, ()].collections["of"].site == ("request", "each")
+    assert placed[Total, ()].collections["of"].elements == ((*ELEMENT, "Asked", "heard", "amount"),)
+    concluded = placed[Concluded, ()]
+    assert concluded.singles == {"total": (("Total",),)}
+    assert concluded.freshly == {"at": Instant}
+    assert concluded.collections["valued"].site == ("request", "each")
+    assert concluded.collections["valued"].elements == ((*ELEMENT, "Cheap"), (*ELEMENT, "Dear"))
+    assert placed[Operation, ()].singles == {"request": (("request",),), "reply": (("Answered",),)}
+    assert proof.sites(Operation, Portion) == ((*PART, "Portion"),)
     assert proof.waiting == ()
+    assert proof.faulted == ()
     assert proof.constants == (Limit,)
 
 
@@ -481,30 +510,50 @@ def test_two_facts_told_apart_by_complementary_relations_are_proven_exclusive(
 def test_the_proof_refuses_every_fault_at_once() -> None:
     with pytest.raises(ValidationError) as refusal:
         proven(FAULTS)
-    found = {(e["type"], e["loc"]) for e in refusal.value.errors()}
-    assert ("missing", ("Concluded", "unheard")) in found
-    assert ("cycle", ("Egg",)) in found
-    assert ("cycle", ("Chicken",)) in found
-    assert ("twice", ("Name",)) in found
-    assert ("twice", ("Heard",)) in found
-    assert ("twice", ("Party",)) in found
-    assert ("unplaceable", ("Twin",)) in found
-    assert ("collects", ("Collects",)) in found
-    assert ("route", ("Misplaced",)) in found
-    assert ("unreached", ("Stray",)) in found
-    assert ("unmodeled", ("Bare", "count")) in found
-    assert ("boundary", ("Direct", "cheap")) in found
-    assert ("boundary", ("Parties", "limit")) in found
-    assert ("config", ("type_construction_engine.faults",)) in found
-    assert ("ambiguous", ("Either", "which")) in found
-    assert ("never", ("Impossible",)) in found
-    assert ("never", ("Certain",)) in found
-    assert ("never", ("Never",)) in found
-    assert ("never", ("Undecided",)) in found
-    assert ("undiscriminated", ("Both",)) in found
-    assert ("undecided", ("Charge",)) in found
-    assert ("cycle", ("Answered",)) not in found
-    assert ("undecided", ("Asked",)) not in found
+    found = {(e["type"], e["loc"]): e["msg"] for e in refusal.value.errors()}
+    assert set(found) == {
+        ("missing", ("Concluded", "unheard")),
+        ("cycle", ("Egg",)),
+        ("cycle", ("Chicken",)),
+        ("ambiguous", ("Named", "name")),
+        ("ambiguous", ("Spared", "party")),
+        ("ambiguous", ("Total", "of")),
+        ("ambiguous", ("Either", "which")),
+        ("unplaceable", ("Twin",)),
+        ("collects", ("Collects", "every")),
+        ("route", ("Misplaced",)),
+        ("unreached", ("Stray",)),
+        ("unreached", ("Direct",)),
+        ("unmodeled", ("Bare", "count")),
+        ("boundary", ("Direct", "cheap")),
+        ("boundary", ("Parties", "word")),
+        ("config", ("type_construction_engine.faults",)),
+        ("never", ("Impossible",)),
+        ("never", ("Certain",)),
+        ("never", ("Never",)),
+        ("never", ("Undecided",)),
+        ("undiscriminated", ("Both",)),
+        ("undecided", ("Charge",)),
+    }
+    assert found["ambiguous", ("Named", "name")] == (
+        "Named.name has two sources: Name is at 2 sites here: request.each.[].name,"
+        " request.each.[].Asked.heard.name; hold what tells them apart"
+    )
+    assert found["ambiguous", ("Spared", "party")] == (
+        "Spared.party has two sources: Spare is at 2 sites here: deployment.spare,"
+        " deployment.standby; hold what tells them apart"
+    )
+    assert found["ambiguous", ("Total", "of")] == (
+        "Total.of has two sources: Amount is collected by 2: request.each, request.others; hold"
+        " what tells them apart"
+    )
+    assert found["unplaceable", ("Twin",)] == (
+        "Twin.element, Twin.second are never visible from one scope; a class over two sibling"
+        " elements is an element of its own"
+    )
+    assert found["route", ("Misplaced",)].startswith(
+        "Misplaced would exist once per request.each.[]"
+    )
     assert FAULTS.Egg.model_fields["chicken"].annotation is FAULTS.Chicken
 
 
