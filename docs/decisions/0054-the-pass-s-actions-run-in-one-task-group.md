@@ -12,11 +12,11 @@ The pass's actions ran under `asyncio.gather`: the first exception propagated an
 
 ## Decision
 
-The actions of a pass, across the parent run and its children, are created as tasks in one `asyncio.TaskGroup`. One action's exception cancels the group's other actions and propagates out of `answer` as the `ExceptionGroup` the task group raised; an action cancelled mid-flight may have had its effect, and its span ends without a record. Effects already performed in earlier passes stand. The engine never retries, times out or compensates: delivery guarantees are the library kind's and the connection's, and an idempotency key a party needs is a field on the action, supplied by the program and sent by the kind. `opened` opens each connection in field order and, when one raises, closes those already opened in reverse before the exception propagates. The command line prints each `ValidationError` in a group and exits 1 when the group holds nothing else; any other group propagates.
+The actions of a pass, across every scope of the run, are created as tasks in one `asyncio.TaskGroup`. One action's exception cancels the group's other actions and propagates out of `answer` as the `ExceptionGroup` the task group raised; an action cancelled mid-flight may have had its effect, and its span ends without a record. Effects already performed in earlier passes stand. The engine never retries, times out or compensates: delivery guarantees are the library kind's and the connection's, and an idempotency key a party needs is a field on the action, supplied by the program and sent by the kind. `opened` opens each connection in field order and, when one raises, closes those already opened in reverse before the exception propagates. The command line prints each `ValidationError` in a group and exits 1 when the group holds nothing else; any other group propagates.
 
 ## Evidence
 
-The engine's test program with its party raising `ConnectionError` on every `perform`, two elements: `answer` raised an `ExceptionGroup` whose exceptions were two `ConnectionError`. A config of a party that opens and one whose `open` raises `ConnectionError` logged `open:Fine`, `open:Down`, `close:Fine`, and `opened` raised the `ConnectionError`.
+The engine's test program with its party raising `ConnectionError` on every `perform`, two elements: `answer` raised an `ExceptionGroup` whose exceptions were two `ConnectionError`. A config of a party that opens and one whose `open` raises `ConnectionError` logged `open:Fine`, `open:Down`, `close:Fine`, and `opened` raised the `ConnectionError`; a config of two parties around two answers logged `open:Fine`, `open:Later`, `answer`, `answer`, `close:Later`, `close:Fine`.
 
 ## Consequences
 

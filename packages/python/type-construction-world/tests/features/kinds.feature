@@ -1,18 +1,22 @@
-Feature: Derivation, relation and selection kinds construct a value, a rule or a choice from what they hold
-  Decision records 0047, 0048, 0049. Every relation kind subclasses Relation and declares its constraints; every selection kind subclasses Selection. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
-  Rate(Scalar[Decimal]) with root defaulted to 0.9, Sku(Scalar[str]), Line(Value) with sku and quantity;
-  LineTotal(Times[UnitPrice, Quantity]); Reduced(Times[LineTotal, Rate]) with right defaulted to Rate();
-  Lines(Sum[LineTotal]); Allowed(Between[Quantity, Quantity, Quantity]); Same(Equal[Quantity, Quantity]);
-  Cheapest(Least[LineTotal]); Dearest(Greatest[LineTotal]); Opening(First[Line]); Sole(Only[Line]).
+Feature: Derivation, relation and selection kinds declare a value, a rule or a choice once, as Pydantic reads it
+  Decision records 0047, 0048, 0049, 0057. A relation is the restriction of one comparison to the orderings its
+  Literal admits; a selection's shape is its tuple annotation; a derivation's root is computed at construction by its
+  Derived operation. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
+  Threshold(Scalar[Decimal]) with root defaulted to 100, Rate(Scalar[Decimal]) with root defaulted to 0.9,
+  Sku(Scalar[str]), Line(Value) with sku and quantity; LineTotal(Times[UnitPrice, Quantity]); Reduced(Times[LineTotal,
+  Rate]); Lines(Sum[LineTotal]); Small(AtMost[LineTotal, Threshold]); Large(Beyond[LineTotal, Threshold]);
+  Allowed(Between[Quantity, Quantity, Quantity]); Same(Equal[Quantity, Quantity]); Other(Differs[Quantity,
+  Quantity]); Below(Under[Quantity, Quantity]); Above(AtLeast[Quantity, Quantity]); Cheapest(Least[LineTotal]);
+  Dearest(Greatest[LineTotal]); Opening(First[Line]); Sole(Only[Line]).
 
-  Scenario: Times multiplies its operands exactly
-    When LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(3)).root is read
-    Then it is Decimal("7.50")
+  Scenario: Times multiplies its operands exactly at construction and excludes the root from its dump
+    When LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(3)) is constructed
+    Then root is Decimal("7.50") and model_dump() is {"left": Decimal("2.50"), "right": 3}
 
-  Scenario: A constant factor is a scalar defaulted on the subclass
-    When Reduced(left=LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(50))).root is read
+  Scenario: A constant factor is a scalar with a default root, required on the holder and seeded by the engine
+    When Reduced(left=LineTotal 125.00, right=Rate()).root is read
     Then it is Decimal("112.500")
-    And the required fields of Reduced are ["left"]
+    And the required fields of Reduced are ["left", "right"]
 
   Scenario: Sum adds every element and none is zero
     When Lines(of=(LineTotal 7.50, LineTotal 125.00)).root is read
@@ -20,66 +24,80 @@ Feature: Derivation, relation and selection kinds construct a value, a rule or a
     When Lines(of=()).root is read
     Then it is Decimal(0)
 
+  Scenario: A derivation declares its operation as the default factory of its root
+    When LineTotal.model_fields["root"].default_factory.operands and Lines.model_fields["root"].default_factory.operands are read
+    Then they are ("left", "right") and ("of",)
+
   Scenario: An operand outside the bound is a checker error
-    Given class Wrong(Times[Sku, Quantity])
+    Given class Wrong(Times[Sku, Quantity]) and class Bad(Scalar[Thing]) with Thing a Fact
     When basedpyright checks the module
-    Then it reports Sku is not assignable to Numeric
+    Then it reports Sku is not assignable to Numeric, and Thing is not assignable to Primitive
 
-  Scenario: AtMost holds at the bound and refuses above it with relation
+  Scenario: AtMost admits -1 and 0 and refuses 1 with literal_error at the ordering field
     When Small(value=LineTotal 100.00, bound=Threshold()) is constructed
-    Then the instance constructs
+    Then the instance constructs with ordering 0
     When Small(value=LineTotal 125.00, bound=Threshold()) is constructed
-    Then ValidationError is raised with one error of type relation and message "LineTotal exceeds Threshold"
+    Then ValidationError is raised with one error of type literal_error at loc ("ordering",), message "Input should be -1 or 0", input 1
 
-  Scenario: Beyond refuses at the bound and holds above it
+  Scenario: Beyond admits 1 and refuses 0
     When Large(value=LineTotal 100.00, bound=Threshold()) is constructed
-    Then ValidationError is raised with one error of type relation and message "LineTotal is within Threshold"
+    Then ValidationError is raised with one error of type literal_error at loc ("ordering",), message "Input should be 1", input 0
     When Large(value=LineTotal 125.00, bound=Threshold()) is constructed
-    Then the instance constructs
+    Then the instance constructs with ordering 1
 
-  Scenario: Between holds inside the bounds and refuses outside with relation
+  Scenario: Between computes two orderings and refuses at the one that does not hold
     When Allowed(value=Quantity(1), lower=Quantity(1), upper=Quantity(10)) and the same with Quantity(10) are constructed
-    Then both construct
+    Then both construct, the first with below 0 and the second with above 0
     When Allowed(value=Quantity(11), lower=Quantity(1), upper=Quantity(10)) is constructed
-    Then ValidationError is raised with one error of type relation and message "Quantity is over Quantity"
+    Then ValidationError is raised with type literal_error at loc ("above",), input 1
     When Allowed(value=Quantity(1), lower=Quantity(2), upper=Quantity(10)) is constructed
-    Then ValidationError is raised with one error of type relation and message "Quantity is under Quantity"
+    Then ValidationError is raised with type literal_error at loc ("below",), input 1
 
-  Scenario: Equal holds on the same value and refuses with relation
+  Scenario: Equal, Differs, Under and AtLeast are the same comparison with other admitted orderings
     When Same(value=Quantity(3), bound=Quantity(3)) is constructed
-    Then the instance constructs
+    Then the instance constructs with ordering 0
     When Same(value=Quantity(3), bound=Quantity(4)) is constructed
-    Then ValidationError is raised with one error of type relation and message "Quantity differs from Quantity"
+    Then ValidationError is raised with one error of type literal_error, message "Input should be 0"
+    When Other(value=Quantity(3), bound=Quantity(4)) is constructed
+    Then the instance constructs with ordering -1
+    When Other(value=Quantity(3), bound=Quantity(3)) is constructed
+    Then ValidationError is raised with one error of type literal_error, message "Input should be -1 or 1"
+    When Below(value=Quantity(3), bound=Quantity(4)) and Above(value=Quantity(4), bound=Quantity(4)) are constructed
+    Then their orderings are -1 and 0
 
-  Scenario: A relation's refusal names the operands' classes, never their values
-    When Small(value=LineTotal 125.00, bound=Threshold()) is constructed
-    Then the error message contains "LineTotal" and "Threshold" and not "125"
+  Scenario: An ordering is computed and never given, and is excluded from the dump
+    When Small.model_validate({"value": LineTotal 125.00, "bound": Threshold(), "ordering": 0}) is called
+    Then ValidationError is raised with type literal_error at loc ("ordering",)
+    When Small(value=LineTotal 100.00, bound=Threshold()).model_dump() is read
+    Then it is {"value": {"left": Decimal("100.00"), "right": 1}, "bound": Decimal("100")}
+
+  Scenario: A relation kind declares its comparison as the default factory of its ordering field
+    When the default factories of Small.ordering, Allowed.below and Allowed.above are read
+    Then they are Comparison(left="value", right="bound"), Comparison(left="lower", right="value") and Comparison(left="value", right="upper")
+    And the admitted orderings of Under, AtMost, Equal, AtLeast, Beyond and Differs are (-1,), (-1, 0), (0,), (0, 1), (1,) and (-1, 1)
 
   Scenario: Least and Greatest choose by value and ties go to the earliest element
     Given cheap, dear and cheap_again with roots 1, 2 and 1
     When Cheapest(of=(cheap, dear, cheap_again)).chosen and Dearest(of=(cheap, dear, cheap_again)).chosen are read
     Then they are cheap and dear, by identity
 
-  Scenario: A selection with no element to choose from refuses with relation
-    When Cheapest(of=()), Dearest(of=()), Opening(of=()) and Sole(of=()) are constructed
-    Then each raises ValidationError with one error of type relation and message "no element to choose from"
-
-  Scenario: A relation kind declares its meaning as constraints between its operand fields
-    When AtMost.constraints, Beyond.constraints, Between.constraints and Equal.constraints are read
-    Then they are (value - bound <= 0,), (bound - value < 0,), (lower - value <= 0, value - upper <= 0) and (value - bound <= 0, bound - value <= 0)
+  Scenario: A selection with no element to choose from refuses by its tuple shape
+    When Cheapest, Dearest and Opening are validated from {"of": ()}
+    Then each raises ValidationError with one error of type too_short at loc ("of",), message "Tuple should have at least 1 item after validation, not 0"
+    When Sole is validated from {"of": ()}
+    Then ValidationError is raised with one error of type missing at loc ("of", 0), message "Field required"
 
   Scenario: First chooses by position over any element class
     Given tea and jam, two Lines
     When Opening(of=(tea, jam)).chosen is read
     Then it is tea, by identity
 
-  Scenario: Only chooses the one element and refuses any other count with relation
+  Scenario: Only is the shape tuple[E] and refuses more than one with too_long
     When Sole(of=(tea,)).chosen is read
     Then it is tea, by identity
-    When Sole(of=(tea, jam)) is constructed
-    Then ValidationError is raised with one error of type relation and message "2 elements, not one"
-    When Sole(of=()) is constructed
-    Then ValidationError is raised with one error of type relation and message "0 elements, not one"
+    When Sole is validated from {"of": (tea, jam)}
+    Then ValidationError is raised with one error of type too_long at loc ("of",), message "Tuple should have at most 1 item after validation, not 2"
+    And Sole.model_fields["of"].annotation is tuple[Line] and Opening.model_fields["of"].metadata is [MinLen(min_length=1)]
 
   Scenario: chosen is a property, so a selection serializes its elements and not its choice
     When Cheapest(of=(cheap, dear)).model_dump() is read

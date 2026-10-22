@@ -1,22 +1,22 @@
-# 0050. A request, a record or a value carries the scalars and values it holds into the run
+# 0050. Every class has one source, and a request, a record or a value carries the scalars and values it holds
 
 Status: accepted
 
 ## Context
 
-A derivation's operands are the unit price a record says and the quantity a line holds; a relation's operands are a derived total and a threshold. The run is keyed by class, and a class is asked for from the instances the run holds under the classes its fields name, so an operand must be in the run under its own class. A scalar inside a record, and a value inside a request, were reachable only through the class that held them.
+A derivation's operands are the amount a record says and the share a part holds; a relation's operands are a derived total and a constant. A scope is keyed by class, and a class is asked for from the instances the scope holds under the classes its fields name, so an operand must be in the scope under its own class. Where each class's instances come from must be one thing, or the proof cannot say where it lives and the run cannot say which instance a field means.
 
 ## Rejected
 
-A derivation holding the record and the value and reading the operand by field name: a path, which is reflection on the page. The engine putting every field of every constructed instance into the run: a fact's fields are its conclusions' grounds, not things that exist on their own, and two facts holding the same scalar class would collide.
+A derivation holding the record and the value and reading the operand by field name: a path, which is reflection on the page. The engine putting every field of every constructed instance into the run: a fact's fields are its conclusions' grounds, not things that exist on their own, and two facts holding the same scalar class would collide. Separate faults per pair of sources, `hearer`, `carrier`, `producer`, `party`: one read, repeated four times. Projection aliases on the page, `AliasPath`, to say which of two carried instances a field means: a line written for the engine, when holding the carrier says it.
 
 ## Decision
 
-A request, a record and a value carry: when one enters the run, the scalars and values its single fields hold enter under their classes, and what those values hold enters in turn. The request carries when the run is seeded; a record carries when its action's answer enters; a value carries when it is constructed in a pass or when it is an element of a child run (0044). The proof reads the same: `carried(cls)` is what a carrier brings with it, and the elements a request or a record holds join with what each carries; which run a carried class belongs to is read by descent through its carrier (0044). A fact, an action, a reply and a route do not carry. Exactly one carrying class holds each scalar or value class, and the proof refuses a second as `carrier`, so a scalar is named by its role, never one name on two carriers.
+A class's sources are read from the declarations, `sources(cls)`: a route's request; a carrier that holds it directly, read from `brought`; a request or a record that declares it as an element; an action that hears it; a config field that holds it; a default root. A class with two or more is refused as `twice`, naming them: `Name has 2 sources: carried by Element, carried by Heard; exactly one`. A class with none is built from its premises, or is a word a computed field says, or is a fault its holder reports as `missing`. A request, a record and a value carry: when one enters a scope, the scalars and values its single fields hold enter under their classes, and what those values hold enters in turn; the request carries when the run is seeded, a record when its action's answer enters, a value when it arrives inside its carrier or as an element. A scalar is therefore named by its role, never one name on two carriers, and a fact that needs the value two carriers both hold holds the carrier.
 
 ## Evidence
 
-In the engine's test program, `Amount` is carried by `Heard`, which `Asked` hears once per element: `descends(Amount)` was `{Element}`, `Low(AtMost[Amount, Limit])` constructed once per element from the carried `Amount` and the defaulted `Limit`, and `Total(Sum[Amount])` summed two carried amounts to `5.00`. `Name`, carried by `Element`, entered each child run with its element. In the program with the faults, `Name` carried by both `Element` and `Heard` was refused at startup as `carrier` at `("Name",)`.
+In the engine's test program, `Amount` is carried by `Heard`, which `Asked` hears once per element: `Low(AtMost[Amount, Limit])` constructed once per element from the carried `Amount` and the seeded `Limit`, and `Total(Sum[Amount])` summed two carried amounts to `5.00`; `Share`, carried by `Part`, an element the record declares, entered each part's scope with its part. In the program with the faults, `Name` carried by both `Element` and `Heard` was refused as `twice` at `("Name",)`, `Heard` heard by `Asked` and `Reasked` as `twice` at `("Heard",)`, and `Party` held by `Parties.party`, `Parties.backup` and `Backups.party` as `twice` at `("Party",)`.
 
 ## Consequences
 

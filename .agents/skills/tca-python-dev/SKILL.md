@@ -13,7 +13,7 @@ An application is data, control flow, computation, I/O and deployment. Each is o
 
 - **Data.** A field is a product. A union `A | B` is a sum. `tuple[T, ...]` is repetition. `Scalar` is a primitive with an invariant. A `StrEnum` subclass is an enumeration. `Value` is a composite part.
 - **Control flow.** A field is a sequence: `Paid` holds `Charged`, so `Charged` exists first. A union is a branch. A tuple is iteration. A fact holding the previous fact is accumulation. A `Scalar` constraint is a rule.
-- **Computation.** A derived value is a derivation kind declared with its operands. A rule over several values is a relation kind whose refusal is the other outcome. A choice among elements is a selection kind. You declare each with your own classes as its parameters and write no expression.
+- **Computation.** A derived value is a derivation kind declared with its operands. A rule over values is a relation kind whose refusal is the other outcome. A choice among elements is a selection kind. You declare each with your own classes as its parameters and write no expression.
 - **I/O.** `Request` arrives on a `Route`. `Record` is what a party says. `Action` asks a `Connection` and hears a `Record`, or one of several. `Reply[F]` leaves, made from the fact `F`. A library kind per transport carries the only Python that calls a client.
 - **Deployment.** `Config` holds the connections and settings; each value the deployment sets is a `Setting`.
 
@@ -25,40 +25,39 @@ From `type_construction.world`. Every class is strict, frozen and forbids undecl
 
 | class | what it is | owner | its fields |
 |---|---|---|---|
-| `Scalar[T]` | one business value: a primitive with its invariant, read as `.root` | you | `root: T = Field(gt=..., min_length=..., pattern=...)` |
+| `Scalar[T]` | one business value: a primitive with its invariant, read as `.root`; with a default root, a constant that exists in every run | you | `root: T = Field(gt=..., min_length=..., pattern=...)` |
 | `Setting[T]` | one deployment value: address, credential, limit; lenient, because the environment is text | the deployment | `root: T` with its constraint |
-| `Value` | a composite part with no standing of its own | you | your classes |
-| `Request` | what arrives on a route | your contract | your classes; `tuple[E, ...]` for several |
-| `Record` | what a party says, read by alias only | the party | your classes; `Field(alias=...)` per party name, or `alias_generator=to_camel` on a subclass for the whole party; `AliasPath` for a nested value |
+| `Value` | a composite part with no standing of its own; arrives inside a request or a record | you | your scalars and values |
+| `Request` | what arrives on a route; a tuple field declares elements | your contract | your scalars, values and enumerations; `tuple[E, ...]` for several |
+| `Record` | what a party says, read by alias only; a tuple field declares elements | the party | your classes; `Literal` tags; `Field(alias=...)` per party name, or `alias_generator=to_camel` on a subclass for the whole party; `AliasPath` for a nested value |
 | `Fact` | what the business concludes | you | the request, records, prior facts, values, relations, derivations, selections, an element |
 | `Action[P, T]` | what the business asks party `P`, hearing `T`, one record class or a union of them; the kind holds `party: P`, filled from the config | you | the fact that intends it; `sends` and `resource` as properties the library kind declares |
 | `Reply[F]` | what the caller receives: the fact `F` as `of`, never serialized, and computed fields that are its words | your contract | none |
 | `Connection` | a party as the deployment names it; comes from a library kind, which opens and closes it | the deployment | `Setting` subclasses |
 | `Route[Q, A]` | one thing the program does; the class name is its name; the kind holds `request: Q` and `reply: A`, and an instance is one answered request | your contract | none |
-| `Config` | the deployment, from the environment and `.env`; nested names joined with `__` | the deployment | one `Connection` per party, one `Setting` per value |
+| `Config` | the deployment, one per program, from the environment and `.env`; nested names joined with `__` | the deployment | one `Connection` per party, one `Setting` per value |
 
 The computation kinds, each a `Fact` you subclass with your classes as the parameters and no fields of your own:
 
 | kind | what it declares | read as |
 |---|---|---|
 | `Times[A, B]` | the product of two values | `.root`, a `Decimal` |
-| `Sum[E]` | the sum of every element's value | `.root` |
-| `AtMost[A, B]`, `Beyond[A, B]` | `value` is at most, or beyond, `bound`; complements of each other | the fact that holds it |
+| `Sum[E]` | the sum of every element's value, zero for none | `.root` |
+| `Under[A, B]`, `AtMost[A, B]`, `Equal[A, B]`, `AtLeast[A, B]`, `Beyond[A, B]`, `Differs[A, B]` | `value` is under, at most, equal to, at least, beyond, or other than `bound`; `Under` and `AtLeast`, `AtMost` and `Beyond`, `Equal` and `Differs` are complements | the fact that holds it |
 | `Between[A, L, U]` | `value` is at least `lower` and at most `upper` | the fact that holds it |
-| `Equal[A, B]` | `value` equals `bound` | the fact that holds it |
 | `Least[E]`, `Greatest[E]` | the element whose value is least, or greatest | `.chosen` |
 | `First[E]` | the first element | `.chosen` |
 | `Only[E]` | the one element, when there is exactly one | `.chosen` |
 
-`A`, `B`, `L`, `U` and `E` are a `Scalar` over `Decimal` or `int`, or another derivation; the checker refuses anything else. Every relation kind subclasses `Relation` and declares its meaning as `Constraint`s between its operand fields, which the proof reads to decide what two outcomes can both hold; every selection kind subclasses `Selection` and refuses when there is nothing to choose. Ready-made: `Instant` and `Identity` construct themselves when declared on a fact; `Duration` is a positive `timedelta`. A `StrEnum` subclass is a closed word list.
+`A`, `B`, `L`, `U` and `E` are a `Scalar` over `Decimal` or `int`, or another derivation; the checker refuses anything else. Each kind declares its meaning once, as Pydantic reads it, and both construction and the proof read that one declaration: a relation is one comparison restricted to the orderings its `Literal` admits, a selection's shape is its tuple annotation, a derivation's root is computed at construction by its operation. Ready-made: `Instant` and `Identity` are fresh scalars the engine constructs for each holder; `Duration` is a positive `timedelta`. A `StrEnum` subclass is a closed word list.
 
 ## The five shapes
 
-1. A field annotated with one of your classes. Never a bare primitive and never `None`: a primitive carries no rule, and an absence is a class.
+1. A field annotated with one of your classes. Never a bare primitive and never `None`: a primitive carries no rule, an absence is a class, and the proof refuses both.
 2. A `Field(...)` constraint on a `Scalar` or `Setting` root: `gt`, `ge`, `le`, `min_length`, `max_length`, `pattern`.
-3. A union `A | B` where a choice is held. Pydantic constructs the member that exists; write members so at most one can, and the proof refuses the overlap it can see.
-4. A tuple `tuple[T, ...]` for several of one thing. On a request it is where elements come from; on a fact it collects.
-5. A subclass of a computation kind with your classes as its parameters. A `@computed_field` only on a reply, for a word the caller is told.
+3. A union `A | B` where a choice is held. Pydantic constructs the member that exists; write members a relation, a record or a selection tells apart, and the proof refuses a pair it cannot show exclusive.
+4. A tuple `tuple[T, ...]` for several of one thing. On a request or a record it declares elements; on a fact it collects what exists once per element.
+5. A subclass of a computation kind with your classes as its parameters. A `@computed_field` only on a reply, for a word the caller is told, reading fields and constructing a declared class.
 
 ## A rule is a type
 
@@ -79,11 +78,9 @@ class Threshold(Scalar[Decimal]):
     """The line total above which a line is discounted."""
     root: Decimal = Decimal(100)
 
-class Small(AtMost[LineTotal, Threshold]):
-    bound: Threshold = Threshold()
+class Small(AtMost[LineTotal, Threshold]): ...
 
-class Large(Beyond[LineTotal, Threshold]):
-    bound: Threshold = Threshold()
+class Large(Beyond[LineTotal, Threshold]): ...
 
 class FullPrice(Fact):
     line: Line
@@ -99,7 +96,7 @@ class Charge(Says[Payments, Charged]):
     priced: Discounted | FullPrice
 ```
 
-For a line total of 7.50, `Small` constructs and `Large` refuses, so `FullPrice` exists and `Discounted` is never built; `Charge` holds whichever exists. You wrote no `if`, no expression and no validator. A constant such as the threshold is a scalar with a default, given as the field's default on your subclass, so nothing has to supply it. At startup the proof reads the constraints on both operands and refuses a relation that can never hold or never refuse.
+For a line total of 7.50, `Small` constructs and `Large` refuses, so `FullPrice` exists and `Discounted` is never built; `Charge` holds whichever exists. You wrote no `if`, no expression and no validator. `Threshold` is a constant, a scalar with a default root, and exists in every run by being declared: nothing supplies it and nothing defaults it on a subclass. At startup the proof reads the bounds on both operands and refuses a relation that can never hold or never refuse, and reads the orderings `Small` and `Large` admit and proves `Discounted | FullPrice` exclusive.
 
 ## A derived value is declared
 
@@ -109,10 +106,9 @@ class LineTotal(Times[UnitPrice, Quantity]):
 
 class Reduced(Times[LineTotal, Rate]):
     """What a discounted line pays: its total at the rate."""
-    right: Rate = Rate()
 ```
 
-`LineTotal` constructs when a `UnitPrice` and a `Quantity` exist in the run, and `.root` is their product. The arithmetic lives once, on the kind. A derivation is an operand of a relation, a selection or another derivation.
+`LineTotal` constructs when a `UnitPrice` and a `Quantity` exist in its scope, and `.root` is their product, computed and validated at construction. `Rate` is a constant. The arithmetic lives once, on the kind, and the proof reads what the product can be from what its operands can be. A derivation is an operand of a relation, a selection or another derivation.
 
 ## Several of one thing
 
@@ -135,7 +131,7 @@ class Paid(Fact):
     cheapest: Cheapest
 ```
 
-`Line` is an element because the request holds it as a tuple. `Quote`, `LineTotal`, `Small`, `Large`, `Charge` and `LinePaid` exist once per line; `Paid` exists once and receives every `LinePaid` in order. The engine performs every line's `Quote` together. A reply's fact exists once per run, so it collects; it never holds an element directly.
+`Line` is an element because the request holds it as a tuple. `Quote`, `LineTotal`, `Small`, `Large`, `Charge` and `LinePaid` exist once per line, in that line's scope; `Paid` exists once and receives every `LinePaid` in order. The engine performs every line's `Quote` together. A record a party says about a line may hold a tuple too; its elements get scopes under the line's, and a fact in the line's scope collects them. A reply's fact exists once per run, so it collects; it never holds an element directly.
 
 ## A choice among elements is declared
 
@@ -144,7 +140,7 @@ class Cheapest(Least[LineTotal]):
     """The line that costs least."""
 ```
 
-The engine collects every line's `LineTotal` and constructs `Cheapest` once; `self.of.cheapest.chosen` on the reply is the chosen one. A selection over no element refuses, the same way a relation refuses: a choice among nothing does not exist, so declare the outcome for none, or refuse an empty collection at the request with `Field(min_length=1)`. `Only[E]` refuses unless there is exactly one element.
+The engine collects every line's `LineTotal` and constructs `Cheapest` once; `self.of.cheapest.chosen` on the reply is the chosen one. A selection over no element refuses, the same way a relation refuses: a choice among nothing does not exist, so declare the outcome for none, or refuse an empty collection at the request with `Field(min_length=1)`. `Only[E]` is the shape `tuple[E]` and refuses unless there is exactly one element.
 
 ## A party that says no
 
@@ -172,7 +168,7 @@ class Refused(Fact):
 class Checkout(Route[PlaceOrder, OrderPaid | OrderRefused]): ...
 ```
 
-The party's text validates as `Clear | Flagged`; the fact holding the one that arrived constructs; its reply is returned. A transport error is the client's exception and propagates.
+The party's text validates as `Clear | Flagged`, told apart by the `Literal` each declares; the fact holding the one that arrived constructs; its reply is returned. An action performed on one branch only, the `Charge` that follows a clear screen, holds a premise that decides the branch, `Screened`, and the proof refuses one that would be performed whichever branch held. A transport error is the client's exception and propagates.
 
 ## The loop
 
@@ -181,10 +177,10 @@ Start from the route and work backward to the parties. Each step writes one clas
 1. Write the route: `class Checkout(Route[PlaceOrder, OrderPaid])`. Write `PlaceOrder` with the fields the caller sends and a docstring under each. Write `class OrderPaid(Reply[Paid])` with a computed field for each value the caller gets, reading `self.of`.
 2. Write the fact the reply is made from: `Paid`.
 3. For each fact, state what it is and what values it can have, then write its fields. Each field is the request, a prior fact, a record, a value, a relation, a derivation, a selection, or an element. Write the ones that do not exist. Repeat until every field bottoms out.
-4. When a field is a primitive, ask what values the business has for it and write the `Scalar` with that constraint before finishing the fact. When a rule compares values, write the relation subclasses and the fact for each outcome. When a value is computed, write the derivation subclass. When one of several is chosen, write the selection subclass.
+4. When a field is a primitive, ask what values the business has for it and write the `Scalar` with that constraint before finishing the fact. When a rule compares values, write the relation subclasses and the fact for each outcome. When a value is computed, write the derivation subclass. When one of several is chosen, write the selection subclass. When a value is a constant, write the scalar with its default root.
 5. For each record, write the action that hears it, with `sends` and `resource`, and the connection it is toward as a library kind's subclass with `Setting` fields.
 6. Write the config: one field per connection.
-7. Register the program and run a route from the shell. Fix the class `just check` or the startup check names and run again.
+7. Register the program and run a route from the shell. Fix the class `just check` or the startup proof names and run again.
 
 For a change, start at step 2 with the reply that changes or step 3 with the fact that gains a field. Add classes; there is no function to edit.
 
@@ -194,26 +190,29 @@ In the program's `pyproject.toml`:
 
 ```toml
 [project.entry-points."type_construction.programs"]
+orders = "orders"
 
 [project.scripts]
+orders = "type_construction.cli:main"
 ```
 
 The entry's name is the command; its value is the module holding the routes and the config. Then:
 
 ```
+orders checkout --sku tea --quantity 3 --ship-to.city Boston --lines '{"sku": "tea", "quantity": 3}'
 ```
 
-A `Value` field is dotted; a tuple repeats; a tuple of values takes one JSON object per repeat; a `StrEnum` lists its choices. Connections come from the environment or `.env`: `PAYMENTS__URL`, `PAYMENTS__KEY`. A value outside a constraint exits 1 with the field named. The HTTP server, when built, serves the same routes from the same classes with the same descriptions in its OpenAPI document; choosing one or both changes no class.
+A route is a subcommand named from its class, `RequoteSku` as `requote-sku`. A scalar is one option, with its class name as the metavar, its docstring as help and its bounds after it; a `Value` field is dotted; a tuple repeats; a tuple of values takes one JSON object per repeat; a `StrEnum` lists its choices. `orders` alone lists the routes and the variables the deployment reads. Connections come from the environment or `.env`: `PAYMENTS__URL`, `PAYMENTS__KEY`. A program that does not prove, a request that does not construct, a run that stalls or a reply whose word refuses exits 1 with the class and the field named; an unknown route exits 2. The HTTP server, when built, serves the same routes from the same classes with the same descriptions in its OpenAPI document; choosing one or both changes no class.
 
 ## What the engine does with your classes
 
 The contract. You rely on it; you never implement any of it.
 
-- **At startup, the proof.** Starts from each route's request, what it carries, and the config's connections, and asks, pass by pass, which classes can exist: a class joins when every required field names a class that has joined; an action's records, a request's or record's elements, and the scalars and values a request, a record or a value holds join with their class. Refuses the program, naming every fault at once in your class names: the field no class fills; the class no field holds; a record two actions hear; a class two computed fields produce; a scalar two carriers hold; a party the config holds twice; two classes that hold each other; a route that would exist once per element; a tuple collecting a once-per-run class; a class that would exist per element of two things; a record heard per element that holds a collection; a relation its operands' bounds make certain or impossible; a relation kind that declares no constraints; two union members that could both hold, decided from the relations' constraints and the scalars' bounds.
+- **At startup, the proof.** Places every class: the request, its scalars and values, the connections and the constants once per run; an element once per element of the request or record that declares it; a record where its hearer is; a scalar or value where its carrier is; every other class where its premises are, and one level above what it collects. Refuses the program, naming every fault at once in your class names, as one `ValidationError`: `missing`, a field no class fills; `cycle`, classes that hold each other; `twice`, a class with two sources, a scalar two carriers hold, a record two actions hear, a party the config holds twice; `unplaceable`, a class whose fields name two sibling elements; `collects`, a tuple over a class that is not one level down; `route`, a route whose reply would exist once per element; `unreached`, a class the reply of no route leads to; `unmodeled`, a bare primitive, an enumeration on a fact, `None`; `boundary`, a request that holds what does not arrive, a config that holds a business value; `config`, no one deployment; `ambiguous`, two union members not proven exclusive; `never`, a relation its operands' intervals make certain or impossible; `undiscriminated`, two records one action hears that no field tells apart; `undecided`, an action performed on one branch of a choice that holds nothing deciding it.
 - **Receive.** An HTTP body is validated strict as `Q` in JSON mode. A command line is validated leniently from text. Your classes stay strict in code.
-- **Construct.** Each pass asks Pydantic for every class not yet built, `model_validate` from the instances its fields name, in the run the class belongs to, which is read from its fields: a class whose fields reach an element exists once per element, in a child run that sees the parent's instances; any other exists once. A class whose fields are still missing, or whose relation or selection does not hold, does not exist yet; a union member that never exists is never built, so the holder's union is the choice. A request, a record and a value bring the scalars and values they hold into the run. A collection with no element is the empty tuple, so a sum of nothing is zero and a choice among nothing refuses. A pass that builds nothing ends the request naming each relation that did not hold and each field no class fills.
-- **Act.** An action constructs when its fields are filled; then `perform` runs through its library kind and the response is validated as `T`, a union choosing its member. The actions of one pass run together in one task group; one client's exception cancels the others and propagates in an `ExceptionGroup`. The engine never retries, times out or compensates: those are the library kind's, and an idempotency key is a field on the action.
-- **Answer.** The reply constructs from its fact, the route constructs from the request and the reply, and that is the end of the run; the reply's computed fields are serialized.
+- **Construct.** Each pass asks Pydantic for every class of the route not yet in its scope whose premises are present, `model_validate` from the instances its fields name; a fresh scalar is constructed for the holder; a tuple field is every child scope's instance in element order, the empty tuple for no element, so a sum of nothing is zero and a choice among nothing refuses. A relation or a selection that refuses does not hold in that scope, and a union member that never holds is never built, so the holder's union is the choice. A request, a record and a value bring the scalars and values they hold into their scope. A pass that builds nothing ends the request naming each relation or selection that did not hold, with the ordering observed, leaving out one whose complement held.
+- **Act.** An action constructs when its premises are present; then `perform` runs through its library kind and the response is validated as `T`, a union choosing its member, and the record enters the scope the action was built in, its elements fanning out under it. The actions of one pass run together in one task group; one client's exception cancels the others and propagates in an `ExceptionGroup`. The engine never retries, times out or compensates: those are the library kind's, and an idempotency key is a field on the action.
+- **Answer.** The reply constructs from its fact, the route constructs from the request and the reply, and that is the end of the run; the reply's computed fields are serialized, and `model_dump` of the reply is the derivation of the answer.
 - **Lifecycle.** Every connection is opened once at startup and closed once at shutdown; when one fails to open, those already opened are closed and the failure propagates.
 - **Observe.** Every answer is a span named for the route, with one child span per action carrying the party's and the record's class names. No contents are recorded. The deployment chooses the exporter.
 - **Fail.** A `ValidationError` propagates to the caller; a client's exception propagates in the pass's `ExceptionGroup`. A party's stated refusal is a `Record` in a union, not an exception.
@@ -226,19 +225,21 @@ The contract. You rely on it; you never implement any of it.
 
 **Where does state live?** In the current fact of a context. `Cart` holds the previous `Cart` and the arrival that changed it. This version serves one request per context.
 
-**Why does the proof say two classes carry a scalar?** Because a scalar is named by its role: the catalog's `UnitPrice` and the reply's `OrderTotal`, never `Amount` on both. The run holds one instance per class.
+**Why does the proof say a class has two sources?** Because a scalar is named by its role: the catalog's `UnitPrice` and the reply's `OrderTotal`, never `Amount` on both. A scope holds one instance per class, and a fact that needs the value two carriers both hold holds the carrier.
 
-**Why does a scalar need a default on my relation?** A business constant is a scalar with a default root, and the relation's field defaults to it on your subclass, so nothing has to carry it into the run.
+**Why does the proof say my action is undecided?** Because it would be performed whichever branch of a choice held. Make the action from the premise that decides the branch: the charge holds the clear screen, not the order.
 
-**Performance.** One pydantic-core construction per class per request, the proof once at startup, clients opened once.
+**Where does a constant go?** A scalar with a default root, held where it is compared. Nothing supplies it and nothing defaults it on a subclass.
 
-**Debugging.** `ValidationError` carries `loc`, the field path, and `input`. The proof reports faults before a port is bound. The trace shows the route and each party call as spans named by your classes.
+**Performance.** One pydantic-core construction per class per scope, the proof once at startup, clients opened once.
+
+**Debugging.** `ValidationError` carries `loc`, the field path, and `input`. The proof reports faults before a port is bound. A stall names the relation that refused and the ordering it saw. The trace shows the route and each party call as spans named by your classes.
 
 **Databases.** A library kind, the same shape as HTTP: a `Connection` with `Setting` fields, an `Action` with `statement` as a property, a `Record` for the rows. `perform` executes and validates the result set as `T`.
 
 **Escape hatches.** One: `perform` in a library kind, where Python calls a client. Anything else you cannot express is a missing class or a missing kind, and that is a defect in the framework.
 
-**Why not FastAPI plus Pydantic?** FastAPI validates the request and response models; the handler between them is unchecked Python. Here the middle is classes: basedpyright checks every reference, the proof verifies the graph, Pydantic constructs the whole thing, and the trace comes for free.
+**Why not FastAPI plus Pydantic?** FastAPI validates the request and response models; the handler between them is unchecked Python. Here the middle is classes: basedpyright checks every reference, the proof places and refuses the graph, Pydantic constructs the whole thing, and the trace comes for free.
 
 ## What you never write
 
@@ -246,6 +247,7 @@ The contract. You rely on it; you never implement any of it.
 - A `model_validator` or `field_validator`. Write the `Scalar` constraint, or the relation kind and the fact for each outcome.
 - An `if`, a loop, a `try`, a `gather`, an arithmetic expression, `min` or `max`. Write a union, a tuple, a derivation, a relation, a selection, and let `ValidationError` propagate.
 - A field typed `str`, `int`, `Decimal`, `datetime`, or `None`. Write the `Scalar`, and a class for the absent case.
+- A default on a field so the engine has something: `bound: Threshold = Threshold()`. Write the constant's default root once, on the scalar.
 - A log line. The engine's spans carry your class names.
 - A class or field that exists for the engine: an id it reads, a status it checks, a tag the party did not send.
 - A second copy of anything: a schema document, a mapper between an API model and a domain model, a list of your classes.
@@ -254,6 +256,6 @@ The contract. You rely on it; you never implement any of it.
 
 `just check` is green: the smell check on the program, basedpyright strict, and the run of each route from the shell against the product's acceptance rows.
 
-## Not built yet
+## Not built
 
-The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; the generated reference; contexts that persist across requests; the pytest-bdd binding of the feature files. The world, the engine and the command line exist and type-check. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.
+The HTTP library kind, `Http`, `Keyed`, `Post`, `Get`, and the HTTP server; a SQL kind; contexts that persist across requests; the pytest-bdd binding of the feature files. The world, the engine and the command line exist and type-check. The decisions are in `docs/decisions/`; the remaining work is `TODO.md`.

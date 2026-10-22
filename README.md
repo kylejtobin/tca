@@ -58,7 +58,7 @@ The framework multiplies, compares and chooses. Exactly one of `FullPrice` and `
 
 **You stop deciding what runs first.** You say what each thing is made of, and it exists when what it is made of exists. Order falls out. Two questions that need nothing from each other are asked together, and you wrote no task, no gather and no schedule.
 
-**You stop shipping a program that is wired wrong.** A program with a question nothing answers, a value nothing produces, two things that each need the other, two outcomes that could both be true, or a rule its own bounds decide does not start. It tells you which, in the names you gave them.
+**You stop shipping a program that is wired wrong.** A program with a question nothing answers, a value nothing produces, two things that each need the other, two outcomes that could both be true, a rule its own bounds decide, or a call to a party that would be made whichever outcome held does not start. It tells you which, in the names you gave them.
 
 **You stop writing documentation, a command line and an API.** All three are read off the types you wrote. A route is a command and an endpoint at once. The description on a field is what the operator sees in the shell and what the integrator sees in the API document, and it cannot drift, because it is not a copy.
 
@@ -66,19 +66,13 @@ The framework multiplies, compares and chooses. Exactly one of `FullPrice` and `
 
 ## How it grows
 
-The engine does not know what a discount is. It asks Pydantic for each class your program declares and keeps what constructs. Everything a business does is a kind, written once in the framework and declared by every program after. This is `Times`, as it is written, with its documentation removed:
+The engine does not know what a discount is. It asks Pydantic for each class your program declares and keeps what constructs. Everything a business does is a kind, written once in the framework and declared by every program after, and each kind declares its meaning once, as Pydantic reads it, so the startup proof reads the same declaration construction runs. This is `AtMost`, as it is written, with its documentation removed: the one comparison every relation makes, restricted to the orderings this one admits.
 
 ```python
-class Times[A: Numeric, B: Numeric](Measure):
-    left: A
-    right: B
-
-    @property
-    def root(self) -> Decimal:
-        return Decimal(self.left.root) * Decimal(self.right.root)
+class AtMost[A: Numeric, B: Numeric](Compare[A, B, Literal[-1, 0]]): ...
 ```
 
-Today the kinds are `Times` and `Sum` for computing, `AtMost`, `Beyond`, `Between` and `Equal` for comparing, and `Least`, `Greatest`, `First` and `Only` for choosing. A kind for a temporal comparison, a set operation or a statistical measure is a class of that size, and every program gets it without a change. A party over a new transport is the same: one kind that opens the client and reads the answer, and no program contains it. Capability grows in the kinds; the engine stays the size it is.
+Today the kinds are `Times` and `Sum` for computing, `Under`, `AtMost`, `Equal`, `AtLeast`, `Beyond`, `Differs` and `Between` for comparing, and `Least`, `Greatest`, `First` and `Only` for choosing. A kind for a temporal comparison, a set operation or a statistical measure is a class of that size, and every program gets it without a change. A party over a new transport is the same: one kind that opens the client and reads the answer, and no program contains it. Capability grows in the kinds; the engine stays the size it is.
 
 ## What stays yours
 

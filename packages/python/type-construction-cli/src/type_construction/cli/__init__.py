@@ -1,54 +1,59 @@
 """Runs a program's route from the command line.
 
-``Q.model_json_schema()``, the document FastAPI publishes as OpenAPI. The schema is
-parsed once into the node classes below; a discriminator chooses each node's class from
-the keys it carries, and each node knows how it renders: a primitive is one option with its
-title as metavar, its description and bounds as help, and its ``enum`` as choices; an
-object is dotted options, ``--ship-to.city``; an array repeats, ``--tags gift --tags
-rush``, taking one JSON value per repeat when its items are objects or arrays. The same
-nodes read the parsed options back into the tree the request validates from, with
-``Q.model_validate(tree, strict=False)``, the lenient mode for a text edge; the class stays
-strict in code, and a field that was not given is reported by Pydantic as ``missing``.
-Connections come from the environment and ``.env`` through the program's ``Config``. The
-reply's computed fields are printed as JSON.
+The command line is the request's type. One subcommand per route, named from the route class,
+``RequoteSku`` as ``requote-sku``. The options are read from the request class with the
+engine's own reads, ``holds`` and ``collects``: a scalar is one option with its class name as
+the metavar, the field's docstring as help and its root's bounds after it, and its members as
+choices when the root is an enumeration; a value is one dotted option per field,
+``--place.city``; a tuple repeats, ``--tags gift --tags rush``, taking one JSON object per
+repeat when its elements are values. The parsed options are read back into the tree the
+request validates from, with ``Q.model_validate(tree, strict=False)``, the lenient mode for a
+text edge; the class stays strict in code, and a field that was not given is reported by
+Pydantic as ``missing``. Connections come from the environment and ``.env`` through the
+program's ``Config``, whose variables the program's help lists the same way. The reply's
+computed fields are printed as JSON.
 
-program that does not prove, a request that does not construct, or a deployment with a
-variable missing prints the ``ValidationError``
-to standard error and exits 1. A route that does not exist exits 2.
+The program is proven before anything is listed or run; a program that does not prove, a
+request that does not construct, a deployment with a variable missing, a run that stalls, or a
+reply whose word refuses prints the ``ValidationError`` to standard error and exits 1. A route
+that does not exist exits 2. Two routes that would share a command are refused at startup.
 
 The program is the module the project file names under
-``[project.entry-points."type_construction.programs"]``; the entry's name is the command
-and its value is the module's import path.
+``[project.entry-points."type_construction.programs"]``; the entry's name is the command and
+its value is the module's import path.
 """
 
 import asyncio
 import json
 import sys
-from abc import abstractmethod
 from argparse import SUPPRESS, ArgumentParser
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from decimal import Decimal
+from enum import Enum
 from importlib import import_module
 from importlib.metadata import entry_points
 from pathlib import Path
 from types import ModuleType
-from typing import Annotated, Literal, TypeIs, override
+from typing import Annotated, get_args, get_origin
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Discriminator,
-    Field,
-    Tag,
-    ValidationError,
-    computed_field,
-)
+from annotated_types import Ge, Gt, Le, Lt, MaxLen, MinLen
+from pydantic import BaseModel, RootModel, ValidationError
 from pydantic.alias_generators import to_snake
+from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticSerializationError
 
-from type_construction.engine import answer, asked, config, opened, proven, routes
-from type_construction.world import Config, Fact, Record, Reply, Request, Route
+from type_construction.engine import (
+    Proof,
+    answer,
+    asked,
+    collects,
+    config,
+    holds,
+    opened,
+    proven,
+)
+from type_construction.world import Config, Fact, Reply, Request, Route
 
-__all__ = ["main"]
+__all__ = ["Given", "commands", "exits", "main", "ran", "tree", "usage"]
 
 GROUP = "type_construction.programs"
 """The entry-point group a program registers under; the entry's name is the command."""
@@ -60,356 +65,183 @@ type Given = dict[str, str | list[object]]
 """What argparse parsed, by dotted key: text for an option, a list for a repeated one."""
 
 
-class Node(Record):
-    """A node of a JSON schema, under Pydantic's schema generator's names; keys not read are
-    ignored.
-
-    Each kind of node renders itself: ``option`` adds the options for one property,
-    ``repeated`` adds the option for one array element, ``variables`` yields the
-    environment variables a config property reads, and ``entries`` reads the property back
-    out of the parsed options as the entries it contributes to its parent's tree."""
-
-    model_config = ConfigDict(extra="ignore")
-    title: str = ""
-    description: str = ""
-
-    @abstractmethod
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Add the options for the property at ``key``; ``text`` is the property's own
-        description, if any."""
-
-    @abstractmethod
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Add the one repeated option for an array whose elements are this node."""
-
-    @abstractmethod
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """Yield each environment variable under ``key`` that a config property of this node
-        reads, with its help."""
-
-    @abstractmethod
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """The entries this property contributes to its parent's tree, or nothing when it was
-        not given."""
+def is_enum(cls: object) -> bool:
+    """Whether an annotation is an enumeration."""
+    return isinstance(cls, type) and issubclass(cls, Enum)
 
 
-def given_at(given: Given, key: str) -> Tree:
-    """One entry, the leaf name of a dotted key and the value given for it, or nothing."""
+def is_scalar(cls: type[BaseModel]) -> bool:
+    """Whether a class is one over a root value."""
+    return issubclass(cls, RootModel)
+
+
+def named(annotation: object) -> str:
+    """The name of a root's type, for help: ``str`` for a string, ``HttpUrl`` for an address;
+    an ``Annotated`` type is named by what it annotates."""
+    inner = get_args(annotation)[0] if get_origin(annotation) is Annotated else annotation
+    return getattr(inner, "__name__", str(inner))
+
+
+def bounds(cls: type[BaseModel]) -> tuple[str, ...]:
+    """What to show after a scalar's description: each bound on its root, from the ``Field``
+    metadata, or the root's type when it is not a primitive the shell reads as text."""
+    field = cls.model_fields["root"]
+    found: list[str] = []
+    for meta in field.metadata:
+        match meta:
+            case Gt(gt=v):
+                found.append(f"> {v}")
+            case Ge(ge=v):
+                found.append(f">= {v}")
+            case Lt(lt=v):
+                found.append(f"< {v}")
+            case Le(le=v):
+                found.append(f"<= {v}")
+            case MinLen(min_length=n):
+                found.append(f"min length {n}")
+            case MaxLen(max_length=n):
+                found.append(f"max length {n}")
+            case _:
+                pass
+    if field.annotation not in (str, int, bool, Decimal) and not is_enum(field.annotation):
+        found.append(named(field.annotation))
+    return tuple(found)
+
+
+def choices(cls: type[BaseModel]) -> list[str] | None:
+    """The members of a scalar whose root is an enumeration, else nothing."""
+    root = cls.model_fields["root"].annotation
+    if isinstance(root, type) and issubclass(root, Enum):
+        return [str(member.value) for member in root]
+    return None
+
+
+def helped(text: str, cls: type[BaseModel]) -> str:
+    """The help line of one option: the field's description, or the class's docstring, then the
+    bounds in parentheses."""
+    first = (text or cls.__doc__ or "").strip().splitlines()
+    found = bounds(cls) if is_scalar(cls) else ()
+    suffix = f"({', '.join(found)})" if found else ""
+    return f"{first[0] if first else ''} {suffix}".strip()
+
+
+def flag(key: str) -> str:
+    """The option for a dotted key: ``--ship-to.city`` for ``ship_to.city``."""
+    return f"--{key.replace('_', '-')}"
+
+
+def option(built: ArgumentParser, key: str, cls: type[BaseModel], text: str) -> None:
+    """Add the options for one single field: a scalar is one option, a value is one dotted
+    option per field."""
+    if is_scalar(cls):
+        built.add_argument(
+            flag(key),
+            dest=key,
+            default=SUPPRESS,
+            choices=choices(cls),
+            metavar=None if choices(cls) else cls.__name__.upper(),
+            help=helped(text, cls),
+        )
+        return
+    for name, field in cls.model_fields.items():
+        for held in (c for c in (field.annotation,) if isinstance(c, type)):
+            if issubclass(held, BaseModel):
+                option(built, f"{key}.{name}", held, field.description or "")
+            elif issubclass(held, Enum):
+                enumerated(built, f"{key}.{name}", held, field.description or "")
+
+
+def enumerated(built: ArgumentParser, key: str, cls: type[Enum], text: str) -> None:
+    """One option whose choices are an enumeration's members."""
+    built.add_argument(
+        flag(key),
+        dest=key,
+        default=SUPPRESS,
+        choices=[str(member.value) for member in cls],
+        help=text or (cls.__doc__ or "").strip(),
+    )
+
+
+def repeated(built: ArgumentParser, key: str, cls: type[BaseModel], text: str) -> None:
+    """One option that may be given more than once, one element per repeat: a scalar's text, or
+    one JSON object for a value, since argv cannot nest a repeat."""
+    if is_scalar(cls):
+        built.add_argument(
+            flag(key),
+            dest=key,
+            action="append",
+            default=SUPPRESS,
+            choices=choices(cls),
+            metavar=None if choices(cls) else cls.__name__.upper(),
+            help=helped(text, cls),
+        )
+        return
+    built.add_argument(
+        flag(key),
+        dest=key,
+        action="append",
+        default=SUPPRESS,
+        type=json.loads,
+        metavar="JSON",
+        help=helped(text, cls),
+    )
+
+
+def options(built: ArgumentParser, request: type[BaseModel]) -> None:
+    """Add every option of a request to a parser: its single fields, and its tuple fields as
+    repeated options."""
+    for name, field in request.model_fields.items():
+        text = field.description or ""
+        annotation = field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            option(built, name, annotation, text)
+        elif isinstance(annotation, type) and issubclass(annotation, Enum):
+            enumerated(built, name, annotation, text)
+    for name, classes_ in collects(request).items():
+        for cls in classes_:
+            repeated(built, name, cls, request.model_fields[name].description or "")
+
+
+def entries(given: Given, key: str, cls: type[BaseModel]) -> Tree:
+    """What was given for one single field, as the entries it contributes to its parent's tree:
+    the text for a scalar, the nested dict for a value, nothing when not given."""
     leaf = key.rsplit(".", 1)[-1]
-    return {leaf: given[key]} if key in given else {}
+    if is_scalar(cls):
+        return {leaf: given[key]} if key in given else {}
+    merged: Tree = {}
+    for name, classes_ in holds(cls).items():
+        for held in classes_:
+            merged.update(entries(given, f"{key}.{name}", held))
+        if not classes_ and f"{key}.{name}" in given:
+            merged[name] = given[f"{key}.{name}"]
+    return {leaf: merged} if merged else {}
 
 
-class Reference(Node):
-    """A property that points at a definition: ``{"$ref": "#/$defs/Sku"}``; renders as its
-    target."""
-
-    ref: str = Field(alias="$ref")
-
-    @computed_field
-    @property
-    def name(self) -> str:
-        """The definition's key in ``$defs``: the class name of the scalar or value."""
-        return self.ref.rsplit("/", 1)[-1]
-
-    @override
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Render the definition this reference points at, under the property's description."""
-        schema.defs[self.name].option(schema, built, key, text or self.description)
-
-    @override
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Render the definition this reference points at as the element of an array."""
-        schema.defs[self.name].repeated(schema, built, key, text or self.description)
-
-    @override
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """The variables of the definition this reference points at."""
-        return schema.defs[self.name].variables(schema, key, text or self.description)
-
-    @override
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """The entries of the definition this reference points at."""
-        return schema.defs[self.name].entries(schema, given, key)
+def tree(given: Given, request: type[BaseModel]) -> Tree:
+    """The parsed options as the nested dict the request validates from; a field not given is
+    absent."""
+    found: Tree = {}
+    for name, classes_ in holds(request).items():
+        for held in classes_:
+            found.update(entries(given, name, held))
+        if not classes_ and name in given:
+            found[name] = given[name]
+    for name in collects(request):
+        if name in given:
+            found[name] = given[name]
+    return found
 
 
-class Primitive(Node):
-    """A value of one JSON type, with the bounds Pydantic wrote for its constraints and its
-    ``enum`` if closed."""
-
-    type: Literal["string", "integer", "number", "boolean"]
-    """The JSON type Pydantic wrote for the scalar's root: ``str``, ``int``, ``float``, ``bool``."""
-    format: str = ""
-    """Pydantic's name for a well-known string form: ``uri`` for ``HttpUrl``, ``password`` for
-    ``SecretStr``."""
-    enum: tuple[str, ...] = ()
-    """The members of a ``StrEnum`` field; empty for any other value."""
-    exclusive_minimum: Decimal | None = Field(
-        None, alias="exclusiveMinimum", description="From Field(gt=...) on the scalar."
-    )
-    minimum: Decimal | None = Field(None, description="From Field(ge=...) on the scalar.")
-    exclusive_maximum: Decimal | None = Field(
-        None, alias="exclusiveMaximum", description="From Field(lt=...) on the scalar."
-    )
-    maximum: Decimal | None = Field(None, description="From Field(le=...) on the scalar.")
-    min_length: int | None = Field(
-        None, alias="minLength", description="From Field(min_length=...) on the scalar."
-    )
-    max_length: int | None = Field(
-        None, alias="maxLength", description="From Field(max_length=...) on the scalar."
-    )
-    pattern: str | None = Field(None, description="From Field(pattern=...) on the scalar.")
-
-    @computed_field
-    @property
-    def bounds(self) -> tuple[str, ...]:
-        """What to show after the description: the format alone when there is one, else each
-        bound."""
-        if self.format:
-            return (self.format,)
-        pairs = (
-            (">", self.exclusive_minimum),
-            (">=", self.minimum),
-            ("<", self.exclusive_maximum),
-            ("<=", self.maximum),
-            ("min length", self.min_length),
-            ("max length", self.max_length),
-            ("pattern", self.pattern),
-        )
-        return tuple(f"{word} {value}" for word, value in pairs if value is not None)
-
-    @computed_field
-    @property
-    def metavar(self) -> str:
-        """The value's name in usage lines: the scalar's class name, else its JSON type, in
-        upper case."""
-        return (self.title or self.type).upper()
-
-    def help(self, text: str) -> str:
-        """The help line: the description, then the bounds in parentheses."""
-        suffix = f"({', '.join(self.bounds)})" if self.bounds else ""
-        return f"{text or self.description} {suffix}".strip()
-
-    @override
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """One option: choices from ``enum``, metavar from the title, help from the description
-        and bounds; absent from the namespace when not given, so the request reports it."""
-        built.add_argument(
-            f"--{key.replace('_', '-')}",
-            dest=key,
-            default=SUPPRESS,
-            choices=list(self.enum) or None,
-            metavar=None if self.enum else self.metavar,
-            help=self.help(text),
-        )
-
-    @override
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """One option that may be given more than once, one element per repeat."""
-        built.add_argument(
-            f"--{key.replace('_', '-')}",
-            dest=key,
-            action="append",
-            default=SUPPRESS,
-            choices=list(self.enum) or None,
-            metavar=None if self.enum else self.metavar,
-            help=self.help(text),
-        )
-
-    @override
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """One environment variable: this key, with the description and bounds as help."""
-        yield key, self.help(text)
-
-    @override
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """The text given for this option."""
-        return given_at(given, key)
-
-
-class AnyOf(Node):
-    """A value with more than one JSON form, as Pydantic writes ``Decimal``: a number or a
-    string; renders as the first."""
-
-    any_of: tuple[Primitive, ...] = Field(alias="anyOf")
-
-    @override
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Render the first form; for ``Decimal`` that is the number with its bounds."""
-        self.any_of[0].option(schema, built, key, text or self.description)
-
-    @override
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """Render the first form as the element of an array."""
-        self.any_of[0].repeated(schema, built, key, text or self.description)
-
-    @override
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """The first form's variable."""
-        return self.any_of[0].variables(schema, key, text or self.description)
-
-    @override
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """The text given for this option."""
-        return given_at(given, key)
-
-
-class Array(Node):
-    """Several of one thing, ``tuple[T, ...]``: the option repeats, once per element."""
-
-    type: Literal["array"]
-    items: Member
-
-    @override
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """The repeated option of the element, since an array is given one element per repeat."""
-        self.items.repeated(schema, built, key, text or self.description)
-
-    @override
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """One repeated option taking a JSON array per element, since argv cannot nest a
-        repeat."""
-        built.add_argument(
-            f"--{key.replace('_', '-')}",
-            dest=key,
-            action="append",
-            default=SUPPRESS,
-            type=json.loads,
-            metavar="JSON",
-            help=text or self.description,
-        )
-
-    @override
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """One environment variable holding a JSON array."""
-        yield key, f"{text or self.description} (JSON)".strip()
-
-    @override
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """The list given for this repeated option."""
-        return given_at(given, key)
-
-
-class Object(Node):
-    """A thing with fields, a ``Value`` or the request itself: one dotted option per field; as
-    an element, one JSON object."""
-
-    type: Literal["object"]
-    properties: dict[str, Member]
-
-    @override
-    def option(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """One dotted option per field, ``--key.field``."""
-        for name, prop in self.properties.items():
-            prop.option(schema, built, f"{key}.{name}", "")
-
-    @override
-    def repeated(self, schema: Schema, built: ArgumentParser, key: str, text: str) -> None:
-        """One repeated option taking a JSON object per element, since argv cannot nest a
-        repeat."""
-        built.add_argument(
-            f"--{key.replace('_', '-')}",
-            dest=key,
-            action="append",
-            default=SUPPRESS,
-            type=json.loads,
-            metavar="JSON",
-            help=text or self.description,
-        )
-
-    @override
-    def variables(self, schema: Schema, key: str, text: str) -> Iterator[tuple[str, str]]:
-        """The variables of each field, nested under this key with ``__``."""
-        for name, prop in self.properties.items():
-            yield from prop.variables(schema, f"{key}__{name}".upper(), "")
-
-    def merged(self, schema: Schema, given: Given, key: str) -> Tree:
-        """Every field's entries under this key, in one dict."""
-        return {
-            name: value
-            for prop_key, prop in self.properties.items()
-            for name, value in prop.entries(schema, given, f"{key}.{prop_key}").items()
-        }
-
-    @override
-    def entries(self, schema: Schema, given: Given, key: str) -> Tree:
-        """This object under its leaf name, when any of its fields was given."""
-        leaf = key.rsplit(".", 1)[-1]
-        merged = self.merged(schema, given, key)
-        return {leaf: merged} if merged else {}
-
-
-class Schema(Object):
-    """A request's or a config's whole schema: its properties and the definitions they refer to."""
-
-    defs: dict[str, Member] = Field(alias="$defs", default_factory=dict)
-
-    def options(self, built: ArgumentParser) -> None:
-        """Add every option of a request to a parser."""
-        for name, prop in self.properties.items():
-            prop.option(self, built, name, "")
-
-    def environment(self) -> Iterator[tuple[str, str]]:
-        """Yield every environment variable a config reads, with its help."""
-        for name, prop in self.properties.items():
-            yield from prop.variables(self, name.upper(), "")
-
-    def tree(self, given: Given) -> Tree:
-        """The parsed options as the nested dict the request validates from; a property not
-        given is absent."""
-        return {
-            name: value
-            for prop_key, prop in self.properties.items()
-            for name, value in prop.entries(self, given, prop_key).items()
-        }
-
-
-def is_schema(value: object) -> TypeIs[dict[str, object]]:
-    """Whether a value is a JSON schema object."""
-    return isinstance(value, dict)
-
-
-SHAPES: dict[type[object], str] = {
-    Reference: "ref",
-    Object: "object",
-    Array: "array",
-    AnyOf: "anyOf",
-}
-"""Each node class's tag, for serialization, where the discriminator sees an instance."""
-
-
-def shape(node: object) -> str:
-    """Which kind of node a schema object is, from the keys it carries; the discriminator for
-    ``Member``."""
-    if is_schema(node):
-        if "$ref" in node:
-            return "ref"
-        if "anyOf" in node:
-            return "anyOf"
-        kind = node.get("type")
-        return "object" if kind == "object" else "array" if kind == "array" else "primitive"
-    return SHAPES.get(type(node), "primitive")
-
-
-type Member = Annotated[
-    Annotated[Reference, Tag("ref")]
-    | Annotated[Object, Tag("object")]
-    | Annotated[Array, Tag("array")]
-    | Annotated[AnyOf, Tag("anyOf")]
-    | Annotated[Primitive, Tag("primitive")],
-    Discriminator(shape),
-]
-"""The kinds of node, chosen by ``shape`` from the keys a node carries: ``$ref``, ``anyOf``,
-``type`` object or array, else a primitive."""
-
-Array.model_rebuild()
-Object.model_rebuild()
-Schema.model_rebuild()
-
-
-def schema(model: type[BaseModel]) -> Schema:
-    """A model's JSON schema, parsed into nodes; the document is data, so it is validated
-    leniently."""
-    return Schema.model_validate(model.model_json_schema(), strict=False)
+def variables(cls: type[BaseModel], prefix: str) -> Iterator[tuple[str, str]]:
+    """Each environment variable a config or a connection reads, with its help: a setting is
+    one variable, a connection nests its settings under its key with ``__``."""
+    for name, field in cls.model_fields.items():
+        key = f"{prefix}{name}".upper()
+        for held in (c for c in (field.annotation,) if isinstance(c, type)):
+            if issubclass(held, BaseModel) and is_scalar(held):
+                yield key, helped(field.description or "", held)
+            elif issubclass(held, BaseModel):
+                yield from variables(held, f"{key}__")
 
 
 def program(name: str) -> ModuleType:
@@ -423,19 +255,35 @@ def command(route: type[Route[Request, Reply[Fact]]]) -> str:
     return to_snake(route.__name__).replace("_", "-")
 
 
-def parser(prog: str, request: type[Request], parsed: Schema) -> ArgumentParser:
-    """The command line of one route, rendered from its request's schema."""
-    built = ArgumentParser(prog=prog, description=request.__doc__)
-    parsed.options(built)
-    return built
+def commands(proof: Proof) -> dict[str, type[Route[Request, Reply[Fact]]]]:
+    """Each command and its route; two routes that would share a command are refused."""
+    table: dict[str, type[Route[Request, Reply[Fact]]]] = {}
+    details: list[InitErrorDetails] = []
+    for route in proof.routes:
+        if (name := command(route)) in table:
+            details.append(
+                InitErrorDetails(
+                    type=PydanticCustomError(
+                        "command",
+                        "{a} and {b} would both be the command {name}",
+                        {"a": table[name].__name__, "b": route.__name__, "name": name},
+                    ),
+                    loc=(route.__name__,),
+                    input=route.__name__,
+                )
+            )
+        table[name] = route
+    if details:
+        raise ValidationError.from_exception_data(proof.program, details)
+    return table
 
 
 def usage(
-    prog: str, table: dict[str, type[Route[Request, Reply[Fact]]]], deployment: type[Config]
+    prog: str, table: Mapping[str, type[Route[Request, Reply[Fact]]]], deployment: type[Config]
 ) -> str:
     """The program's routes with their docstrings, and the environment variables its config
     reads."""
-    env = list(schema(deployment).environment())
+    env = list(variables(deployment, ""))
     width = max(len(name) for name in [*table, *(name for name, _ in env)])
     lines = [f"usage: {prog} <route> [options]", "", "routes:"]
     lines += [f"  {name:<{width}}  {route.__doc__ or ''}".rstrip() for name, route in table.items()]
@@ -445,15 +293,20 @@ def usage(
 
 
 def main(argv: list[str] | None = None, name: str | None = None) -> int:
-    """Run one route of the program named by the command, or list the routes; a
-    ``ValidationError`` anywhere, from the proof, the request, the deployment or a party's
-    answer, is printed to standard error with exit code 1. A party's own exception propagates
-    in the ``ExceptionGroup`` the engine raised it in."""
+    """Run one route of the program named by the command, or list the routes."""
     args = sys.argv[1:] if argv is None else argv
     prog = Path(sys.argv[0]).name if name is None else name
+    return exits(prog, args, program(prog))
+
+
+def exits(prog: str, args: list[str], module: ModuleType) -> int:
+    """``ran`` with its refusals printed: a ``ValidationError`` anywhere, from the proof, the
+    request, the deployment, a party's answer, a stalled run or a reply's word, is printed to
+    standard error with exit code 1. A party's own exception propagates in the
+    ``ExceptionGroup`` the engine raised it in."""
     try:
-        return ran(prog, args, program(prog))
-    except ValidationError as refusal:
+        return ran(prog, args, module)
+    except (ValidationError, PydanticSerializationError) as refusal:
         print(refusal, file=sys.stderr)
         return 1
     except ExceptionGroup as group:
@@ -467,20 +320,22 @@ def main(argv: list[str] | None = None, name: str | None = None) -> int:
 
 def ran(prog: str, args: list[str], module: ModuleType) -> int:
     """The body of ``main``: prove the program, then list the routes or run one."""
-    proven(module)
-    table = {command(route): route for route in routes(module)}
+    proof = proven(module)
+    table = commands(proof)
+    deployment = config(module)
     if not args or args[0] in ("-h", "--help"):
-        print(usage(prog, table, config(module)))
+        print(usage(prog, table, deployment))
         return 0
     if args[0] not in table:
-        print(usage(prog, table, config(module)), file=sys.stderr)
+        print(usage(prog, table, deployment), file=sys.stderr)
         return 2
     route = table[args[0]]
     request_cls = asked(route)
-    parsed = schema(request_cls)
-    namespace = parser(f"{prog} {args[0]}", request_cls, parsed).parse_args(args[1:])
-    request = request_cls.model_validate(parsed.tree(vars(namespace)), strict=False)
-    answered = asyncio.run(run(route, request, config(module)(), module))
+    built = ArgumentParser(prog=f"{prog} {args[0]}", description=request_cls.__doc__)
+    options(built, request_cls)
+    namespace = built.parse_args(args[1:])
+    request = request_cls.model_validate(tree(vars(namespace), request_cls), strict=False)
+    answered = asyncio.run(run(route, request, deployment(), proof))
     print(answered.reply.model_dump_json())
     return 0
 
@@ -489,8 +344,8 @@ async def run(
     route: type[Route[Request, Reply[Fact]]],
     request: Request,
     deployment: Config,
-    module: ModuleType,
+    proof: Proof,
 ) -> Route[Request, Reply[Fact]]:
     """One answer with every connection opened before it and closed after it."""
     async with opened(deployment):
-        return await answer(route, request, deployment, module)
+        return await answer(route, request, deployment, proof)

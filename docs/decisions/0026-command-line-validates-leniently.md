@@ -12,11 +12,11 @@ argv is text. A request may hold a `Value`, a `tuple`, a `StrEnum`, a `Decimal`.
 
 ## Decision
 
-The CLI builds a nested dict of text from the parsed options and calls `Q.model_validate(tree, strict=False)`. The lenient mode is chosen per call at the edge; the class stays strict in code.
+The CLI builds a nested dict of text from the parsed options (0027) and calls `Q.model_validate(tree, strict=False)`. The lenient mode is chosen per call at the edge; the class stays strict in code.
 
 ## Evidence
 
-From `{"quantity": "3", "amount": "2.50", "currency": "USD", "ship_to": {"city": "Boston"}, "skus": ["tea", "milk"], "lines": [{"sku": "tea", "quantity": 3}]}`: the lenient call constructed every field; the strict call refused five locations (`int_type`, `is_instance_of` twice, `tuple_type` twice); the lenient call with `"quantity": "0"` refused `greater_than` at `("quantity",)`; with an extra key refused `extra_forbidden` at `("x",)`.
+From `{"name": "tea", "count": "3", "amount": "2.50", "kind": "two", "place": {"city": "Boston"}, "tags": ["gift", "rush"], "each": [{"label": "a", "size": 1}]}`: the lenient call constructed every field, `count.root` 3, `amount.root` `Decimal("2.50")`, `kind` the enumeration's member, `each[0].size.root` 1; with `--count 0` the command exited 1 with `count` and `greater_than` on standard error; with `--name` left out it exited 1 with `name` and `Field required`.
 
 ## Consequences
 

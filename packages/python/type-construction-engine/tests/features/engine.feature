@@ -1,22 +1,21 @@
-Feature: The engine proves a program at startup and answers a route by construction
-  Decision records 0015, 0021, 0029, 0030, 0042, 0044, 0045, 0046, 0047, 0048, 0049, 0050, 0051, 0052, 0053, 0054. The
-  program is the test module tests/type_construction_engine/test_engine.py: Name(Scalar[str]); Element(Value) with name;
-  Elements(Request) with each: tuple[Element, ...]; Said(Setting[str]); Party(Connection) with says: Said and open and
-  close that do nothing; Amount(Scalar[Decimal], gt 0); Heard(Record) with amount: Amount; Tell[P: Party, T:
+Feature: The engine proves a program at startup, placing every class, and answers a route by construction
+  Decision records 0003, 0005, 0011, 0015, 0021, 0030, 0042, 0044, 0045, 0046, 0047, 0048, 0049, 0050, 0051, 0052,
+  0053, 0054, 0055, 0056, 0057, 0058, 0059. The program is the test module
+  tests/type_construction_engine/test_engine.py: Name(Scalar[str], min length 1); Element(Value) with name;
+  Elements(Request) with each: tuple[Element, ...]; Said(Setting[str]); Party(Connection) with says: Said and open
+  and close that do nothing; Teller(Party); Amount(Scalar[Decimal], gt 0); Share(Scalar[Decimal], gt 0, le 1);
+  Part(Value) with share; Heard(Record) with amount: Amount and parts: tuple[Part, ...]; Tell[P: Party, T:
   Record](Action[P, T]) whose perform returns hear(self, self.party.says.root); Asked(Tell[Party, Heard]) holding
-  element; Limit(Scalar[Decimal]) with default 10; Low(AtMost[Amount, Limit]) and High(Beyond[Amount, Limit]), each
-  with bound defaulted to Limit(); Cheap(element, low: Low); Dear(element, high: High); Total(Sum[Amount]);
-  Concluded(valued: tuple[Cheap | Dear, ...], total: Total); Capped(Scalar[Decimal], le 30); Answered(Reply[Concluded])
-  with a computed field total -> Capped from total.root; Operation(Route[Elements, Answered]); Parties(Config) with party: Party. The environment holds PARTY__SAYS='{"amount": "2.50"}'. The program
-  faults.py beside it holds every fault the proof refuses in one module: SmallAmount (gt 0, le 100) and LargeAmount (gt
-  100) carried by Elements; Name carried by Heard as well as by Element; Low with no complement; Unheard(Record) held by
-  Concluded and heard by no action; Impossible(Beyond[SmallAmount, LargeAmount]),
-  Certain(AtMost[SmallAmount, LargeAmount]) and Never(Equal[SmallAmount, LargeAmount]); AtOrUnder(AtMost[Amount, Limit])
-  and Exactly(Equal[Amount, Limit]) held by Either.which as a union; Near[A, B](Relation) declaring no constraints with
-  Undecided(Near[Amount, Limit]); Stray(Scalar[str]) held by nothing; Reasked, a second Tell[Party, Heard]; Parties
-  holding party and backup, both Party; Egg(chicken: Chicken, elements) and Chicken(egg: Egg); Wrong(cheap: Cheap),
-  AnsweredWrong(Reply[Wrong]) and Misplaced(Route[Elements, AnsweredWrong]); Collects(every: tuple[Concluded, ...]);
-  and Heard holding tags: tuple[Tag, ...] while heard once per element.
+  element; Portion(Times[Share, Amount]); Portions(Sum[Portion]); Largest(Greatest[Portion]); Limit(Scalar[Decimal])
+  with root defaulted to 10; Low(AtMost[Amount, Limit]); High(Beyond[Amount, Limit]); Word(Scalar[str]);
+  Noted(Record) with word; Notify(Tell[Teller, Noted]) holding high: High; Cheap(element, low, portions, largest);
+  Dear(element, high, portions, largest, noted: Noted); Total(Sum[Amount]); Concluded(valued: tuple[Cheap | Dear,
+  ...], total: Total, at: Instant); Capped(Scalar[Decimal], le 30); Answered(Reply[Concluded]) with a computed field
+  total -> Capped from total.root; Operation(Route[Elements, Answered]); Parties(Config) with party: Party and
+  teller: Teller. The environment holds PARTY__SAYS='{"amount": "2.50", "parts": [{"share": "0.5"}, {"share":
+  "0.5"}]}' and TELLER__SAYS='{"word": "dear"}'. faults.py beside it holds every fault the proof refuses in one
+  module; stalls.py holds a program whose one outcome, Cheap holding Low, a party's answer refutes; lifecycle.py
+  holds parties Fine, Down and Later that record their opening and closing, and the configs Opened and Lifecycle.
 
   Scenario: A program's classes are the ones its module defines
     Given vars(program) holds Tell, Tell[Party, Heard], Asked and the imported Fact
@@ -28,10 +27,6 @@ Feature: The engine proves a program at startup and answers a route by construct
     When proven is called on faults
     Then Egg.model_fields["chicken"].annotation is the class Chicken, and the cycle is reported
 
-  Scenario: The proof is read once per process
-    When prove(Operation, program) is read twice and proven(program) is called twice
-    Then the same set is returned both times and proven returns None both times
-
   Scenario: A route's request class is read from its request field
     When asked(Operation) is read
     Then it is Elements
@@ -41,110 +36,110 @@ Feature: The engine proves a program at startup and answers a route by construct
     Then it is (Heard,)
     And for an action declared Tell[Party, Heard | Other], heard returns (Heard, Other)
 
-  Scenario: A computed field produces the classes its return type names
+  Scenario: A record union is heard as the member the text constructs
+    Given Clear(Record) with status: Literal["clear"], Flagged(Record) with status: Literal["flagged"] and word: Word, and Screen(Tell[Party, Clear | Flagged])
+    When hear(screen, '{"status": "clear"}') and hear(screen, '{"status": "flagged", "word": "no"}') are read
+    Then the first is a Clear and the second a Flagged
+
+  Scenario: A computed field names the classes it constructs as words
     Given Picked(Fact) with amount: Amount and a computed field which -> Amount | Limit
-    When produced(Picked) is read
+    When produces(Picked) is read
     Then it is {"which": (Amount, Limit)}
 
-  Scenario: The proof is the set of classes that join from the request
-    When prove(Operation, program) is read
-    Then it holds Elements, Element, Name, Party, Asked, Heard, Amount, Low, High, Cheap, Dear, Total, Concluded, Answered, Capped and Operation
+  Scenario: The proof places every class by its fields, as a path of element classes
+    When proven(program) is read
+    Then Elements, Limit, Total, Concluded and Operation are placed at ()
+    And Element, Name, Asked, Heard, Amount, Portions, Largest, Low, Notify, Noted and Cheap are placed at (Element,)
+    And Part, Share and Portion are placed at (Element, Part)
+    And nothing is waiting, and the constants are (Limit,)
 
-  Scenario: Scope is read as the element a class descends from
-    When descends(Cheap, program), descends(Asked, program) and descends(Amount, program) are read
-    Then each is {Element}, through Cheap's element field, Asked's element field, and Heard, which carries Amount and is heard by Asked
-    And descends(Total, program) and descends(Operation, program) are empty
+  Scenario: The classes a route builds are those its reply leads to that have no source of their own
+    When proof.built(Operation) is read
+    Then it is Asked, Portion, Portions, Largest, Low, High, Notify, Cheap, Dear, Total, Concluded, Answered and Operation
+    And neither Heard nor Limit is among them
 
-  Scenario: A class no field names is refused as the mirror of missing
-    When proven is called on faults
-    Then ValidationError is raised with type unused at loc ("Stray",) and message "no field holds Stray; hold it or delete it"
-    And Heard, which no field holds but which carries Amount, is not reported, since what it carries is held
+  Scenario: Each element is valued in its own scope and each part in its own, and the reply is the derivation
+    When answer(Operation, Elements.model_validate_json('{"each": [{"name": "a"}, {"name": "b"}]}'), Parties(), proven(program)) is awaited
+    Then Concluded.valued holds two Cheap, for a and b in that order
+    And each Cheap's portions.root is 2.500 and its largest.chosen.root is 1.250
+    And Total's root is 5.00 and the reply serializes to {"total":"5.00"}
+    And Asked was performed once per element, together, and the run took 4 passes
 
-  Scenario: A record no action hears is reported at the field that holds it
-    When proven is called on faults
-    Then ValidationError is raised with type missing at loc ("Concluded", "unheard")
-
-  Scenario: A record two actions hear is refused
-    When proven is called on faults
-    Then ValidationError is raised with type hearer at loc ("Heard",)
-
-  Scenario: A scalar two carriers hold is refused
-    When proven is called on faults
-    Then ValidationError is raised with type carrier at loc ("Name",), carried by Element and by Heard
-
-  Scenario: A party class held twice in the config is refused
-    When proven is called on faults
-    Then ValidationError is raised with type party at loc ("Party",)
-
-  Scenario: Two classes that hold each other are refused as a cycle, beside the root faults
-    When proven is called on faults
-    Then ValidationError is raised with type cycle at loc ("Egg",) and at loc ("Chicken",), and Answered, which waits on Concluded's missing Unheard, is not reported as a cycle
-
-  Scenario: A relation its operands' bounds decide is refused
-    When proven is called on faults
-    Then ValidationError is raised with type relation at loc ("Impossible",) and message "Impossible never holds, by the constraints on its operands"
-    And type relation at loc ("Certain",) and message "Certain never refuses, by the constraints on its operands"
-    And type relation at loc ("Never",) and "never holds"
-
-  Scenario: Two union members the proof decides can both hold are refused
-    When proven is called on faults
-    Then ValidationError is raised with type overlap at loc ("Either", "which"), since Equal implies AtMost over the same operands
-
-  Scenario: Two facts told apart by complementary relations are decided disjoint
-    When coexist(Cheap, Dear, program) is read
-    Then it is False, since Low and High over Amount and Limit cannot both hold
-    And coexist(Cheap, Cheap, program) is True
-
-  Scenario: A relation kind that declares no constraints is refused as undecidable
-    When proven is called on faults
-    Then ValidationError is raised with type undecidable at loc ("Undecided",) and message "Undecided declares no constraints, so the proof cannot tell what it decides"
-
-  Scenario: A scalar over int has no value between two integers
-    Given Unit(Scalar[int]) with gt 0 and lt 2, One(Scalar[int]) with ge 1 and le 1, and Same(Equal[Unit, One])
-    When never(Same) is read
-    Then it is "refuses", since both can only be 1
-
-  Scenario: The solver decides difference constraints with strictness
-    When feasible is called with x - 0 <= 5 and 0 - x <= -5
-    Then it is True
-    When feasible is called with x - 0 <= 5 and 0 - x < -5
-    Then it is False
-
-  Scenario: Each element is valued in its own run and collected in order
-    When answer(Operation, Elements.model_validate_json('{"each": [{"name": "a"}, {"name": "b"}]}'), Parties(), program) is awaited
-    Then Concluded.valued holds two Cheap, for a and b in that order, and Total's root is 5.00
-    And Asked was performed once per element, together
-
-  Scenario: The relation that holds decides the outcome
-    Given PARTY__SAYS='{"amount": "25"}'
+  Scenario: The relation that holds decides the outcome, and the effect on that branch is performed
+    Given PARTY__SAYS='{"amount": "25", "parts": [{"share": "1"}]}'
     When answer is awaited for one element
-    Then Concluded.valued[0] is a Dear holding a High, and Low was asked for and refused with relation
+    Then Concluded.valued holds one Dear, whose high.ordering is 1, whose portions.root is 25 and whose noted.word.root is "dear"
+    And the reply serializes to {"total":"25"}
+
+  Scenario: A fresh scalar is constructed for each holder
+    When answer is awaited twice for no elements
+    Then each Concluded.at.root is an aware datetime and the second is later than the first
+    And Concluded.model_validate({"valued": (), "total": Total(of=())}) raises ValidationError with type missing at loc ("at",)
 
   Scenario: No element collects the empty tuple
     When answer is awaited for no elements
     Then Concluded.valued is the empty tuple and Total's root is 0
 
-  Scenario: A computed field whose scalar refuses propagates the refusal
-    Given PARTY__SAYS='{"amount": "25"}'
-    When answer is awaited for two elements, so the total is 50 and Capped refuses it
-    Then ValidationError is raised out of answer with one error of type less_than_equal at loc ()
+  Scenario: A relation that cannot hold or cannot refuse is read from its operands' intervals
+    When never is read for faults' Impossible, Certain, Never and Undecided, and for Low and Cheap
+    Then they are "holds", "refuses", "holds", "refuses", None and None
 
-  Scenario: A stalled run names the relation that did not hold
-    Given faults, whose only outcome for an element is Cheap, PARTY__SAYS and BACKUP__SAYS with an amount of 25 over the limit, and a request with small 50 and large 150
-    When answer is awaited for one element
-    Then ValidationError is raised with type relation at loc ("Low",) and message "Low did not hold: Amount exceeds Limit"
+  Scenario: An interval is read from the bounds, the default or the operation
+    When interval is read for Amount, Share, Limit, Portion and Total
+    Then they are Interval(low=0, low_strict=True), Interval(low=0, low_strict=True, high=1), Interval(low=10, high=10), Interval(low=0) and Interval(low=0)
+    And outcomes(interval(Amount), interval(Limit)) is {-1, 0, 1}, and for faults' SmallAmount against LargeAmount it is {-1}
 
-  Scenario: A route that descends from an element is refused
+  Scenario: A scalar over int has no value between two integers
+    Given Unit(Scalar[int]) with gt 0 and lt 2, One(Scalar[int]) with ge 1 and le 1, and Same(Equal[Unit, One])
+    When interval(Unit) and never(Same) are read
+    Then they are Interval(low=1, high=1) and "refuses"
+
+  Scenario: Two facts told apart by complementary relations are proven exclusive
+    When coexist(Cheap, Dear, proof.classes) is read
+    Then it is False, since Low and High admit disjoint orderings of Amount against Limit
+    And coexist(Cheap, Cheap, proof.classes) is True
+    And coexist(AtOrUnder, Exactly, models(faults)) is True, since Equal implies AtMost
+
+  Scenario: The proof refuses every fault at once, as one ValidationError titled Proof
     When proven is called on faults
-    Then ValidationError is raised with type scope at loc ("Misplaced",), since Wrong holds Cheap, which exists once per element
+    Then ValidationError is raised with type missing at loc ("Concluded", "unheard")
+    And type cycle at loc ("Egg",) and at loc ("Chicken",), and not at ("Answered",)
+    And type twice at loc ("Name",), ("Heard",) and ("Party",)
+    And type unplaceable at loc ("Twin",)
+    And type collects at loc ("Collects",)
+    And type route at loc ("Misplaced",)
+    And type unreached at loc ("Stray",)
+    And type unmodeled at loc ("Bare", "count")
+    And type boundary at loc ("Direct", "cheap") and at loc ("Parties", "limit")
+    And type config at loc ("type_construction_engine.faults",)
+    And type ambiguous at loc ("Either", "which")
+    And type never at loc ("Impossible",), ("Certain",), ("Never",) and ("Undecided",)
+    And type undiscriminated at loc ("Both",)
+    And type undecided at loc ("Charge",), and not at ("Asked",)
 
-  Scenario: A tuple that collects a once-per-run class is refused
-    When proven is called on faults
-    Then ValidationError is raised with type scope at loc ("Collects", "every"), since Concluded descends from nothing
+  Scenario: A stalled run names the relation that did not hold with the ordering observed
+    Given stalls, PARTY__SAYS='{"amount": "25"}' and one element
+    When answer(stalls.Operation, request, stalls.Parties(), proven(stalls)) is awaited
+    Then ValidationError is raised with exactly one error, type relation at loc ("Low",), message "Low did not hold: value Amount > bound Limit"
 
-  Scenario: A record heard once per element that holds a collection is refused
-    When proven is called on faults
-    Then ValidationError is raised with type scope at loc ("Heard",)
+  Scenario: A stalled run names the selection with nothing to choose and not the complement that was decided
+    Given PARTY__SAYS='{"amount": "2.50", "parts": []}' and one element
+    When answer is awaited
+    Then ValidationError is raised with exactly one error, type relation at loc ("Largest",), message "Largest did not hold: Tuple should have at least 1 item after validation, not 0"
+
+  Scenario: A selection's shape is its tuple annotation
+    When Least[Amount](of=()) is constructed
+    Then ValidationError is raised with type too_short at loc ("of",)
+    When Only[Element].model_validate({"of": ()}) is called
+    Then ValidationError is raised with type missing at loc ("of", 0)
+    When Only[Element].model_validate({"of": (a, b)}) is called with two elements
+    Then ValidationError is raised with type too_long at loc ("of",)
+
+  Scenario: A relation's ordering is computed, admitted by its Literal, excluded from its dump and never given
+    When Low.model_validate({"value": Amount(5), "bound": Limit()}) is called
+    Then ordering is -1 and model_dump() is {"value": Decimal("5"), "bound": Decimal("10")}
+    When Low.model_validate({"value": Amount(11), "bound": Limit(), "ordering": 0}) is called
+    Then ValidationError is raised with type literal_error at loc ("ordering",)
 
   Scenario: An action or a connection without a library kind cannot be constructed
     Given class Bare(Action[Party, Heard]) with element: Element and no perform, and class Mute(Connection) with says: Said and no open or close
@@ -157,23 +152,28 @@ Feature: The engine proves a program at startup and answers a route by construct
     Then ExceptionGroup is raised whose exceptions are two ConnectionError
 
   Scenario: Connections open once before answers and close once after, last opened first
-    Given Fine and Later, two parties whose open and close record their names, in a config in that order
+    Given lifecycle's Fine and Later in Lifecycle, in that order
     When two one-element answers are awaited inside opened(config)
     Then the record is open:Fine, open:Later, the two answers, close:Later, close:Fine
+
+  Scenario: A connection that fails to open closes what opened before it
+    Given lifecycle's Fine and Down in Opened
+    When opened(config) is entered
+    Then ConnectionError is raised and the record is open:Fine, open:Down, close:Fine
 
   Scenario: A client set as a private attribute leaves the connection frozen and unserialized
     Given Keyed(Party) with _client: object | None = PrivateAttr(default=None) set in open()
     When open() is awaited on a constructed instance
     Then the client is set, assigning says raises frozen_instance, model_dump_json() is {"says":"{}"}, and hash() is an int
 
-  Scenario: A connection that fails to open closes what opened before it
-    Given a config of Fine, whose open and close record, and Down, whose open raises ConnectionError
-    When opened(config) is entered
-    Then ConnectionError is raised and the record is open:Fine, open:Down, close:Fine
-
   Scenario: An answer is one span per route and one per performed action
     Given the OpenTelemetry SDK with an in-memory exporter
     When answer is awaited for two elements
-    Then the root span is named Operation with attributes tca.request "Elements" and tca.passes 3
+    Then the root span is named Operation with attributes tca.request "Elements" and tca.passes 4
     And its children are two spans named Asked with tca.party "Party" and tca.record "Heard"
     And no attribute holds the amount the party said
+
+  Scenario: A reply's word that refuses refuses when the reply is serialized
+    Given PARTY__SAYS='{"amount": "25", "parts": [{"share": "1"}]}' and two elements
+    When answer is awaited and the reply's model_dump_json() is called
+    Then the run answered with Total 50 and the call raised PydanticSerializationError holding "1 validation error for Capped" with less_than_equal

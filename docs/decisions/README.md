@@ -14,7 +14,7 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0008 | A nested value in a payload is an AliasPath |
 | 0009 | A tagged record union is discriminated |
 | 0010 | A reply serializes only its computed fields |
-| 0011 | Instant and Identity construct themselves |
+| 0011 | Instant and Identity are fresh scalars, constructed for each holder |
 | 0012 | Failure has no noun |
 | 0013 | A record with no fields is not a type |
 | 0014 | An unused generic parameter distinguishes nothing |
@@ -24,16 +24,16 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0018 | A field's docstring is its description |
 | 0019 | Config reads the environment and .env |
 | 0020 | StrEnum is the enumeration |
-| 0021 | The engine has no classes and no order: readiness is what construction answers |
+| 0021 | The engine is one loop over the program's declarations, and the proof and the run are the same construction |
 | 0022 | The classes are the inventory |
 | 0023 | The interface is defined once |
 | 0024 | A page subclasses a kind, never one of its own classes |
 | 0025 | A deployment value is a Setting, lenient; a business value is a Scalar, strict |
 | 0026 | The command line validates with model_validate(tree, strict=False) |
-| 0027 | The command line is rendered from the request's JSON schema parsed into node classes |
+| 0027 | The command line is rendered from the request class through the engine's reads |
 | 0028 | A key a party may omit is T | None = None on a Record |
 | 0029 | A program is one module named by the entry-point group |
-| 0030 | answer takes the route, the request, the config and the program, and returns the route, typed by the route's parameters |
+| 0030 | answer takes the route, the request, the deployment and the proof, and returns the route, typed by the route's parameters |
 | 0031 | Narrowing to a parametrized class is a TypeIs guard, never a cast |
 | 0032 | A red check is answered by modeling, not by narrowing |
 | 0033 | Tests are the framework's, run over a program; a page has none |
@@ -45,16 +45,21 @@ One file per decision. Fields: Status, Context, Rejected, Decision, Evidence, Co
 | 0039 | What a thing is, its valid states and its owner are stated before its kind |
 | 0040 | Every behavior is named by the Pydantic call that performs it |
 | 0041 | Reports lead with what is not done, and checks run only as just declares |
-| 0042 | A computed field is a producer, and a class the run needs has exactly one |
-| 0043 | A scalar is a RootModel subclass |
-| 0044 | Several of one thing in a run is a child run per element |
+| 0042 | A computed field is a projection: it constructs a word from what it holds, and the run never keeps its value |
+| 0043 | A scalar is a RootModel subclass over a primitive |
+| 0044 | Several of one thing is a child scope per element, placed by the proof as a path of element classes |
 | 0045 | A connection opens once at startup and closes once at shutdown, holding its client outside validation |
 | 0046 | The engine emits OpenTelemetry spans named by the program's classes, through the API alone |
-| 0047 | A derived value is a derivation kind declared with its operands |
-| 0048 | A rule over values is a relation kind, and its refusal is the other outcome |
-| 0049 | A choice among elements is a selection kind |
-| 0050 | A request, a record or a value carries the scalars and values it holds into the run |
-| 0051 | The proof decides from the relations' constraints and the scalars' bounds whether two union members can both hold and whether a relation can ever hold or ever refuse |
-| 0052 | A class no field names is refused at startup, as the mirror of a field no class fills |
-| 0053 | A stalled run names the relation that did not hold and the field no class fills, in the run each was asked from |
+| 0047 | A derived value is a derivation kind that declares one operation, computed at construction and read by the proof |
+| 0048 | A rule over values is a relation kind: the restriction of one comparison to the orderings it admits |
+| 0049 | A choice among elements is a selection kind, and its shape is its tuple annotation |
+| 0050 | Every class has one source, and a request, a record or a value carries the scalars and values it holds |
+| 0051 | The proof decides from the admitted orderings and the operands' intervals whether a union is exclusive and whether a relation can ever hold or ever refuse |
+| 0052 | A class no route's reply leads to is refused at startup, as the mirror of a field no class fills |
+| 0053 | A stalled run names the relation or selection that did not hold, with the ordering observed, leaving out one whose complement held |
 | 0054 | The pass's actions run in one task group, a client's exception propagates in a group, and a connection that fails to open closes what opened |
+| 0055 | The proof is a value Pydantic constructs, and every fault is a refusal of that construction |
+| 0056 | An action performed on one branch of a choice holds a premise that decides the choice |
+| 0057 | A constant is a scalar with a default root, seeded in every run, with no other source |
+| 0058 | Two records one action hears are told apart by a Literal or a required key, or the proof refuses them |
+| 0059 | Every field names a kind, what arrives is data, and a program has one deployment |

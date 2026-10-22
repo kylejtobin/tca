@@ -16,7 +16,7 @@ The engine depends on `opentelemetry-api`. `answer` is one span named for the ro
 
 ## Evidence
 
-Under the SDK with an in-memory exporter, two elements through the engine's test program produced one `Operation` span with `tca.request=Elements` and `tca.passes=3`, and two child spans named `Asked` with `tca.party=Party` and `tca.record=Heard`; no attribute held the amount the party said.
+Under the SDK with an in-memory exporter, two elements through the engine's test program produced one `Operation` span with `tca.request=Elements` and `tca.passes=4`, and two child spans named `Asked` with `tca.party=Party` and `tca.record=Heard`; no attribute held the amount the party said.
 
 ## Consequences
 
