@@ -9,11 +9,26 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from pydantic import ValidationError
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
+from pydantic import BaseModel, ValidationError
 
-from type_construction.engine import Placement, answer, config, proven
+from type_construction.engine import (
+    Placement,
+    Proof,
+    answer,
+    config,
+    construct,
+    models,
+    proven,
+    ran,
+    symbolic,
+)
 
-from . import fixed, optional
+from . import fixed, optional, stalls
 from . import occurrences as program
 from .occurrences import (
     PERFORMED,
@@ -57,6 +72,17 @@ def parties(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("CATALOG__PRICES", '{"tea": "2.50", "mug": "4", "pot": "10"}')
     monkeypatch.setenv("FRAUD__SAYS", '{"status": "clear"}')
     PERFORMED.clear()
+
+
+def exporting() -> InMemorySpanExporter:
+    """An exporter receiving every span of the process's tracer provider, which is set once."""
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    return exporter
 
 
 def placed() -> dict[tuple[type[object], tuple[str, ...]], Placement]:
@@ -225,3 +251,218 @@ def test_a_fixed_pair_does_not_bind_to_a_collection_of_any_number() -> None:
         " collection of that shape hold it; a collection is one level down, under a tuple the"
         " request or a record declares"
     )
+
+
+def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions() -> None:
+    with pytest.raises(ValidationError) as refusal:
+        proven(optional)
+    (error,) = refusal.value.errors()
+    assert (error["type"], error["loc"]) == ("conditional", ("Checkout",))
+    placed = {p.cls: p for p in symbolic(optional.Checkout, models(optional)).placed}
+    assert placed[optional.Discount].singles["coupon"] == (("Quote", "heard", "coupon"),)
+    assert placed[optional.Discounted].singles["discount"] == (("Discount",),)
+    assert placed[optional.Checkout].singles["reply"] == (("OrderDiscounted",),)
+
+
+@pytest.mark.asyncio
+async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arrived(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    found = symbolic(optional.Checkout, models(optional))
+    unproven = Proof.model_construct(
+        program=optional.__name__,
+        classes=models(optional),
+        placed=tuple(found.placed),
+        waiting=(),
+        faulted=(),
+    )
+    request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "5", "coupon": "TEN"}')
+    done = await ran(optional.Checkout, request, config(optional)(), unproven)
+    assert done.route.reply.model_dump_json() == '{"coupon":"TEN"}'
+    assert done.root.provenance[("Discount",)] == {
+        "quoted": (("Quote", "heard"),),
+        "coupon": (("Quote", "heard", "coupon"),),
+    }
+    assert done.root.provenance[("Discounted",)] == {"discount": (("Discount",),)}
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "5"}')
+    with pytest.raises(ValidationError) as refusal:
+        await ran(optional.Checkout, request, config(optional)(), unproven)
+    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == [
+        (
+            "missing",
+            ("Discount", "coupon"),
+            "no instance fills Discount.coupon at Discount, which holds Coupon",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_every_construction_records_the_concrete_occurrences_that_supplied_it() -> None:
+    request = PlaceOrder.model_validate_json(ORDER)
+    done = await ran(Checkout, request, config(PROGRAM)(), proven(PROGRAM))
+    root = done.root
+    cart_lines = root.collections[("request", "cart", "lines")]
+    assert [s.path for s in cart_lines] == [
+        ("request", "cart", "lines", "[0]"),
+        ("request", "cart", "lines", "[1]"),
+    ]
+    assert [s.site for s in cart_lines] == [CART, CART]
+    first, second = cart_lines
+    assert first.provenance[(*CART, "LineTotal")] == {
+        "left": (("request", "cart", "lines", "[0]", "Quote", "heard", "unit"),),
+        "right": (("request", "cart", "lines", "[0]", "quantity"),),
+    }
+    assert second.provenance[(*CART, "LineTotal")] == {
+        "left": (("request", "cart", "lines", "[1]", "Quote", "heard", "unit"),),
+        "right": (("request", "cart", "lines", "[1]", "quantity"),),
+    }
+    assert first.owned[(*CART, "LineTotal")] is not second.owned[(*CART, "LineTotal")]
+    assert first.owned[(*CART, "LineTotal")] == second.owned[(*CART, "LineTotal")]
+    assert root.provenance[("CartTotal",)] == {
+        "cart": (("request", "cart"),),
+        "of": (
+            ("request", "cart", "lines", "[0]", "LineTotal"),
+            ("request", "cart", "lines", "[1]", "LineTotal"),
+        ),
+    }
+    gift = root.collections[("request", "gifts", "lines")][0]
+    assert first.provenance[(*CART, "Share")]["cart"] == (("CartTotal",),)
+    assert gift.provenance[(*GIFT, "Share")]["cart"] == (("CartTotal",),)
+    cart_share, gift_share = first.owned[(*CART, "Share")], gift.owned[(*GIFT, "Share")]
+    assert isinstance(cart_share, Share)
+    assert isinstance(gift_share, Share)
+    assert cart_share.cart is gift_share.cart
+    assert root.provenance[("Paid",)]["at"] == (("Paid", "at"),)
+    assert root.provenance[("Screened",)] == {
+        "order": (("request",),),
+        "clear": (("Screen", "heard"),),
+    }
+    assert done.passes == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_spans_name_each_action_occurrence_by_its_concrete_path() -> None:
+    exporter = exporting()
+    request = PlaceOrder.model_validate_json(ORDER)
+    await answer(Checkout, request, config(PROGRAM)(), proven(PROGRAM))
+    spans = sorted(
+        (
+            (s.name, dict(s.attributes or {}))
+            for s in exporter.get_finished_spans()
+            if s.name != "Checkout"
+        ),
+        key=lambda found: (found[0], str(found[1].get("tca.site", ""))),
+    )
+    assert spans == [
+        (
+            "Quote",
+            {
+                "tca.party": "Catalog",
+                "tca.site": f"{site}.Quote",
+                "tca.pass": 1,
+                "tca.record": "Price",
+                "tca.heard": f"{site}.Quote.heard",
+            },
+        )
+        for site in sorted(
+            (
+                "request.cart.lines.[0]",
+                "request.cart.lines.[1]",
+                "request.gifts.lines.[0]",
+                "request.pair.lines.[0]",
+                "request.pair.lines.[1]",
+                "request.solo.lines.[0]",
+            )
+        )
+    ] + [
+        (
+            "Screen",
+            {
+                "tca.party": "Fraud",
+                "tca.site": "Screen",
+                "tca.pass": 1,
+                "tca.record": "Clear",
+                "tca.heard": "Screen.heard",
+            },
+        )
+    ]
+    (checkout,) = [s for s in exporter.get_finished_spans() if s.name == "Checkout"]
+    assert dict(checkout.attributes or {}) == {"tca.request": "PlaceOrder", "tca.passes": 4}
+    assert not any("2.50" in str(v) for _, a in spans for v in a.values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_failing_action_is_noted_with_its_occurrence_and_its_span_records_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+
+    async def failing(self: Quote) -> program.Price:
+        """A catalog that cannot price a mug."""
+        if self.line.sku.root == "mug":
+            down = ConnectionError("no mugs")
+            raise down
+        return program.Price.model_validate({"price": Decimal("2.50")})
+
+    monkeypatch.setattr(Quote, "perform", failing)
+    request = PlaceOrder.model_validate_json(ORDER)
+    with pytest.raises(ExceptionGroup) as group:
+        await answer(Checkout, request, config(PROGRAM)(), proven(PROGRAM))
+    notes = sorted(n for e in group.value.exceptions for n in getattr(e, "__notes__", []))
+    assert notes == ["at request.gifts.lines.[0].Quote", "at request.pair.lines.[1].Quote"]
+    failed = sorted(
+        str((s.attributes or {})["tca.site"])
+        for s in exporter.get_finished_spans()
+        if s.name == "Quote" and s.status.status_code == StatusCode.ERROR
+    )
+    assert failed == ["request.gifts.lines.[0].Quote", "request.pair.lines.[1].Quote"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_stall_names_the_occurrence_that_did_not_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "25"}')
+    request = stalls.Elements.model_validate_json('{"each": [{"name": "a"}, {"name": "a"}]}')
+    with pytest.raises(ValidationError) as refusal:
+        await answer(stalls.Operation, request, config(stalls)(), proven(stalls))
+    assert sorted((e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()) == [
+        (
+            "relation",
+            ("Low",),
+            "Low at request.each.[0].Low did not hold: value Amount > bound Limit",
+        ),
+        (
+            "relation",
+            ("Low",),
+            "Low at request.each.[1].Low did not hold: value Amount > bound Limit",
+        ),
+    ]
+
+
+def test_a_refusal_that_is_not_a_refutation_is_titled_with_the_occurrence() -> None:
+    placed = Placement(
+        route=fixed.Checkout,
+        cls=fixed.Both,
+        scope=(),
+        singles={"cart": (("request", "cart"),)},
+        freshly={},
+        collections={},
+    )
+    given: dict[str, BaseModel | tuple[BaseModel, ...]] = {
+        "cart": fixed.Cart(lines=()),
+        "totals": (),
+    }
+    with pytest.raises(ValidationError) as refusal:
+        construct(placed, given, ("Both",))
+    assert refusal.value.title == "Both at Both"
+    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
+        ("missing", ("totals", 0)),
+        ("missing", ("totals", 1)),
+    ]

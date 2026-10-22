@@ -567,7 +567,13 @@ async def test_a_stalled_run_names_the_relation_that_did_not_hold_with_the_order
     with pytest.raises(ValidationError) as refusal:
         await answer(STALLS.Operation, request, config(STALLS)(), proven(STALLS))
     found = {(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()}
-    assert found == {("relation", ("Low",), "Low did not hold: value Amount > bound Limit")}
+    assert found == {
+        (
+            "relation",
+            ("Low",),
+            "Low at request.each.[0].Low did not hold: value Amount > bound Limit",
+        )
+    }
 
 
 @pytest.mark.asyncio
@@ -583,7 +589,8 @@ async def test_a_stalled_run_names_the_selection_with_nothing_to_choose(
         (
             "relation",
             ("Largest",),
-            "Largest did not hold: Tuple should have at least 1 item after validation, not 0",
+            "Largest at request.each.[0].Largest did not hold: Tuple should have at least 1 item"
+            " after validation, not 0",
         )
     }
 
@@ -686,12 +693,27 @@ async def test_an_answer_is_one_span_per_route_and_one_per_performed_action() ->
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     await operate('{"each": [{"name": "a"}, {"name": "b"}]}')
-    spans = {s.name: dict(s.attributes or {}) for s in exporter.get_finished_spans()}
-    names = [s.name for s in exporter.get_finished_spans()]
-    assert names.count("Asked") == 2 and names.count("Operation") == 1
-    assert spans["Operation"] == {"tca.request": "Elements", "tca.passes": 4}
-    assert spans["Asked"] == {"tca.party": "Party", "tca.record": "Heard"}
-    assert not any("2.50" in str(v) for a in spans.values() for v in a.values())
+    spans = sorted(
+        ((s.name, dict(s.attributes or {})) for s in exporter.get_finished_spans()),
+        key=lambda found: (found[0], str(found[1].get("tca.site", ""))),
+    )
+    assert spans == [
+        *(
+            (
+                "Asked",
+                {
+                    "tca.party": "Party",
+                    "tca.site": f"request.each.[{i}].Asked",
+                    "tca.pass": 1,
+                    "tca.record": "Heard",
+                    "tca.heard": f"request.each.[{i}].Asked.heard",
+                },
+            )
+            for i in (0, 1)
+        ),
+        ("Operation", {"tca.request": "Elements", "tca.passes": 4}),
+    ]
+    assert not any("2.50" in str(v) for _, a in spans for v in a.values())
 
 
 @pytest.mark.asyncio
