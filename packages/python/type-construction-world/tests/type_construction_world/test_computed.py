@@ -167,6 +167,19 @@ def test_the_sentinel_itself_given_is_nothing_given() -> None:
     ).root == Decimal("7.50")
 
 
+def test_a_validated_instance_is_frozen_and_only_a_copy_with_an_update_leaves_the_boundary() -> (
+    None
+):
+    with pytest.raises(ValidationError) as refusal:
+        TOTAL.root = Decimal(1)
+    assert refusals(refusal.value) == [("frozen_instance", ("root",), Decimal(1))]
+    assert TOTAL.root == Decimal("7.50")
+    assert LineTotal.model_validate(TOTAL.model_dump()).root == TOTAL.root
+    copied = TOTAL.model_copy(update={"root": Decimal(1)})
+    assert copied.root == Decimal(1)
+    assert LineTotal.model_validate(copied.model_dump()).root == Decimal("7.50")
+
+
 def test_a_computed_field_declares_its_computation_once_in_its_annotation() -> None:
     (derived,) = [m for m in LineTotal.model_fields["root"].metadata if isinstance(m, Computation)]
     assert isinstance(derived, Derived)
