@@ -604,11 +604,13 @@ class Context:
 @dataclass(frozen=True)
 class Gathered:
     """One collection as a class gathers it: the site of the tuple field, the symbol that
-    holds it, and the element symbols, alternatives among them."""
+    holds it, the element symbols, alternatives among them, and the positions the field
+    declares, ``None`` for ``tuple[E, ...]``."""
 
     site: Site
     holder: Symbol
     elements: tuple[Symbol, ...]
+    positions: int | None
 
     @property
     def contexts(self) -> tuple[Context, ...]:
@@ -627,23 +629,45 @@ class Symbol:
     context: Context
     held: dict[str, tuple[Symbol, ...]] = field(default_factory=dict[str, tuple["Symbol", ...]])
     collected: dict[str, Gathered] = field(default_factory=dict[str, Gathered])
+    because: tuple[Site, ...] = ()
+    """The sites of the optional fields this occurrence exists only when they arrive: its own,
+    when what declares it admits ``None``, and its holder's or its premises'. An occurrence
+    with none is present in every invocation."""
+
+
+def absent(cls: type[BaseModel], name: str) -> bool:
+    """Whether a field admits ``None``: what it holds may not arrive."""
+    return NoneType in members(cls.model_fields[name].annotation)
+
+
+def positions(annotation: object) -> int | None:
+    """The positions a tuple annotation declares: their number for a fixed tuple, ``None`` for
+    ``tuple[E, ...]``."""
+    return len(elements(annotation)) if fixed(annotation) else None
 
 
 def declared_symbol(
-    cls: type[BaseModel], site: Site, context: Context, lineage: frozenset[type[BaseModel]]
+    cls: type[BaseModel],
+    site: Site,
+    context: Context,
+    lineage: frozenset[type[BaseModel]],
+    because: tuple[Site, ...] = (),
 ) -> Symbol:
     """The symbol of a class that arrives at a site, with the symbols of everything it declares:
     each single field's classes at the field's site, as alternatives, and each tuple field's
     element classes in element contexts under this one, one for ``tuple[E, ...]``, one per
-    position for a fixed tuple. A class already on the lineage is not descended into."""
-    symbol = Symbol(cls, site, context)
+    position for a fixed tuple. What a field admitting ``None`` holds exists only when it
+    arrives, and so does everything under it. A class already on the lineage is not descended
+    into."""
+    symbol = Symbol(cls, site, context, because=because)
     context.owned.append(symbol)
     if cls in lineage:
         return symbol
     lineage = lineage | {cls}
     for name, classes_ in holds(cls).items():
+        held = (*because, (*site, name)) if absent(cls, name) else because
         symbol.held[name] = tuple(
-            declared_symbol(c, (*site, name), context, lineage) for c in classes_
+            declared_symbol(c, (*site, name), context, lineage, held) for c in classes_
         )
     for name, info in cls.model_fields.items():
         if get_origin(info.annotation) is not tuple:
@@ -652,8 +676,12 @@ def declared_symbol(
         for index, element in enumerate(elements(info.annotation)):
             step = position(info.annotation, index)
             child = context.opened((*site, name, step), many=not fixed(info.annotation))
-            found.extend(declared_symbol(c, child.site, child, lineage) for c in options(element))
-        symbol.collected[name] = Gathered((*site, name), symbol, tuple(found))
+            found.extend(
+                declared_symbol(c, child.site, child, lineage, because) for c in options(element)
+            )
+        symbol.collected[name] = Gathered(
+            (*site, name), symbol, tuple(found), positions(info.annotation)
+        )
     return symbol
 
 
@@ -674,6 +702,16 @@ class Binding:
     freshly: dict[str, type[BaseModel]]
     collections: dict[str, Gathered]
     anchored: bool
+
+    @property
+    def because(self) -> tuple[Site, ...]:
+        """The optional sites the construction exists only when they arrive: every premise's,
+        and every gathered element's."""
+        bound = (
+            *(s for found in self.singles.values() for s in found),
+            *(e for g in self.collections.values() for e in g.elements),
+        )
+        return tuple(dict.fromkeys(site for s in bound for site in s.because))
 
 
 def single(name: str, classes_: Options, context: Context) -> tuple[Symbol, ...] | Ambiguity | None:
@@ -714,13 +752,26 @@ def chosen(classes_: Options, context: Context) -> list[Symbol]:
     return [s for s in context.owned if s.cls in classes_]
 
 
+def compatible(cls: type[BaseModel], name: str, source: Gathered) -> bool:
+    """Whether a tuple field may gather a collection of the source's declared shape:
+    ``tuple[E, ...]`` gathers any; a fixed tuple gathers a fixed tuple of the same positions;
+    a relation or a selection gathers any, since refusing the count is what it declares."""
+    wanted = positions(cls.model_fields[name].annotation)
+    return wanted is None or refutable(cls) or wanted == source.positions
+
+
 def gather(
-    name: str, classes_: Options, pool: Mapping[Site, Gathered]
+    cls: type[BaseModel], name: str, classes_: Options, pool: Mapping[Site, Gathered]
 ) -> Gathered | Ambiguity | None:
-    """The one collection among a pool whose every element context owns one of a tuple field's
-    classes, with those elements gathered in order; ambiguous with two such collections, or an
-    element context owning a class at two sites; ``None`` while there is none."""
-    complete = [g for g in pool.values() if all(chosen(classes_, c) for c in g.contexts)]
+    """The one collection among a pool, of a shape the field may gather, whose every element
+    context owns one of the field's classes, with those elements gathered in order; ambiguous
+    with two such collections, or an element context owning a class at two sites; ``None``
+    while there is none."""
+    complete = [
+        g
+        for g in pool.values()
+        if compatible(cls, name, g) and all(chosen(classes_, c) for c in g.contexts)
+    ]
     if len(complete) > 1:
         where = ", ".join(".".join(g.site) for g in complete)
         return Ambiguity(name, f"{names(classes_)} is collected by {len(complete)}: {where}")
@@ -730,15 +781,16 @@ def gather(
     picked: list[Symbol] = []
     for element in found.contexts:
         own = chosen(classes_, element)
-        for cls in classes_:
-            sites = list(dict.fromkeys(s.site for s in own if s.cls is cls))
+        for member in classes_:
+            sites = list(dict.fromkeys(s.site for s in own if s.cls is member))
             if len(sites) > 1:
                 where = ", ".join(".".join(s) for s in sites)
                 return Ambiguity(
-                    name, f"{cls.__name__} is at {len(sites)} sites per element: {where}"
+                    name, f"{member.__name__} is at {len(sites)} sites per element: {where}"
                 )
         picked.extend(own)
-    return Gathered(found.site, found.holder, tuple(picked))
+    declared_as = positions(cls.model_fields[name].annotation)
+    return Gathered(found.site, found.holder, tuple(picked), declared_as)
 
 
 def bind(cls: type[BaseModel], context: Context) -> Binding | Ambiguity | None:
@@ -755,7 +807,7 @@ def bind(cls: type[BaseModel], context: Context) -> Binding | Ambiguity | None:
     pool = reached_from(s for found in singles.values() for s in found) or held_by(context)
     collections: dict[str, Gathered] = {}
     for name, classes_ in collects(cls).items():
-        found = gather(name, classes_, pool)
+        found = gather(cls, name, classes_, pool)
         if found is None or isinstance(found, Ambiguity):
             return found
         collections[name] = found
@@ -779,12 +831,17 @@ def symbolized(cls: type[BaseModel], context: Context, binding: Binding) -> Symb
     holding what it was bound to. An action's records enter the context as alternatives at the
     action's ``heard`` site, with everything they declare."""
     symbol = Symbol(
-        cls, (*context.site, cls.__name__), context, binding.singles, binding.collections
+        cls,
+        (*context.site, cls.__name__),
+        context,
+        binding.singles,
+        binding.collections,
+        binding.because,
     )
     context.owned.append(symbol)
     if is_action(cls):
         for record in heard(cls):
-            declared_symbol(record, (*symbol.site, HEARD), context, frozenset())
+            declared_symbol(record, (*symbol.site, HEARD), context, frozenset(), binding.because)
     return symbol
 
 
@@ -826,7 +883,7 @@ class Fault(BaseModel):
     """A fault the passes found, kept until the proof reports it with the rest."""
 
     model_config = ConfigDict(frozen=True, strict=True)
-    code: Literal["missing", "collects", "unplaceable", "route", "ambiguous"]
+    code: Literal["missing", "collects", "unplaceable", "route", "ambiguous", "conditional"]
     loc: tuple[str, ...]
     message: str
 
@@ -948,6 +1005,8 @@ def symbolic(
             faulted.append(ambiguity(cls, found))
         if is_route(cls) and context.parent is not None:
             faulted.append(misrouted(cls, context))
+        if is_route(cls) and isinstance(found, Binding) and found.because:
+            faulted.append(conditional(cls, found.because))
     never_built = [c for c in asked_for if not any(c is b for b, _ in constructed)]
     waiting, faults = unexplained(route, never_built, classes_, root)
     return Symbolic(placed, waiting, [*faulted, *faults])
@@ -960,6 +1019,18 @@ def ambiguity(cls: type[BaseModel], found: Ambiguity) -> Fault:
         loc=(cls.__name__, found.field),
         message=f"{cls.__name__}.{found.field} has two sources: {found.message}; hold what"
         " tells them apart",
+    )
+
+
+def conditional(cls: type[BaseModel], because: tuple[Site, ...]) -> Fault:
+    """The fault of a route that answers only when an optional field arrives: an absence is
+    not evidence, and a request the route admits may carry the absence."""
+    sites = ", ".join(".".join(site) for site in because)
+    return Fault(
+        code="conditional",
+        loc=(cls.__name__,),
+        message=f"{cls.__name__} answers only when {sites} arrives, and what declares it admits"
+        " its absence; an absence the business concludes from is a class",
     )
 
 
@@ -979,11 +1050,12 @@ def anywhere(root: Context, classes_: Options) -> bool:
     return any(s.cls in classes_ for c in contexts(root) for s in c.owned)
 
 
-def collected_anywhere(root: Context, classes_: Options) -> bool:
-    """Whether a collection whose every element context owns one of the classes exists in the
-    tree."""
+def collected_anywhere(root: Context, cls: type[BaseModel], name: str) -> bool:
+    """Whether a collection of a shape the field may gather, whose every element context owns
+    one of the field's classes, exists in the tree."""
+    classes_ = collects(cls)[name]
     return any(
-        all(chosen(classes_, e) for e in g.contexts)
+        compatible(cls, name, g) and all(chosen(classes_, e) for e in g.contexts)
         for c in contexts(root)
         for s in c.owned
         for g in s.collected.values()
@@ -1046,7 +1118,7 @@ def unexplained(
             else:
                 faults.append(unfilled_field(cls, name, classes_))
         for name, classes_ in collects(cls).items():
-            if collected_anywhere(root, classes_):
+            if collected_anywhere(root, cls, name):
                 continue
             blocked = True
             if on := blockers(classes_, never_built, every):
@@ -1067,14 +1139,22 @@ def unfilled_field(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
     )
 
 
+def shape(annotation: object) -> str:
+    """A tuple annotation in the developer's names: ``tuple[X, ...]`` or ``tuple[X, X]``."""
+    inner = ", ".join(names(options(e)) for e in elements(annotation))
+    return f"tuple[{inner}]" if fixed(annotation) else f"tuple[{inner}, ...]"
+
+
 def uncollected(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
-    """The fault of a tuple field no collection's elements fill."""
+    """The fault of a tuple field no collection of its shape fills."""
+    declared_as = shape(cls.model_fields[name].annotation)
+    held = names(dict.fromkeys(classes_))
     return Fault(
         code="collects",
         loc=(cls.__name__, name),
-        message=f"{cls.__name__}.{name} collects {names(classes_)}, which the elements of no"
-        " collection hold; a collection is one level down, under a tuple the request or a"
-        " record declares",
+        message=f"{cls.__name__}.{name} collects {held} as {declared_as}, and the"
+        " elements of no collection of that shape hold it; a collection is one level down,"
+        " under a tuple the request or a record declares",
     )
 
 

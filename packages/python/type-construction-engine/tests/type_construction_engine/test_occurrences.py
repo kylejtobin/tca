@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from type_construction.engine import Placement, answer, config, proven
 
+from . import fixed, optional
 from . import occurrences as program
 from .occurrences import (
     PERFORMED,
@@ -182,3 +183,45 @@ def test_a_fixed_tuple_refuses_the_wrong_count_at_the_request() -> None:
     assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
         ("missing", ("pair", "lines", 1))
     ]
+
+
+def test_an_optional_field_is_not_evidence_for_a_reply_that_needs_it() -> None:
+    with pytest.raises(ValidationError) as refusal:
+        proven(optional)
+    found = {(e["type"], e["loc"]): e["msg"] for e in refusal.value.errors()}
+    assert set(found) == {("conditional", ("Checkout",))}
+    assert found["conditional", ("Checkout",)] == (
+        "Checkout answers only when Quote.heard.coupon arrives, and what declares it admits its"
+        " absence; an absence the business concludes from is a class"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_reply_that_reads_an_optional_field_answers_with_and_without_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    program_ = ModuleType(optional.__name__)
+    for name, value in vars(optional).items():
+        if name not in ("Checkout", "OrderDiscounted", "Discounted", "Discount"):
+            setattr(program_, name, value)
+    proof = proven(program_)
+    request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "5", "coupon": "TEN"}')
+    first = await answer(optional.Price, request, config(program_)(), proof)
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "5"}')
+    second = await answer(optional.Price, request, config(program_)(), proof)
+    assert first.reply.model_dump_json() == '{"amount":"5","coupon":"TEN"}'
+    assert second.reply.model_dump_json() == '{"amount":"5","coupon":null}'
+
+
+def test_a_fixed_pair_does_not_bind_to_a_collection_of_any_number() -> None:
+    with pytest.raises(ValidationError) as refusal:
+        proven(fixed)
+    found = {(e["type"], e["loc"]): e["msg"] for e in refusal.value.errors()}
+    assert set(found) == {("collects", ("Both", "totals"))}
+    assert found["collects", ("Both", "totals")] == (
+        "Both.totals collects LineTotal as tuple[LineTotal, LineTotal], and the elements of no"
+        " collection of that shape hold it; a collection is one level down, under a tuple the"
+        " request or a record declares"
+    )
