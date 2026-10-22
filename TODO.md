@@ -5,26 +5,7 @@ Not built, in order. The design for each is in `docs/decisions/`; the developer'
 ## Now
 ### Task 1: Establish the declaration-driven construction model - Done
 
-### Task 2: Make computational results authoritative through native construction - In Progress
-
-Refactor measures and comparison evidence around a **shared native field-construction mechanism**.
-
-Framework-owned outputs must be computed from their validated dependencies and admitted by their declared Pydantic types. A caller-supplied `root`, ordering, or other derived output must never substitute for the computation.
-
-Implement each computational primitive once. Its result is subject to the declared field’s constraints, including `Literal` restrictions. Do not perform the arithmetic in one place and independently check the same arithmetic in another.
-
-Preserve validation mode through field-level processing. Remove model-level input rewriting where it breaks JSON admission behavior.
-
-Establish the distinction between:
-
-- Inputs supplied by a caller or external party.
-- Values and evidence produced by actual typed constructors.
-- Presentation projections used for replies and serialization.
-
-Read those distinctions from the kinds and their declarations. Do not maintain a separate producer registry. A computed-field return annotation is not an executable producer.
-
-**Acceptance:** Fabricated derived values cannot determine an admitted result through any supported validated construction path. Correct arithmetic constructs; inadmissible comparison outcomes refuse through their declared types. JSON validation retains its intended behavior. Projection properties still serialize, but cannot satisfy execution dependencies. Framework-owned evidence is absent from public input schemas.
-
+### Task 2: Make computational results authoritative through native construction - Done
 
 ### Task 3: Runtime Construction and Execution Integrity - Not Done
 
