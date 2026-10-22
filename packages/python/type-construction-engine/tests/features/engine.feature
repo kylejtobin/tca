@@ -139,7 +139,9 @@ Feature: The engine proves a program at startup, placing every class, and answer
     When Low.model_validate({"value": Amount(5), "bound": Limit()}) is called
     Then ordering is -1 and model_dump() is {"value": Decimal("5"), "bound": Decimal("10")}
     When Low.model_validate({"value": Amount(11), "bound": Limit(), "ordering": 0}) is called
-    Then ValidationError is raised with type literal_error at loc ("ordering",)
+    Then ValidationError is raised with type computed at loc ("ordering",)
+    When Low.model_validate({"value": Amount(5), "bound": Limit(), "ordering": -1}) is called
+    Then ValidationError is raised with type computed at loc ("ordering",), the ordering it would have computed
 
   Scenario: An action or a connection without a library kind cannot be constructed
     Given class Bare(Action[Party, Heard]) with element: Element and no perform, and class Mute(Connection) with says: Said and no open or close

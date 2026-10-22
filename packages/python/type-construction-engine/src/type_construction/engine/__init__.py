@@ -81,6 +81,7 @@ from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefin
 from type_construction.world import (
     Action,
     Comparison,
+    Computation,
     Config,
     Connection,
     Derived,
@@ -1273,11 +1274,19 @@ def kind(annotation: object) -> str:
     return getattr(annotation, "__name__", str(annotation))
 
 
+def computation(cls: type[BaseModel], name: str) -> Computation | None:
+    """The computation a field declares in its annotation, if it is a computed one: a
+    relation's ordering or a derivation's root."""
+    return next(
+        (found for found in cls.model_fields[name].metadata if isinstance(found, Computation)),
+        None,
+    )
+
+
 def owned(cls: type[BaseModel], name: str) -> bool:
     """Whether a field is the kind's own computed one: a relation's ordering or a derivation's
     root."""
-    factory = cls.model_fields[name].default_factory
-    return isinstance(factory, (Comparison, Derived))
+    return computation(cls, name) is not None
 
 
 def modeled(cls: type[BaseModel], annotation: object) -> bool:
@@ -1425,13 +1434,13 @@ def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) ->
         return Interval(low=value, high=value)
     if is_scalar(cls):
         return bounds(cls)
-    if isinstance(root.default_factory, Derived):
+    if isinstance(derived := computation(cls, "root"), Derived):
         operands = tuple(
             hull(interval(c, seen | {cls}) for c in classes_)
-            for name in root.default_factory.operands
+            for name in derived.operands
             for classes_ in ({**holds(cls), **collects(cls)}[name],)
         )
-        return root.default_factory.interval(operands)
+        return derived.interval(operands)
     return Interval()
 
 
@@ -1457,15 +1466,15 @@ def outcomes(left: Interval, right: Interval) -> frozenset[int]:
 
 def comparisons(cls: type[BaseModel]) -> list[tuple[Options, Options, frozenset[int]]]:
     """Each comparison a relation makes: the classes of its two operands and the orderings it
-    admits, read from the ordering fields' factories and annotations."""
+    admits, read from the ordering fields' metadata and annotations."""
     return [
         (
-            holds(cls)[factory.left],
-            holds(cls)[factory.right],
+            holds(cls)[compared.left],
+            holds(cls)[compared.right],
             frozenset(get_args(info.annotation)),
         )
-        for info in cls.model_fields.values()
-        if isinstance(factory := info.default_factory, Comparison)
+        for name, info in cls.model_fields.items()
+        if isinstance(compared := computation(cls, name), Comparison)
     ]
 
 
@@ -1985,12 +1994,13 @@ def rendered(cls: type[BaseModel], refusal: ValidationError) -> str:
     operands, as ``value Amount > bound Limit``, or Pydantic's message for a selection."""
     for error in refusal.errors():
         loc = error["loc"]
-        info = cls.model_fields.get(str(loc[0])) if loc else None
-        factory = info.default_factory if info is not None else None
-        if isinstance(factory, Comparison) and isinstance(error["input"], int):
-            left, right = holds(cls)[factory.left][0], holds(cls)[factory.right][0]
+        compared = (
+            computation(cls, str(loc[0])) if loc and str(loc[0]) in cls.model_fields else None
+        )
+        if isinstance(compared, Comparison) and isinstance(error["input"], int):
+            left, right = holds(cls)[compared.left][0], holds(cls)[compared.right][0]
             sign = SIGN[error["input"]]
-            return f"{factory.left} {left.__name__} {sign} {factory.right} {right.__name__}"
+            return f"{compared.left} {left.__name__} {sign} {compared.right} {right.__name__}"
     return "; ".join(error["msg"] for error in refusal.errors())
 
 

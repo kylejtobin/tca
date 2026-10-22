@@ -1,7 +1,9 @@
 Feature: Derivation, relation and selection kinds declare a value, a rule or a choice once, as Pydantic reads it
   Decision records 0047, 0048, 0049, 0057. A relation is the restriction of one comparison to the orderings its
   Literal admits; a selection's shape is its tuple annotation; a derivation's root is computed at construction by its
-  Derived operation. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
+  Derived operation. A computed field, a root or an ordering, declares its Computation in its annotation with COMPUTED
+  as its default: Pydantic computes it from the validated operands and validates the result by the field's type, and
+  refuses anything given for it, equal to the result or not, in Python or in JSON, at any depth. Classes: UnitPrice(Scalar[Decimal]) with gt 0, Quantity(Scalar[int]) with gt 0,
   Threshold(Scalar[Decimal]) with root defaulted to 100, Rate(Scalar[Decimal]) with root defaulted to 0.9,
   Sku(Scalar[str]), Line(Value) with sku and quantity; LineTotal(Times[UnitPrice, Quantity]); Reduced(Times[LineTotal,
   Rate]); Lines(Sum[LineTotal]); Small(AtMost[LineTotal, Threshold]); Large(Beyond[LineTotal, Threshold]);
@@ -24,9 +26,24 @@ Feature: Derivation, relation and selection kinds declare a value, a rule or a c
     When Lines(of=()).root is read
     Then it is Decimal(0)
 
-  Scenario: A derivation declares its operation as the default factory of its root
-    When LineTotal.model_fields["root"].default_factory.operands and Lines.model_fields["root"].default_factory.operands are read
-    Then they are ("left", "right") and ("of",)
+  Scenario: A derivation declares its operation once, as the Derived metadata of its root
+    When the Computation in LineTotal.model_fields["root"].metadata and in Lines.model_fields["root"].metadata is read
+    Then each is a Derived, with operands ("left", "right") and ("of",)
+    And LineTotal.model_fields["root"].default is COMPUTED and the field is not required
+
+  Scenario: A root is computed and never given, equal to the result or not, in Python or in JSON
+    When LineTotal(left=UnitPrice(Decimal("2.50")), right=Quantity(3), root=Decimal("7.50")) is constructed
+    Then ValidationError is raised with one error of type computed at loc ("root",), message "root is computed from left and right and never given", input Decimal("7.50")
+    When LineTotal.model_validate_json('{"left": "2.50", "right": 3, "root": "7.50"}') is called
+    Then ValidationError is raised with one error of type computed at loc ("root",), input "7.50"
+    When LineTotal.model_validate_json('{"left": "2.50", "right": 3}') is called
+    Then root is Decimal("7.50")
+    When Lines.model_validate({"of": ({"left": Decimal(1), "right": 1, "root": Decimal(1)},)}) is called
+    Then ValidationError is raised with type computed at loc ("of", 0, "root") and type uncomputed at loc ("root",)
+
+  Scenario: A root whose operand did not construct is uncomputed, beside the operand's error
+    When LineTotal.model_validate_json('{"left": "0", "right": 3}') is called
+    Then ValidationError is raised with type greater_than at loc ("left",) and type uncomputed at loc ("root",), message "root is computed from left, which did not construct"
 
   Scenario: An operand outside the bound is a checker error
     Given class Wrong(Times[Sku, Quantity]) and class Bad(Scalar[Thing]) with Thing a Fact
@@ -65,15 +82,19 @@ Feature: Derivation, relation and selection kinds declare a value, a rule or a c
     When Below(value=Quantity(3), bound=Quantity(4)) and Above(value=Quantity(4), bound=Quantity(4)) are constructed
     Then their orderings are -1 and 0
 
-  Scenario: An ordering is computed and never given, and is excluded from the dump
+  Scenario: An ordering is computed and never given, admitted or not, and is excluded from the dump
     When Small.model_validate({"value": LineTotal 125.00, "bound": Threshold(), "ordering": 0}) is called
-    Then ValidationError is raised with type literal_error at loc ("ordering",)
+    Then ValidationError is raised with one error of type computed at loc ("ordering",), input 0
+    When Small(value=LineTotal 100.00, bound=Threshold(), ordering=0) is constructed
+    Then ValidationError is raised with one error of type computed at loc ("ordering",), input 0
+    When Small.model_validate_json('{"value": {"left": "100.00", "right": 1}, "bound": "100", "ordering": 0}') is called
+    Then ValidationError is raised with one error of type computed at loc ("ordering",), input 0
     When Small(value=LineTotal 100.00, bound=Threshold()).model_dump() is read
     Then it is {"value": {"left": Decimal("100.00"), "right": 1}, "bound": Decimal("100")}
 
-  Scenario: A relation kind declares its comparison as the default factory of its ordering field
-    When the default factories of Small.ordering, Allowed.below and Allowed.above are read
-    Then they are Comparison(left="value", right="bound"), Comparison(left="lower", right="value") and Comparison(left="value", right="upper")
+  Scenario: A relation kind declares its comparison once, as the Comparison metadata of its ordering field
+    When the Computation in the metadata of Small.ordering, Allowed.below and Allowed.above is read
+    Then they are Comparison(("value", "bound")), Comparison(("lower", "value")) and Comparison(("value", "upper")), each with default COMPUTED
     And the admitted orderings of Under, AtMost, Equal, AtLeast, Beyond and Differs are (-1,), (-1, 0), (0,), (0, 1), (1,) and (-1, 1)
 
   Scenario: Least and Greatest choose by value and ties go to the earliest element

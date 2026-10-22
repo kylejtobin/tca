@@ -32,7 +32,9 @@ its operands and Pydantic admits or refuses it, and the proof reads the admitted
 selection's shape is its tuple annotation: ``tuple[E]`` is exactly one and ``tuple[E, ...]``
 with ``min_length=1`` is at least one. A derivation declares one operation, which computes its
 root at construction and tells the proof what the root can be from what its operands can be.
-A constant is a scalar with a default root. Nothing has a validator the proof cannot read.
+A computed field is a ``Computation`` in its annotation and ``COMPUTED`` as its default: its
+operands determine it, and a value given for it is refused. A constant is a scalar with a
+default root. Nothing has a validator the proof cannot read.
 
 Every configuration here is strict: no coercion, no undeclared fields, frozen instances,
 defaults validated. A value the business does not have has no type. Code constructs in Python
@@ -42,17 +44,28 @@ mode the edge needs: an HTTP body with ``model_validate_json``, a command line w
 stay strict; the call chooses the mode.
 """
 
-from abc import abstractmethod
-from collections.abc import Callable, Mapping
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from functools import partial, reduce
 from operator import mul
-from typing import TYPE_CHECKING, Annotated, Generic, Literal, NamedTuple, TypeIs, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, Final, Generic, Literal, NamedTuple, TypeVar
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    RootModel,
+    ValidationInfo,
+    ValidatorFunctionWrapHandler,
+)
+from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
@@ -63,6 +76,7 @@ __all__ = [
     "Beyond",
     "Compare",
     "Comparison",
+    "Computation",
     "Config",
     "Connection",
     "Derived",
@@ -318,7 +332,7 @@ class Interval(NamedTuple):
 
 
 type Operand = Numeric | tuple[Numeric, ...]
-"""What an operation reads from one operand field: a numeric, or a tuple of them."""
+"""What a computation reads from one operand field: a numeric, or a tuple of them."""
 
 
 def roots(operand: Operand) -> tuple[Decimal, ...]:
@@ -329,13 +343,84 @@ def roots(operand: Operand) -> tuple[Decimal, ...]:
     return (Decimal(operand.root),)
 
 
-class Derived(NamedTuple):
-    """How a derivation kind computes its root from its operand fields, and what the root can
-    be from what the operands can be: one declaration both construction and the proof read.
+class Uncomputed:
+    """The one value a computed field has before construction computes it: the field's
+    default, which no input can produce, in Python or in JSON, since nothing deserializes to
+    this object and a caller who passes it has given nothing."""
 
-    It is the ``default_factory`` of the kind's ``root``: Pydantic calls it with the validated
-    operands and validates the result as a finite ``Decimal``. The proof calls ``interval`` with
-    one interval per operand field, the element's interval for a tuple field."""
+    def __repr__(self) -> str:
+        return "COMPUTED"
+
+
+COMPUTED: Final[Any] = Uncomputed()
+"""The default of every computed field: construction replaces it with the computed value. To
+the checker it is no value at all, so the field keeps the type its annotation declares."""
+
+
+class Computation(ABC):
+    """A field whose value is a function of the operand fields declared before it: the one
+    declaration construction and the proof read.
+
+    It is the ``Annotated`` metadata of the field, whose default is ``COMPUTED``. Pydantic
+    validates the operands first, in declaration order, then reaches the field with the
+    default and calls this computation on the validated operands, and the result passes
+    through the field's own type: a ``Decimal`` root, or a ``Literal`` of the orderings a
+    relation admits, which refuses what it does not admit with ``literal_error``. Any other
+    input, in Python or in JSON, equal to the result or not, is refused with ``computed``: the
+    field is a consequence of its operands and never given. An operand that did not construct
+    leaves the field refused with ``uncomputed`` beside the operand's own error.
+
+    Validation is the boundary: what Pydantic validated, in Python or in JSON, is computed, and
+    a validated instance is held by identity wherever it is held. ``model_construct`` validates
+    nothing, by Pydantic's contract, so nothing it makes is a computed value, and nothing in
+    the engine's path calls it.
+    """
+
+    operands: tuple[str, ...]
+    """The fields the computation reads, in order."""
+
+    @abstractmethod
+    def computed(self, roots: tuple[Decimal, ...]) -> Decimal | int:
+        """The result, from the roots of the operands in order, every element of a tuple
+        operand among them."""
+
+    def __get_pydantic_core_schema__(
+        self, source: object, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """The field's schema: this computation around the field's own type."""
+        return core_schema.with_info_wrap_validator_function(self.validated, handler(source))
+
+    def validated(
+        self, given: object, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
+    ) -> object:
+        """The result validated by the field's type when nothing was given; a refusal when
+        something was, or when an operand did not construct."""
+        name = info.field_name
+        if given is not COMPUTED:
+            code, message = "computed", "{field} is computed from {operands} and never given"
+            raise PydanticCustomError(
+                code, message, {"field": name, "operands": " and ".join(self.operands)}
+            )
+        absent = [operand for operand in self.operands if operand not in info.data]
+        if absent:
+            code, message = (
+                "uncomputed",
+                "{field} is computed from {operand}, which did not construct",
+            )
+            raise PydanticCustomError(
+                code, message, {"field": name, "operand": " and ".join(absent)}
+            )
+        operands: tuple[Operand, ...] = tuple(info.data[operand] for operand in self.operands)
+        return handler(self.computed(tuple(r for operand in operands for r in roots(operand))))
+
+
+@dataclass(frozen=True)
+class Derived(Computation):
+    """How a derivation kind computes its root from its operand fields, and what the root can
+    be from what the operands can be.
+
+    The proof calls ``interval`` with one interval per operand field, the element's interval
+    for a tuple field."""
 
     operands: tuple[str, ...]
     """The fields the operation reads, in order."""
@@ -344,9 +429,9 @@ class Derived(NamedTuple):
     interval: Callable[[tuple[Interval, ...]], Interval]
     """What the root can be, from what each operand field can be."""
 
-    def __call__(self, data: Mapping[str, Operand]) -> Decimal:
-        """The root computed from the validated operands."""
-        return self.value(tuple(r for name in self.operands for r in roots(data[name])))
+    def computed(self, roots: tuple[Decimal, ...]) -> Decimal:
+        """The root, from the roots of the operands."""
+        return self.value(roots)
 
 
 def multiplied(values: tuple[Decimal, ...]) -> Decimal:
@@ -399,10 +484,11 @@ class Measure(Fact):
 
     The engine constructs a derivation when its operands exist, like any fact, and Pydantic
     computes and validates the root at construction: each kind declares ``root`` after its
-    operands, with its ``Derived`` operation as the default factory, since Pydantic validates
-    fields in declaration order and a base class's field comes first. To the checker every
-    derivation has a ``root``. An operand is a scalar the run holds, or another derivation. A
-    derivation is itself an operand of a relation, a selection or a further derivation.
+    operands, with its ``Derived`` operation as the field's metadata and ``COMPUTED`` as its
+    default, since Pydantic validates fields in declaration order and a base class's field
+    comes first. A root given at construction is refused. To the checker every derivation has
+    a ``root``. An operand is a scalar the run holds, or another derivation. A derivation is
+    itself an operand of a relation, a selection or a further derivation.
     """
 
     if TYPE_CHECKING:
@@ -434,10 +520,8 @@ class Times[A: Numeric, B: Numeric](Measure):
     """The first factor."""
     right: B
     """The second factor."""
-    root: Decimal = Field(
-        default_factory=Derived(("left", "right"), multiplied, product_interval),
-        exclude=True,
-        description="The product, computed at construction.",
+    root: Annotated[Decimal, Derived(("left", "right"), multiplied, product_interval)] = Field(
+        default=COMPUTED, exclude=True, description="The product, computed at construction."
     )
 
 
@@ -452,8 +536,8 @@ class Sum[E: Numeric](Measure):
 
     of: tuple[E, ...]
     """The values summed, in element order."""
-    root: Decimal = Field(
-        default_factory=Derived(("of",), summed, sum_interval),
+    root: Annotated[Decimal, Derived(("of",), summed, sum_interval)] = Field(
+        default=COMPUTED,
         exclude=True,
         description="The sum, computed at construction; zero for no element.",
     )
@@ -463,30 +547,30 @@ type Ordering = Literal[-1, 0, 1]
 """The outcome of comparing two values: the first is under, equal to, or beyond the second."""
 
 
-class Comparison(NamedTuple):
-    """One comparison a relation kind makes between two of its operand fields: the one
-    declaration construction and the proof read.
+@dataclass(frozen=True)
+class Comparison(Computation):
+    """One comparison a relation kind makes between two of its operand fields: the ordering
+    of the first against the second, which the field's ``Literal`` admits or refuses. The
+    proof reads the same field: the two operands, and the admitted outcomes from the
+    annotation."""
 
-    It is the ``default_factory`` of the kind's ordering field: Pydantic calls it with the
-    validated operands, it computes the ordering, and Pydantic admits the ordering through the
-    field's ``Literal`` type or refuses it. The proof reads the same field: the two operands,
-    and the admitted outcomes from the annotation."""
+    operands: tuple[str, str]
+    """The field compared, and the field it is compared with."""
 
-    left: str
-    """The field compared."""
-    right: str
-    """The field it is compared with."""
+    @property
+    def left(self) -> str:
+        """The field compared."""
+        return self.operands[0]
 
-    def __call__(self, data: Mapping[str, Operand]) -> int:
-        """The ordering of the two validated operands: -1, 0 or 1."""
-        (left,) = roots(data[self.left])
-        (right,) = roots(data[self.right])
+    @property
+    def right(self) -> str:
+        """The field it is compared with."""
+        return self.operands[1]
+
+    def computed(self, roots: tuple[Decimal, ...]) -> int:
+        """The ordering of the two operands: -1, 0 or 1."""
+        left, right = roots
         return (left > right) - (left < right)
-
-
-def is_given(data: object) -> TypeIs[dict[str, object]]:
-    """Whether what a validator received is a dict of fields."""
-    return isinstance(data, dict)
 
 
 class Relation(Fact):
@@ -494,29 +578,15 @@ class Relation(Fact):
     it does not.
 
     Every relation kind subclasses this and declares its meaning as ordering fields: each is
-    typed by a ``Literal`` of the outcomes it admits and carries, as ``Field`` metadata, a
-    ``Comparison`` of two operand fields as its ``default_factory``. Pydantic computes the
+    typed by a ``Literal`` of the outcomes it admits and carries a ``Comparison`` of two
+    operand fields as its metadata, with ``COMPUTED`` as its default. Pydantic computes the
     ordering from the validated operands and admits it or refuses it with ``literal_error``;
     the engine reads a refusal of a relation as the fact not existing, so a union of the facts
-    that hold each outcome is the choice. The
-    proof reads the same fields: it tells two relation kinds apart by the outcomes they admit,
-    decides from the operands' intervals whether a relation can ever hold or ever refuse, and
-    refuses a union two relations cannot tell apart. An ordering is computed and never given:
-    one supplied in the input is dropped before validation.
+    that hold each outcome is the choice. The proof reads the same fields: it tells two
+    relation kinds apart by the outcomes they admit, decides from the operands' intervals
+    whether a relation can ever hold or ever refuse, and refuses a union two relations cannot
+    tell apart. An ordering is computed and never given: one supplied in the input is refused.
     """
-
-    @model_validator(mode="before")
-    @classmethod
-    def computed(cls, data: object) -> object:
-        """Drop any ordering supplied in the input, so the only ordering is the computed one."""
-        if is_given(data):
-            orderings = {
-                name
-                for name, field in cls.model_fields.items()
-                if isinstance(field.default_factory, Comparison)
-            }
-            return {key: value for key, value in data.items() if key not in orderings}
-        return data
 
 
 class Compare[A: Numeric, B: Numeric, O: Ordering](Relation):
@@ -532,15 +602,12 @@ class Compare[A: Numeric, B: Numeric, O: Ordering](Relation):
     """The value the relation is about."""
     bound: B
     """What the value is compared with."""
-    ordering: Annotated[
-        O,
-        Field(
-            default_factory=Comparison("value", "bound"),
-            exclude=True,
-            repr=False,
-            description="The ordering of value against bound, computed at construction.",
-        ),
-    ]
+    ordering: Annotated[O, Comparison(("value", "bound"))] = Field(
+        default=COMPUTED,
+        exclude=True,
+        repr=False,
+        description="The ordering of value against bound, computed at construction.",
+    )
 
 
 class Under[A: Numeric, B: Numeric](Compare[A, B, Literal[-1]]):
@@ -615,24 +682,18 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Relation):
     """The least the value may be."""
     upper: U
     """The most the value may be."""
-    below: Annotated[
-        Literal[-1, 0],
-        Field(
-            default_factory=Comparison("lower", "value"),
-            exclude=True,
-            repr=False,
-            description="The ordering of lower against value, computed at construction.",
-        ),
-    ]
-    above: Annotated[
-        Literal[-1, 0],
-        Field(
-            default_factory=Comparison("value", "upper"),
-            exclude=True,
-            repr=False,
-            description="The ordering of value against upper, computed at construction.",
-        ),
-    ]
+    below: Annotated[Literal[-1, 0], Comparison(("lower", "value"))] = Field(
+        default=COMPUTED,
+        exclude=True,
+        repr=False,
+        description="The ordering of lower against value, computed at construction.",
+    )
+    above: Annotated[Literal[-1, 0], Comparison(("value", "upper"))] = Field(
+        default=COMPUTED,
+        exclude=True,
+        repr=False,
+        description="The ordering of value against upper, computed at construction.",
+    )
 
 
 class Selection[E: BaseModel](Fact):

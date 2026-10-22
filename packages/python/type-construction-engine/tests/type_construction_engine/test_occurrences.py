@@ -154,6 +154,9 @@ async def test_each_carrier_sums_its_own_lines_and_equal_lines_are_two() -> None
     priced = paid.priced
     assert request.cart.lines[0] == request.cart.lines[1]
     assert [t.root for t in priced.cart.of] == [Decimal("5.00"), Decimal("5.00")]
+    totals = [*priced.cart.of, *priced.gifts.of, *priced.pair.of, *priced.solo.of]
+    assert all(t.root == t.left.root * t.right.root for t in totals)
+    assert priced.cart.root == sum(t.root for t in priced.cart.of)
     assert priced.cart.of[0].right is request.cart.lines[0].quantity
     assert priced.cart.of[1].right is request.cart.lines[1].quantity
     assert priced.gifts.of[0].right is request.gifts.lines[0].quantity

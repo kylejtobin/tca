@@ -614,7 +614,11 @@ def test_a_relations_ordering_is_computed_admitted_by_its_literal_and_never_give
     with pytest.raises(ValidationError) as refusal:
         Low.model_validate({"value": Amount(Decimal(11)), "bound": Limit(), "ordering": 0})
     found = [(e["type"], e["loc"]) for e in refusal.value.errors()]
-    assert found == [("literal_error", ("ordering",))]
+    assert found == [("computed", ("ordering",))]
+    with pytest.raises(ValidationError) as refusal:
+        Low.model_validate({"value": Amount(Decimal(5)), "bound": Limit(), "ordering": -1})
+    found = [(e["type"], e["loc"]) for e in refusal.value.errors()]
+    assert found == [("computed", ("ordering",))]
 
 
 @pytest.mark.asyncio
