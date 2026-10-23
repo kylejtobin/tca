@@ -37,13 +37,29 @@ constructions, what was left waiting and the faults; its validator refuses the p
 ``ValidationError`` naming every fault: ``missing``, a field no occurrence fills; ``collects``,
 a tuple over a class no collection's elements hold; ``unplaceable``, a class whose fields are
 never visible from one scope; ``cycle``, classes that wait on each other; ``route``, a route
-whose reply exists per element; ``ambiguous``, a field with two candidates, or two union
-members not proven exclusive; ``unreached``, a class the reply of no route leads to;
-``unmodeled``, a field that names no kind; ``boundary``, a request that holds what does not
-arrive; ``config``, no one deployment; ``never``, a relation its operands' intervals make
-certain or impossible; ``undiscriminated``, two records one action hears that no field tells
-apart; ``undecided``, an action performed on one branch of a choice that holds nothing deciding
-it.
+whose reply exists per element; ``ambiguous``, a field with two candidates of one class, or two
+alternatives at one field not proven never both available; ``unreached``, a class the reply of
+no route leads to; ``unmodeled``, a field that names no kind; ``boundary``, a request that
+holds what does not arrive; ``config``, no one deployment; ``never``, a relation its operands'
+intervals make certain or impossible, or a construction whose premises are never all available
+together; ``undiscriminated``, two records one action hears that no field tells apart;
+``undecided``, an action performed when one alternative of a choice is available and never
+when the other is, whose own premises do not exclude the other.
+
+What the proof concludes of the constructions it reads from their references and nothing else.
+A world is one way several references are all available in one scope: what arrives is there,
+what is heard brings its action, what is constructed brings one alternative of each premise,
+the holder of each collection and, for a fixed collection, each position's element; a variable
+collection may be empty and brings no element. A world clashes when one action occurrence
+would have heard two records, two relations over the same operand references admit no ordering
+in common, a selection admits no count its collection can have, or the intervals of what
+supplies each number and the orderings of the relations over them have no solution together,
+where an unknown interval constrains nothing. Two alternatives at one field are never both
+available when every way both are clashes, which a run that found both would refuse to choose
+between; a construction never constructs when every way its premises are all available
+clashes. A way nothing refutes is open and establishes nothing: evidence of the same class at
+another site is another occurrence, a default is a default, and bounds that overlap do not say
+a run exists. ``Proof`` keeps each exclusion and each existence with its ways and clashes.
 
 A construction binds each premise to references the proof retains from the declarations, one per
 candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrence the run
@@ -142,12 +158,16 @@ from type_construction.world import (
 
 __all__ = [
     "Blocked",
+    "Clash",
     "Collected",
     "ConstructedRef",
     "Construction",
+    "Exclusion",
+    "Existence",
     "Fault",
     "HeardRef",
     "InputRef",
+    "Joint",
     "Known",
     "Proof",
     "Ref",
@@ -156,17 +176,21 @@ __all__ = [
     "Site",
     "Unknown",
     "Waiting",
+    "World",
     "answer",
     "asked",
+    "clash",
     "classes",
-    "coexist",
     "collects",
     "config",
     "configs",
+    "exclusions",
+    "existences",
     "hear",
     "heard",
     "holds",
     "interval",
+    "joint",
     "models",
     "never",
     "opened",
@@ -174,6 +198,7 @@ __all__ = [
     "produces",
     "proven",
     "ran",
+    "ways",
 ]
 
 type Site = tuple[str, ...]
@@ -190,10 +215,11 @@ type Weight = tuple[Decimal, int]
 
 type Edge = tuple[object, object, Weight]
 """One difference constraint ``x - y <= c`` as the edge ``(y, x, weight)``; a variable is a
-numeric class, and ``ZERO`` stands for the constant zero."""
+reference to what supplies a number, so two relations over one reference constrain one value,
+and ``ZERO`` stands for the constant zero."""
 
 ZERO = object()
-"""The variable whose value is zero, which a class's interval is constraints against."""
+"""The variable whose value is zero, which what a reference supplies is constrained against."""
 
 REQUEST: Site = ("request",)
 """The site of what arrived: the route's own field for it."""
@@ -1308,16 +1334,6 @@ def hears[P: Connection, T: Record](record: Record, action: Action[P, T]) -> Typ
     return isinstance(record, heard(type(action)))
 
 
-def hearers(classes_: Iterable[type[BaseModel]]) -> dict[type[BaseModel], type[BaseModel]]:
-    """Each record class and the first action that hears it."""
-    found: dict[type[BaseModel], type[BaseModel]] = {}
-    for action in classes_:
-        if is_action(action):
-            for record in heard(action):
-                found.setdefault(record, action)
-    return found
-
-
 def hearers_of(cls: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> Options:
     """Every action that hears a record class."""
     return tuple(a for a in classes_ if is_action(a) and cls in heard(a))
@@ -1967,8 +1983,11 @@ def apart(cls: type[BaseModel], root: Context) -> Fault:
 
 
 class Proof(BaseModel):
-    """Every route constructed symbolically, at startup; its validator refuses the program with
-    every fault at once."""
+    """Every route constructed symbolically, at startup, with what the proof concluded of the
+    constructions: for each two alternatives at one field, whether they are never both
+    available, and for each construction, whether it can be available at all, each with the
+    ways it could be and the clash that refutes each way. Its validator refuses the program
+    with every fault at once."""
 
     model_config = ConfigDict(frozen=True, strict=True, arbitrary_types_allowed=True)
     program: str
@@ -1976,6 +1995,8 @@ class Proof(BaseModel):
     constructions: tuple[Construction, ...]
     waiting: tuple[Waiting, ...]
     faulted: tuple[Fault, ...]
+    exclusions: tuple[Exclusion, ...]
+    existences: tuple[Existence, ...]
 
     @property
     def routes(self) -> tuple[type[Route[Request, Reply[Fact]]], ...]:
@@ -2018,13 +2039,14 @@ class Proof(BaseModel):
             *unmodeled(self),
             *boundary(self),
             *deployment(self),
-            *ambiguous(self),
             *certain(self),
+            *impossible(self),
+            *ambiguous(self),
             *undiscriminated(self),
             *undecided(self),
         ]
         if details:
-            raise ValidationError.from_exception_data(self.program, details)
+            raise ValidationError.from_exception_data(self.program, distinct(details))
         return self
 
 
@@ -2034,6 +2056,17 @@ def unique(faults: Iterable[Fault]) -> list[Fault]:
     found: dict[tuple[str, tuple[str, ...]], Fault] = {}
     for f in faults:
         found.setdefault((f.code, f.loc), f)
+    return list(found.values())
+
+
+def distinct(details: Iterable[InitErrorDetails]) -> list[InitErrorDetails]:
+    """The errors with each type and location once, the first kept: a relation's own
+    impossibility and the construction's are one error."""
+    found: dict[tuple[str, tuple[object, ...]], InitErrorDetails] = {}
+    for d in details:
+        code = d["type"]
+        name = code.type if isinstance(code, PydanticCustomError) else str(code)
+        found.setdefault((name, tuple(d.get("loc", ()))), d)
     return list(found.values())
 
 
@@ -2285,14 +2318,21 @@ def outcomes(left: Interval, right: Interval) -> frozenset[int]:
     return frozenset(found)
 
 
-def comparisons(cls: type[BaseModel]) -> list[tuple[Comparison, frozenset[int]]]:
-    """Each comparison a relation makes, naming its two operand fields, and the orderings it
-    admits, read from the ordering fields' metadata and annotations."""
-    return [
-        (compared, frozenset(int(o) for o in f.admits if isinstance(o, int)))
-        for f in fields(cls)
-        if isinstance(compared := f.computation, Comparison)
-    ]
+def comparisons(cls: type[BaseModel]) -> list[tuple[Comparison, frozenset[int] | Unknown]]:
+    """Each comparison a relation makes, naming its two operand fields, and the orderings its
+    field admits: the field's ``Literal``, where the compiled schema's every output lies in it;
+    unknown where another validator around the field could output otherwise."""
+    found: list[tuple[Comparison, frozenset[int] | Unknown]] = []
+    for f in fields(cls):
+        compared = f.computation
+        if not isinstance(compared, Comparison):
+            continue
+        output = f.output
+        if isinstance(output, Unknown):
+            found.append((compared, output))
+        else:
+            found.append((compared, frozenset(int(o) for o in f.admits if isinstance(o, int))))
+    return found
 
 
 def operand(cls: type[BaseModel], name: str, at: Construction | None = None) -> Interval | Unknown:
@@ -2317,7 +2357,11 @@ def never(
     decided = True
     for compared, admitted in comparisons(cls):
         lefts, rights = operand(cls, compared.left, at), operand(cls, compared.right, at)
-        if isinstance(lefts, Unknown) or isinstance(rights, Unknown):
+        if (
+            isinstance(admitted, Unknown)
+            or isinstance(lefts, Unknown)
+            or isinstance(rights, Unknown)
+        ):
             decided = False
             continue
         possible = outcomes(lefts, rights)
@@ -2349,34 +2393,275 @@ def certain(proof: Proof) -> list[InitErrorDetails]:
     ]
 
 
-def edges(cls: type[BaseModel]) -> list[Edge]:
-    """A numeric class's interval as difference constraints against zero: ``x >= low`` is
+type World = frozenset[Ref]
+"""One way several references are all available in one scope: every reference available with
+them, one alternative chosen for each premise of each construction among them, so no world
+holds two alternatives of one premise."""
+
+
+@dataclass(frozen=True)
+class Clash:
+    """Why one world is impossible: the kind of incompatibility, and the references responsible.
+    ``heard``, two records of one action occurrence, which hears one; ``ordering``, two
+    relations over the same operand references admitting no ordering in common; ``count``, a
+    selection over a collection of a number of positions it admits no count of, or two over one
+    collection admitting none in common; ``bounds``, intervals of the references that supply
+    numbers and orderings of the relations over them with no solution together."""
+
+    why: Literal["heard", "ordering", "count", "bounds"]
+    among: tuple[Ref, ...]
+
+
+@dataclass(frozen=True)
+class Joint:
+    """Whether several references can be available together in one scope: every way they can,
+    each with the clash that refutes it, or ``None`` for a way nothing refutes. Impossible when
+    every way clashes, which the clashes establish; a way nothing refutes is open, and
+    establishes nothing, since bounds that overlap do not say a run exists."""
+
+    refs: tuple[Ref, ...]
+    ways: tuple[tuple[World, Clash | None], ...]
+
+    @property
+    def impossible(self) -> bool:
+        """Whether every way clashes: the references are never all available together."""
+        return all(c is not None for _, c in self.ways)
+
+    @property
+    def open(self) -> tuple[World, ...]:
+        """The ways nothing refutes."""
+        return tuple(w for w, c in self.ways if c is None)
+
+    @property
+    def clashes(self) -> tuple[Clash, ...]:
+        """The clashes, one per way refuted."""
+        return tuple(c for _, c in self.ways if c is not None)
+
+
+@dataclass(frozen=True)
+class Exclusion:
+    """What the proof must establish of two alternatives bound at one field of one construction:
+    that they are never both available in the scope the field resolves them from, since a run
+    that finds both refuses to choose. Established when their joint is impossible; open
+    otherwise, with the ways both could be available."""
+
+    construction: Construction
+    field: str
+    left: Ref
+    right: Ref
+    joint: Joint
+
+    @property
+    def established(self) -> bool:
+        """Whether the two are never both available."""
+        return self.joint.impossible
+
+
+@dataclass(frozen=True)
+class Existence:
+    """Whether a construction can be available at all: contradicted when every way its
+    premises are all available clashes; open otherwise, which does not say a run constructs
+    it."""
+
+    construction: Construction
+    joint: Joint
+
+    @property
+    def contradicted(self) -> bool:
+        """Whether the construction's premises are never all available together."""
+        return self.joint.impossible
+
+
+def required(construction: Construction) -> list[tuple[Ref, ...]]:
+    """What a construction needs available to construct, one group of alternatives each: each
+    premise field's references; each collection's holder; for a fixed collection, each
+    position's references in that position's scope. A variable collection may be empty, so
+    its elements are nothing the construction needs."""
+    groups = list(construction.premises.values())
+    for collected in construction.collections.values():
+        groups.append((collected.holder,))
+        groups.extend(
+            tuple(r for r in collected.elements if r.scope == (*collected.site, f"[{index}]"))
+            for index in range(collected.positions or 0)
+        )
+    return [g for g in groups if g]
+
+
+def worlds(todo: list[Ref], world: World) -> Iterator[World]:
+    """Every world the references still to place complete, from one being built: a reference
+    already placed adds nothing; what arrives adds itself; what is heard adds its action; what
+    is constructed adds, for each group of alternatives it needs, one of them, each choice a
+    world of its own."""
+    if not todo:
+        yield world
+        return
+    ref, rest = todo[0], todo[1:]
+    if ref in world:
+        yield from worlds(rest, world)
+        return
+    world = world | {ref}
+    match ref:
+        case InputRef():
+            yield from worlds(rest, world)
+        case HeardRef():
+            yield from worlds([ConstructedRef(ref.action), *rest], world)
+        case ConstructedRef(construction):
+            for choice in product(*required(construction)):
+                yield from worlds([*choice, *rest], world)
+
+
+def ways(refs: Iterable[Ref]) -> tuple[World, ...]:
+    """Every way several references are all available in one scope, each once."""
+    return tuple(dict.fromkeys(worlds(list(refs), frozenset())))
+
+
+def joint(refs: Iterable[Ref]) -> Joint:
+    """Whether several references can be available together: each way, with its clash."""
+    refs = tuple(refs)
+    return Joint(refs, tuple((w, clash(w)) for w in ways(refs)))
+
+
+def ordered(world: World) -> list[Ref]:
+    """A world's references in one order: by site, kind and class."""
+    return sorted(world, key=lambda r: (r.site, type(r).__name__, r.cls.__name__))
+
+
+def clash(world: World) -> Clash | None:
+    """The first incompatibility within a world, or ``None``: two records of one action
+    occurrence; two relations contradicting over the same operands; a selection the number of
+    positions of its collection refutes, or two selections over one collection with no count in
+    common; or the bounds of what supplies each number and the orderings of the relations over
+    them with no solution together. An unknown interval bounds nothing, and so refutes
+    nothing."""
+    refs = ordered(world)
+    heard_ = [r for r in refs if isinstance(r, HeardRef)]
+    for x, y in combinations(heard_, 2):
+        if x.action is y.action and x.record is not y.record:
+            return Clash("heard", (x, y))
+    made = [r for r in refs if isinstance(r, ConstructedRef)]
+    relations = [r for r in made if is_relation(r.cls)]
+    for x, y in combinations(relations, 2):
+        if contradicts(x.construction, y.construction, world):
+            return Clash("ordering", (x, y))
+    gathering = [r for r in made if r.construction.collections]
+    for s in gathering:
+        if miscounted(s.construction):
+            return Clash("count", (s,))
+    for x, y in combinations(gathering, 2):
+        if exclusive(x.construction, y.construction):
+            return Clash("count", (x, y))
+    bounds = {r: found for r in refs if (found := edges(r))}
+    constraints = [
+        *(e for found in bounds.values() for e in found),
+        *(e for r in relations for e in constrained(r.construction, world)),
+    ]
+    if not feasible(constraints):
+        return Clash("bounds", (*relations, *bounds))
+    return None
+
+
+def edges(ref: Ref) -> list[Edge]:
+    """What a reference supplies as difference constraints against zero: ``x >= low`` is
     ``0 - x <= -low``, ``x <= high`` is ``x - 0 <= high``; none for an unknown interval, which
-    constrains nothing and so proves nothing exclusive."""
-    found = interval(cls)
+    constrains nothing and so proves nothing, and none for what supplies no number."""
+    found = supplied_by(ref)
     constraints: list[Edge] = []
     if isinstance(found, Unknown):
         return constraints
     if found.low is not None:
-        constraints.append((cls, ZERO, (-found.low, -1 if found.low_strict else 0)))
+        constraints.append((ref, ZERO, (-found.low, -1 if found.low_strict else 0)))
     if found.high is not None:
-        constraints.append((ZERO, cls, (found.high, -1 if found.high_strict else 0)))
+        constraints.append((ZERO, ref, (found.high, -1 if found.high_strict else 0)))
     return constraints
 
 
-def constrained(cls: type[BaseModel]) -> list[Edge]:
-    """A relation's comparisons as difference constraints between its operands, for the
-    admitted sets that are one: under is ``value - bound < 0``, at most ``<= 0``, equal both ways,
-    at least ``bound - value <= 0``, beyond ``< 0``; differs is none."""
+def picked(refs: Iterable[Ref], world: World) -> Ref | None:
+    """The one reference among alternatives a world holds; ``None`` for none or for two, which
+    the exclusion at that field reports."""
+    found = [r for r in refs if r in world]
+    return found[0] if len(found) == 1 else None
+
+
+def operands_in(
+    construction: Construction, compared: Comparison, world: World
+) -> tuple[Ref, Ref] | None:
+    """The two references a comparison is over in a world, or ``None`` while either is not
+    one."""
+    left = picked(construction.premises.get(compared.left, ()), world)
+    right = picked(construction.premises.get(compared.right, ()), world)
+    return None if left is None or right is None else (left, right)
+
+
+UNDER = frozenset({-1})
+"""The one ordering ``Under`` admits: a strict constraint."""
+
+BEYOND = frozenset({1})
+"""The one ordering ``Beyond`` admits: a strict constraint."""
+
+
+def constrained(construction: Construction, world: World) -> list[Edge]:
+    """A relation's comparisons as difference constraints between the references of its
+    operands in a world, for the admitted sets that are one: under is ``value - bound < 0``,
+    at most ``<= 0``, equal both ways, at least ``bound - value <= 0``, beyond ``< 0``; differs
+    is none, and so is a comparison whose admitted orderings are unknown."""
     found: list[Edge] = []
-    for compared, admitted in comparisons(cls):
-        lefts, rights = declared(cls, compared.left).classes, declared(cls, compared.right).classes
-        for left, right in product(lefts, rights):
-            if admitted <= {-1, 0}:
-                found.append((right, left, (Decimal(0), -1 if admitted == frozenset({-1}) else 0)))
-            if admitted <= {0, 1}:
-                found.append((left, right, (Decimal(0), -1 if admitted == frozenset({1}) else 0)))
+    for compared, admitted in comparisons(construction.cls):
+        operands = operands_in(construction, compared, world)
+        if isinstance(admitted, Unknown) or operands is None:
+            continue
+        left, right = operands
+        if admitted <= {-1, 0}:
+            found.append((right, left, (Decimal(0), -1 if admitted == UNDER else 0)))
+        if admitted <= {0, 1}:
+            found.append((left, right, (Decimal(0), -1 if admitted == BEYOND else 0)))
     return found
+
+
+def contradicts(a: Construction, b: Construction, world: World) -> bool:
+    """Whether two relations make a comparison over the same two operand references in a world
+    whose admitted orderings are disjoint, the second's negated when its operands are the
+    first's reversed: the same references supply the same values, so one ordering holds of
+    both."""
+    for compared, admitted in comparisons(a.cls):
+        operands = operands_in(a, compared, world)
+        if isinstance(admitted, Unknown) or operands is None:
+            continue
+        for compared_, admitted_ in comparisons(b.cls):
+            operands_ = operands_in(b, compared_, world)
+            if isinstance(admitted_, Unknown) or operands_ is None:
+                continue
+            if operands == operands_ and not admitted & admitted_:
+                return True
+            if operands == operands_[::-1] and not admitted & {-o for o in admitted_}:
+                return True
+    return False
+
+
+def exclusive(a: Construction, b: Construction) -> bool:
+    """Whether two constructions gather one collection, the same holder and elements, as tuple
+    fields admitting no count in common; not when either count is unknown."""
+    for name, collected in a.collections.items():
+        for name_, collected_ in b.collections.items():
+            first, second = declared(a.cls, name).length, declared(b.cls, name_).length
+            if collected != collected_ or isinstance(first, Unknown) or isinstance(second, Unknown):
+                continue
+            (low, high), (low_, high_) = first, second
+            if (high is not None and low_ > high) or (high_ is not None and low > high_):
+                return True
+    return False
+
+
+def miscounted(construction: Construction) -> bool:
+    """Whether a construction gathers a fixed collection whose number of positions its tuple
+    field admits no count of: a selection of one over a pair."""
+    for name, collected in construction.collections.items():
+        length = declared(construction.cls, name).length
+        if collected.positions is None or isinstance(length, Unknown):
+            continue
+        low, high = length
+        if collected.positions < low or (high is not None and collected.positions > high):
+            return True
+    return False
 
 
 def feasible(constraints: Iterable[Edge]) -> bool:
@@ -2398,121 +2683,153 @@ def feasible(constraints: Iterable[Edge]) -> bool:
     return False
 
 
-def choices(
-    cls: type[BaseModel], seen: frozenset[type[BaseModel]]
-) -> list[frozenset[type[BaseModel]]]:
-    """Every way a class can be present in a run, as the set of classes present with it: the
-    class, and for each single field one of the classes it may hold, with their own choices in
-    turn. A class already seen contributes nothing more."""
-    if cls in seen:
-        return [frozenset()]
-    seen = seen | {cls}
-    per_field = [
-        [member for c in classes_ for member in choices(c, seen)]
-        for classes_ in holds(cls).values()
-        if classes_
-    ]
-    return [frozenset({cls}).union(*combination) for combination in product(*per_field)]
-
-
-def contradicts(a: type[BaseModel], b: type[BaseModel]) -> bool:
-    """Whether two relations make a comparison over the same two operands whose admitted
-    orderings are disjoint, the second's negated when its operands are the first's reversed."""
-    for compared, admitted in comparisons(a):
-        lefts, rights = declared(a, compared.left).classes, declared(a, compared.right).classes
-        for compared_, admitted_ in comparisons(b):
-            lefts_, rights_ = (
-                declared(b, compared_.left).classes,
-                declared(b, compared_.right).classes,
-            )
-            if (lefts, rights) == (lefts_, rights_) and not admitted & admitted_:
-                return True
-            if (lefts, rights) == (rights_, lefts_) and not admitted & {-o for o in admitted_}:
-                return True
-    return False
-
-
-def exclusive(a: type[BaseModel], b: type[BaseModel]) -> bool:
-    """Whether two selections over the same elements admit disjoint counts; not when either
-    count is unknown."""
-    if collects(a)["of"] != collects(b)["of"]:
-        return False
-    first, second = declared(a, "of").length, declared(b, "of").length
-    if isinstance(first, Unknown) or isinstance(second, Unknown):
-        return False
-    (low, high), (low_, high_) = first, second
-    return (high is not None and low_ > high) or (high_ is not None and low > high_)
-
-
-def deciders(
-    present: frozenset[type[BaseModel]],
-    against: frozenset[type[BaseModel]],
-    classes_: Iterable[type[BaseModel]],
-) -> frozenset[type[BaseModel]]:
-    """The classes among those present that cannot be present with those against: a record
-    whose hearer hears one of them, a relation that contradicts one of them, a selection
-    exclusive with one of them."""
-    hearers_ = hearers(classes_)
-    return frozenset(
-        c
-        for c in present
-        for d in against
-        if (
-            (is_record(c) and is_record(d) and c is not d and hearers_.get(c) is hearers_.get(d))
-            or (is_relation(c) and is_relation(d) and contradicts(c, d))
-            or (is_selection(c) and is_selection(d) and exclusive(c, d))
+def exclusions(constructions: Iterable[Construction]) -> tuple[Exclusion, ...]:
+    """The alternatives bound at each field of each construction, pairwise, each with whether
+    they are ever both available where the field resolves them: a premise's references, from
+    the construction's scope; a collection's element references, those placed in one element's
+    scope from that scope."""
+    found: list[Exclusion] = []
+    for c in constructions:
+        groups = list(c.premises.items())
+        for name, collected in c.collections.items():
+            by_scope: dict[Site, list[Ref]] = {}
+            for r in collected.elements:
+                by_scope.setdefault(r.scope, []).append(r)
+            groups.extend((name, tuple(refs)) for refs in by_scope.values())
+        found.extend(
+            Exclusion(c, name, left, right, joint((left, right)))
+            for name, refs in groups
+            for left, right in combinations(refs, 2)
         )
-    )
+    return tuple(found)
 
 
-def conflict(present: frozenset[type[BaseModel]], classes_: Iterable[type[BaseModel]]) -> bool:
-    """Whether a set of classes cannot all be present in one run: two of them decide against
-    each other, or their intervals and comparisons have no solution together."""
-    if deciders(present, present, classes_):
-        return True
-    constraints = [e for c in present for e in edges(c)] + [
-        e for c in present if is_relation(c) for e in constrained(c)
-    ]
-    return not feasible(constraints)
+def existences(constructions: Iterable[Construction]) -> tuple[Existence, ...]:
+    """Whether each construction can be available at all."""
+    return tuple(Existence(c, joint((ConstructedRef(c),))) for c in constructions)
 
 
-def coexist(a: type[BaseModel], b: type[BaseModel], classes_: Iterable[type[BaseModel]]) -> bool:
-    """Whether two classes a field may hold are not proven exclusive: the same class is not;
-    otherwise some choice of what each holds puts in one run no conflict."""
-    if a is b:
-        return True
-    return any(
-        not conflict(x | y, classes_) for x in choices(a, PLACED) for y in choices(b, PLACED)
-    )
+def inherited(construction: Construction) -> bool:
+    """Whether a construction's impossibility is one of its premises' own: some group of
+    alternatives it needs has none possible alone, and that premise is where it is reported."""
+    return any(all(joint((r,)).impossible for r in group) for group in required(construction))
 
 
-def unions(cls: type[BaseModel]) -> dict[str, Options]:
-    """Each field of a class that holds a choice: a single field or a tuple field with more than
-    one class; a fixed tuple's positions of one class are no choice."""
-    return {
-        name: distinct
-        for name, classes_ in (*holds(cls).items(), *collects(cls).items())
-        if len(distinct := tuple(dict.fromkeys(classes_))) > 1
+def performers(ref: Ref) -> list[Construction]:
+    """The action constructions performed in some way a reference is available, by site."""
+    found = {
+        r.construction
+        for w in ways((ref,))
+        for r in w
+        if isinstance(r, ConstructedRef) and is_action(r.cls)
     }
+    return sorted(found, key=lambda c: c.site)
+
+
+def where(scope: Site) -> str:
+    """A scope template for a message: its path, or the root."""
+    return ".".join(scope) or "the root"
+
+
+def at(ref: Ref) -> str:
+    """A reference for a message: its class at its site."""
+    return f"{ref.cls.__name__} at {'.'.join(ref.site)}"
+
+
+def assumed(world: World) -> str:
+    """The conditions a world takes as holding, for a message: each refutable construction and
+    each record heard in it."""
+    found = [
+        at(r)
+        for r in ordered(world)
+        if (isinstance(r, ConstructedRef) and refutable(r.cls))
+        or (isinstance(r, HeardRef) and not r.member)
+    ]
+    return ", ".join(found) or "nothing between them"
+
+
+def because_of(clash: Clash) -> str:
+    """A clash for a message, in the developer's names."""
+    match clash:
+        case Clash("heard", (HeardRef() as x, HeardRef() as y)):
+            heard_by = f"{x.action.cls.__name__} at {'.'.join(x.action.site)}"
+            return f"{heard_by} hears one record, {x.record.__name__} or {y.record.__name__}"
+        case Clash("ordering", (x, y)):
+            return f"{at(x)} and {at(y)} admit no ordering in common over the same operands"
+        case Clash("count", (ConstructedRef(construction) as x,)):
+            positions = ", ".join(
+                str(c.positions) for c in construction.collections.values() if c.positions
+            )
+            return f"{at(x)} admits no count of {positions} elements"
+        case Clash("count", (x, y)):
+            return f"{at(x)} and {at(y)} admit no count in common over one collection"
+        case _:
+            return f"the bounds and orderings of {', '.join(map(at, clash.among))} have no solution"
+
+
+def impossible(proof: Proof) -> list[InitErrorDetails]:
+    """One ``never`` error per construction whose premises are each possible alone and never
+    all available together, at its site, where its class's own claim is open."""
+    return [
+        fault(
+            "never",
+            "{cls} at {path} never constructs: {why}",
+            e.construction.site,
+            cls=e.construction.cls.__name__,
+            path=".".join(e.construction.site),
+            why=because_of(e.joint.clashes[0]),
+        )
+        for e in proof.existences
+        if e.contradicted and never(e.construction.cls) is None and not inherited(e.construction)
+    ]
 
 
 def ambiguous(proof: Proof) -> list[InitErrorDetails]:
-    """One ``ambiguous`` error per union field two of whose members are not proven exclusive."""
+    """One ``ambiguous`` error per two alternatives at one field the proof cannot show are never
+    both available: at the construction's scope, with what the open way holds, which a run may
+    hold too."""
     return [
         fault(
             "ambiguous",
-            "{cls}.{name} holds {a} | {b}, and the proof cannot show that at most one holds;"
-            " write members a record or a relation tells apart",
-            (c.__name__, name),
-            cls=c.__name__,
-            name=name,
-            a=a.__name__,
-            b=b.__name__,
+            "{cls}.{name} holds {a} | {b}, and the proof cannot show that at most one holds: at"
+            " {scope}, {left} and {right} are both available with {held} holding; write members"
+            " a record or a relation tells apart",
+            (e.construction.cls.__name__, e.field),
+            cls=e.construction.cls.__name__,
+            name=e.field,
+            a=e.left.cls.__name__,
+            b=e.right.cls.__name__,
+            scope=where(e.construction.scope),
+            left=at(e.left),
+            right=at(e.right),
+            held=assumed(e.joint.open[0]),
         )
-        for c in proof.classes
-        for name, classes_ in unions(c).items()
-        for a, b in combinations(classes_, 2)
-        if coexist(a, b, proof.classes)
+        for e in proof.exclusions
+        if not e.established
+    ]
+
+
+def undecided(proof: Proof) -> list[InitErrorDetails]:
+    """One ``undecided`` error per action performed in some way one alternative of an
+    established exclusion is available and in no way the other is, whose own premises do not
+    exclude the other: it would be performed whichever held."""
+    return [
+        fault(
+            "undecided",
+            "{action} is performed when {cls}.{name} holds {chosen} and not when it holds"
+            " {other}, yet holds nothing that decides between them",
+            (action.cls.__name__,),
+            action=action.cls.__name__,
+            cls=e.construction.cls.__name__,
+            name=e.field,
+            chosen=chosen_.cls.__name__,
+            other=other.cls.__name__,
+        )
+        for e in proof.exclusions
+        if e.established
+        for chosen_, other in ((e.left, e.right), (e.right, e.left))
+        for action in performers(chosen_)
+        if action not in performers(other) and not joint((ConstructedRef(action), other)).impossible
     ]
 
 
@@ -2556,71 +2873,21 @@ def undiscriminated(proof: Proof) -> list[InitErrorDetails]:
     ]
 
 
-def closure(start: type[BaseModel]) -> frozenset[type[BaseModel]]:
-    """Every class a class holds, singly or as elements, and so on: what must exist for it to."""
-    found: set[type[BaseModel]] = set()
-    todo = [start]
-    while todo:
-        cls = todo.pop()
-        if cls in found:
-            continue
-        found.add(cls)
-        todo.extend(
-            c for classes_ in (*holds(cls).values(), *collects(cls).values()) for c in classes_
-        )
-    return frozenset(found)
-
-
-def undecided(proof: Proof) -> list[InitErrorDetails]:
-    """One ``undecided`` error per action that one member of a choice leads to and another does
-    not, whose premises hold nothing that decides between them: it would be performed whichever
-    held."""
-    details: list[InitErrorDetails] = []
-    for c in proof.classes:
-        for name, classes_ in unions(c).items():
-            for a, b in combinations(classes_, 2):
-                if coexist(a, b, proof.classes):
-                    continue
-                for chosen_, other in ((a, b), (b, a)):
-                    reach, reach_ = proof.reached(chosen_), proof.reached(other)
-                    settles = deciders(
-                        PLACED.union(*choices(chosen_, PLACED)),
-                        PLACED.union(*choices(other, PLACED)),
-                        proof.classes,
-                    )
-                    details += [
-                        fault(
-                            "undecided",
-                            "{action} is performed when {cls}.{name} holds {chosen} and not when it"
-                            " holds {other}, yet holds nothing that decides between them",
-                            (action.__name__,),
-                            action=action.__name__,
-                            cls=c.__name__,
-                            name=name,
-                            chosen=chosen_.__name__,
-                            other=other.__name__,
-                        )
-                        for action in proof.classes
-                        if is_action(action)
-                        and action in reach
-                        and action not in reach_
-                        and not closure(action) & settles
-                    ]
-    return details
-
-
 def proven(program: ModuleType) -> Proof:
     """The proof of a program: every route constructed symbolically from its own request, the
     deployment and the constants, as a ``Proof``, whose validator refuses the program with
     every fault at once."""
     classes_ = models(program)
     found = [symbolic(r, classes_) for r in classes_ if is_route(r)]
+    constructions = tuple(c for s in found for c in s.constructions)
     return Proof(
         program=program.__name__,
         classes=classes_,
-        constructions=tuple(c for s in found for c in s.constructions),
+        constructions=constructions,
         waiting=tuple(w for s in found for w in s.waiting),
         faulted=tuple(f for s in found for f in s.faulted),
+        exclusions=exclusions(constructions),
+        existences=existences(constructions),
     )
 
 

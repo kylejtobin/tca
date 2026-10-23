@@ -7,17 +7,7 @@ Not built, in order. The design for each is in `docs/decisions/`; the developer'
 
 ### Task 2: Make computational results authoritative through native construction - Done
 
-### Task 3: Runtime Construction and Execution Integrity - Not Done
-
-Complete runtime construction using the occurrence model established in Task 1.
-
-Ensure nested scopes, repeated occurrences, alternatives, and newly available evidence construct correctly without procedural source selection or duplicated dependency resolution.
-
-Verify execution context, structured concurrency, cancellation, and connection lifecycles. Use standard Python primitives, including `TaskGroup`, `contextvars`, and `AsyncExitStack`, where they materially improve correctness or simplify the engine.
-
-Preserve occurrence identity, provenance, diagnostics, and OpenTelemetry context throughout execution, including failure and cancellation.
-
-**Outcome:** A deterministic, occurrence-driven runtime with correct execution and resource lifecycles.
+### Task 3: Runtime Construction and Execution Integrity - Done
 
 ### Task 4: Route-Local Proof and Construction Soundness - Not Done
 

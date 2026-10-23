@@ -53,14 +53,15 @@ from type_construction.engine import (
     answer,
     asked,
     classes,
-    coexist,
     config,
     declared,
+    exclusions,
     fields,
     hear,
     heard,
     interval,
     interval_at,
+    joint,
     models,
     never,
     opened,
@@ -71,6 +72,7 @@ from type_construction.engine import (
     ran,
     scopes,
     supplied_by,
+    symbolic,
 )
 from type_construction.world import (
     COMPUTED,
@@ -638,9 +640,24 @@ def test_a_scalar_over_int_has_no_value_between_two_integers() -> None:
 def test_two_facts_told_apart_by_complementary_relations_are_proven_exclusive(
     proof: Proof,
 ) -> None:
-    assert not coexist(Cheap, Dear, proof.classes)
-    assert coexist(Cheap, Cheap, proof.classes)
-    assert coexist(FAULTS.AtOrUnder, FAULTS.Exactly, models(FAULTS))
+    (valued,) = (e for e in proof.exclusions if e.construction.cls is Concluded)
+    placed = {c.cls: c for c in proof.constructs(Operation)}
+    assert (valued.field, valued.left, valued.right) == (
+        "valued",
+        ConstructedRef(placed[Cheap]),
+        ConstructedRef(placed[Dear]),
+    )
+    assert valued.established
+    assert [c.why for c in valued.joint.clashes] == ["ordering"]
+    assert valued.joint.clashes[0].among == (
+        ConstructedRef(placed[High]),
+        ConstructedRef(placed[Low]),
+    )
+    assert all(e.contradicted is False for e in proof.existences)
+    faults = symbolic(FAULTS.Operation, models(FAULTS))
+    either = {(e.left.cls, e.right.cls): e for e in exclusions(faults.constructions)}
+    assert not either[FAULTS.AtOrUnder, FAULTS.Exactly].established
+    assert either[FAULTS.Priced, FAULTS.Free].established
 
 
 def test_the_proof_refuses_every_fault_at_once() -> None:
@@ -1193,9 +1210,27 @@ def test_an_unknown_interval_proves_nothing_exclusive_and_omits_the_never_diagno
     class Shifty(Fact):
         over: AboveShifted
 
-    classes_ = (Floor, Ceiling, Shifted, Count, BelowFloor, AboveCeiling, AboveShifted)
-    assert not coexist(Lesser, Greater, (*classes_, Lesser, Greater))
-    assert coexist(Lesser, Shifty, (*classes_, Lesser, Shifty))
+    count, floor = (
+        InputRef((), ("request", "count"), Count),
+        InputRef((), ("request", "floor"), Floor),
+    )
+    ceiling = InputRef((), ("request", "ceiling"), Ceiling)
+    shifted = InputRef((), ("request", "shifted"), Shifted)
+    below = Construction(Operation, BelowFloor, (), {"value": (count,), "bound": (floor,)})
+    above = Construction(Operation, AboveCeiling, (), {"value": (count,), "bound": (ceiling,)})
+    beyond = Construction(Operation, AboveShifted, (), {"value": (count,), "bound": (shifted,)})
+    lesser = ConstructedRef(
+        Construction(Operation, Lesser, (), {"under": (ConstructedRef(below),)})
+    )
+    greater = ConstructedRef(
+        Construction(Operation, Greater, (), {"over": (ConstructedRef(above),)})
+    )
+    shifty = ConstructedRef(
+        Construction(Operation, Shifty, (), {"over": (ConstructedRef(beyond),)})
+    )
+    assert joint((lesser, greater)).impossible
+    assert [c.why for c in joint((lesser, greater)).clashes] == ["bounds"]
+    assert not joint((lesser, shifty)).impossible
     assert never(AboveCeiling) is None
     assert never(AboveShifted) is None
     assert interval(Shifted) == Unknown("function-after", ("model", "function-after"))
