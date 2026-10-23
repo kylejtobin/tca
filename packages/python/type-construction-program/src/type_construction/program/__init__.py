@@ -1,0 +1,123 @@
+"""A business program's declared external relationships, one invocation's recorded history, and
+an experimental pure evaluation of its next justified work.
+
+This package is the executable form of the contract validated under outcome 1 of ``TODO.md``:
+how business types declare where external evidence comes from, and what an evaluator derives
+from an invocation's history. ``declaration`` holds ``Source``, ``Correlation``, ``Interaction``
+and ``Program``. ``invocation`` holds the history entries, ``EffectIdentity``, and the protocol
+``accept``, ``admit``, ``intend``, ``perform``, ``acknowledge``, ``failed`` and ``uncertain``.
+``evaluation`` holds ``evaluate`` and its three results, ``Completed``, ``Frontier`` and
+``Blocked``.
+
+Nothing here is a durable host. The history is in memory, no worker owns it, and no experiment
+on it demonstrates recovery, concurrency or stale-commit rejection.
+"""
+
+from .declaration import Correlation, Interaction, Program, Source
+from .evaluation import (
+    AnsweredOtherwise,
+    Blocked,
+    Completed,
+    Evaluation,
+    Frontier,
+    Indeterminate,
+    Malformed,
+    Refutation,
+    Solicited,
+    Unclosed,
+    Unresolved,
+    Unsolicited,
+    evaluate,
+)
+from .invocation import (
+    Accepted,
+    Acknowledged,
+    Admitted,
+    Ambiguous,
+    Answered,
+    Attempted,
+    Closed,
+    Conflict,
+    Delivered,
+    Delivery,
+    DeliveryId,
+    Dispatch,
+    EffectIdentity,
+    Evidence,
+    Failed,
+    Intended,
+    Invocation,
+    InvocationId,
+    NotAccepted,
+    Refusal,
+    Returned,
+    Settled,
+    Uncertain,
+    Uncorrelated,
+    Unintended,
+    UnknownIntent,
+    Unmatched,
+    Unrecognized,
+    accept,
+    acknowledge,
+    admit,
+    failed,
+    intend,
+    perform,
+    uncertain,
+)
+
+__all__ = [
+    "Accepted",
+    "Acknowledged",
+    "Admitted",
+    "Ambiguous",
+    "Answered",
+    "AnsweredOtherwise",
+    "Attempted",
+    "Blocked",
+    "Closed",
+    "Completed",
+    "Conflict",
+    "Correlation",
+    "Delivered",
+    "Delivery",
+    "DeliveryId",
+    "Dispatch",
+    "EffectIdentity",
+    "Evaluation",
+    "Evidence",
+    "Failed",
+    "Frontier",
+    "Indeterminate",
+    "Intended",
+    "Interaction",
+    "Invocation",
+    "InvocationId",
+    "Malformed",
+    "NotAccepted",
+    "Program",
+    "Refusal",
+    "Refutation",
+    "Returned",
+    "Settled",
+    "Solicited",
+    "Source",
+    "Uncertain",
+    "Unclosed",
+    "Uncorrelated",
+    "Unintended",
+    "UnknownIntent",
+    "Unmatched",
+    "Unrecognized",
+    "Unresolved",
+    "Unsolicited",
+    "accept",
+    "acknowledge",
+    "admit",
+    "evaluate",
+    "failed",
+    "intend",
+    "perform",
+    "uncertain",
+]

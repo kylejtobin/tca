@@ -21,13 +21,17 @@ class Order(Value):
     id: OrderId
     total: Total
 
+
 class PaymentCaptured(Record):
     """What the provider says, under the provider's names."""
+
     order: OrderId = Field(alias="order_id")
     amount: Paid
 
+
 class Covers(AtLeast[Paid, Total]):
     """The payment is at least the total."""
+
 
 class ShippingAuthority(Fact):
     order: Order

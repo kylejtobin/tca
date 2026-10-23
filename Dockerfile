@@ -21,6 +21,7 @@ WORKDIR /workspace
 
 COPY --chown=dev:dev pyproject.toml uv.lock README.md ./
 COPY --chown=dev:dev packages/python/type-construction-world/pyproject.toml packages/python/type-construction-world/
+COPY --chown=dev:dev packages/python/type-construction-program/pyproject.toml packages/python/type-construction-program/
 RUN --mount=type=cache,target=/home/dev/.cache/uv,uid=${UID},gid=${GID} \
     uv sync --frozen --all-packages --no-install-workspace
 
