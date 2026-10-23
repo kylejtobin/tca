@@ -25,19 +25,15 @@ from type_construction.engine import (
     HeardRef,
     InputRef,
     Occurrence,
-    Proof,
     Run,
     Scope,
     Unfilled,
     answer,
-    conditions,
     config,
     construct,
-    models,
     proven,
     ran,
     refused,
-    symbolic,
 )
 from type_construction.world import Python
 
@@ -274,15 +270,18 @@ def test_a_fixed_tuple_refuses_the_wrong_count_at_the_request() -> None:
     ]
 
 
-def test_an_optional_field_is_not_evidence_for_a_reply_that_needs_it() -> None:
-    with pytest.raises(ValidationError) as refusal:
-        proven(optional)
-    found = {(e["type"], e["loc"]): e["msg"] for e in refusal.value.errors()}
-    assert set(found) == {("conditional", ("Checkout",))}
-    assert found["conditional", ("Checkout",)] == (
-        "Checkout answers only when Quote.heard.coupon arrives, and what declares it admits its"
-        " absence; an absence the business concludes from is a class"
-    )
+def test_a_route_that_needs_optional_evidence_is_proven_and_answers_only_with_it() -> None:
+    proof = proven(optional)
+    assert proof.faulted == ()
+    assert {c.cls for c in proof.constructs(optional.Checkout)} >= {
+        optional.Quote,
+        optional.Discount,
+        optional.Discounted,
+        optional.OrderDiscounted,
+        optional.Checkout,
+    }
+    assert all(e.established for e in proof.exclusions)
+    assert not any(x.contradicted for x in proof.existences)
 
 
 @pytest.mark.asyncio
@@ -316,12 +315,8 @@ def test_a_fixed_pair_does_not_bind_to_a_collection_of_any_number() -> None:
     )
 
 
-def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions() -> None:
-    with pytest.raises(ValidationError) as refusal:
-        proven(optional)
-    (error,) = refusal.value.errors()
-    assert (error["type"], error["loc"]) == ("conditional", ("Checkout",))
-    placed = {c.cls: c for c in symbolic(optional.Checkout, models(optional)).constructions}
+def test_conditional_evidence_is_carried_on_the_reference_through_a_chain() -> None:
+    placed = {c.cls: c for c in proven(optional).constructs(optional.Checkout)}
     assert placed[optional.Discount].premises["coupon"] == (
         HeardRef(
             placed[optional.Quote],
@@ -331,9 +326,6 @@ def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions
             because=(("Quote", "heard", "coupon"),),
         ),
     )
-    assert conditions(placed[optional.Discount]) == (("Quote", "heard", "coupon"),)
-    assert conditions(placed[optional.Checkout]) == (("Quote", "heard", "coupon"),)
-    assert conditions(placed[optional.Quote]) == ()
     assert placed[optional.Discounted].premises["discount"] == (
         ConstructedRef(placed[optional.Discount]),
     )
@@ -347,15 +339,8 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    found = symbolic(optional.Checkout, models(optional))
-    unproven = Proof.model_construct(
-        program=optional.__name__,
-        classes=models(optional),
-        constructions=tuple(found.constructions),
-        waiting=(),
-        faulted=(),
-    )
-    placed = {c.cls: c for c in found.constructions}
+    unproven = proven(optional)
+    placed = {c.cls: c for c in unproven.constructs(optional.Checkout)}
     request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
     monkeypatch.setenv("PARTY__SAYS", '{"amount": "5", "coupon": "TEN"}')
     done = await ran(optional.Checkout, request, config(optional)(), unproven)

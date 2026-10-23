@@ -37,14 +37,16 @@ constructions, what was left waiting and the faults; its validator refuses the p
 ``ValidationError`` naming every fault: ``missing``, a field no occurrence fills; ``collects``,
 a tuple over a class no collection's elements hold; ``unplaceable``, a class whose fields are
 never visible from one scope; ``cycle``, classes that wait on each other; ``route``, a route
-whose reply exists per element; ``conditional``, a route that answers only when an optional
-field arrives; ``ambiguous``, two alternatives at one field not proven never both available;
-``unreached``, a class the reply of no route leads to; ``unmodeled``, a field that names no
-kind; ``boundary``, a request that holds what does not arrive; ``config``, no one deployment;
-``never``, a relation its operands' intervals make certain or impossible, or a construction
-whose premises are never all available together; ``undiscriminated``, two records one action
-hears that no field tells apart; ``undecided``, an action performed when one alternative of a
-choice is available and never when the other is, whose own premises do not exclude the other.
+whose reply exists per element; ``ambiguous``, two alternatives at one field not proven never
+both available; ``unreached``, a class the reply of no route leads to; ``unmodeled``, a field
+that names no kind; ``boundary``, a request that holds what does not arrive; ``config``, no one
+deployment; ``never``, a relation its operands' intervals make certain or impossible, or a
+construction whose premises are never all available together; ``undiscriminated``, two records
+one action hears that no field tells apart; ``undecided``, an action performed when one
+alternative of a choice is available and never when the other is, whose own premises do not
+exclude the other. Every fault is a structural invariant of the declarations or a contradiction
+the analysis establishes; that an admitted request may find no reply is no fault, since a
+reply is conditional on evidence, and a run without it ends blocked.
 
 What the proof concludes of the constructions it reads from their references and nothing else.
 A world is one way several sources are all available in one scope: what arrives is there, what
@@ -64,11 +66,8 @@ between; a construction never constructs when every way its premises are all ava
 clashes. A way nothing refutes is open and establishes nothing: evidence of the same class at
 another site is another occurrence, a default is a default, and bounds that overlap do not say
 a run exists. A reference to a member an optional field declares carries the sites it is
-conditional on, and a route is conditional when, in the admitted invocation where every
-optional field is absent and every condition goes its way, no way constructs it: availability
-only grows as fields arrive, so that one invocation decides, and the sites absence reaches on
-the way are the condition. ``Proof`` keeps each exclusion and each existence with its ways and
-clashes.
+conditional on, which is where a run that lacks it is blocked. ``Proof`` keeps each exclusion
+and each existence with its ways and clashes.
 
 A construction binds each premise to references the proof retains from the declarations, one per
 candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrence the run
@@ -192,7 +191,6 @@ __all__ = [
     "clash",
     "classes",
     "collects",
-    "conditions",
     "config",
     "configs",
     "exclusions",
@@ -2019,7 +2017,6 @@ class Proof(BaseModel):
             *unmodeled(self),
             *boundary(self),
             *deployment(self),
-            *conditional(self),
             *certain(self),
             *impossible(self),
             *ambiguous(self),
@@ -2734,60 +2731,6 @@ def performers(source: Source) -> list[Construction]:
             found.append(s.construction)
         todo.extend(alternative for group in needs(s) for alternative in group)
     return sorted(found, key=lambda c: c.site)
-
-
-def absences(source: Source, pending: frozenset[Source]) -> frozenset[Site]:
-    """The optional sites whose absence alone keeps a source from being available: evaluated in
-    the one invocation Pydantic admits where every optional field is absent, every relation
-    holds and every action hears what is needed, since availability only grows as fields
-    arrive, so a source available there is available in every invocation, and one that is not
-    is kept from it by the sites of the references absence reaches. A reference is kept by its
-    own sites, a heard member by its action's too; a collection by its holder's and, for each
-    element scope, since an admissible input has elements, by what keeps every alternative
-    there; a construction by what keeps every alternative of any group it needs, nothing where
-    one alternative is available. A source reached again through what it needs keeps
-    nothing, as a conservative least claim."""
-    if source in pending:
-        return frozenset()
-    pending = pending | {source}
-    groups = needs(source)
-    found: frozenset[Site] = frozenset()
-    if isinstance(source, (InputRef, HeardRef)):
-        found = frozenset(source.because)
-    elif isinstance(source, Collected):
-        groups = [(source.holder,), *(g for step in source.every if (g := source.placed(step)))]
-    for group in groups:
-        kept = [absences(alternative, pending) for alternative in group]
-        if all(kept):
-            found = found.union(*kept)
-    return found
-
-
-def conditions(construction: Construction) -> tuple[Site, ...]:
-    """The sites of the optional fields a construction exists only when they arrive: those
-    whose absence together keeps it from constructing, in order; none for a construction some
-    alternative makes available whatever is absent."""
-    return tuple(sorted(absences(ConstructedRef(construction), frozenset())))
-
-
-def conditional(proof: Proof) -> list[InitErrorDetails]:
-    """One ``conditional`` error per route whose answer some absence of optional fields alone
-    keeps from constructing: an absence is not evidence, and a request the route admits may
-    carry the absence. A route some alternative answers whatever is absent is no fault, and a
-    relation refuting or an action hearing another record is the business's no, not this."""
-    return [
-        fault(
-            "conditional",
-            "{cls} answers only when {sites} {arrive}, and what declares it admits its absence;"
-            " an absence the business concludes from is a class",
-            (c.cls.__name__,),
-            cls=c.cls.__name__,
-            sites=", ".join(".".join(site) for site in found),
-            arrive="arrives" if len(found) == 1 else "arrive",
-        )
-        for c in proof.constructions
-        if is_route(c.cls) and (found := conditions(c))
-    ]
 
 
 def where(scope: Site) -> str:
