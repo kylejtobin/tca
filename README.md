@@ -23,39 +23,36 @@ A real business process is rarely one request. A payment is captured hours after
 
 TCA's target is that the declared types are the only account of the business. An invocation pursues an outcome and outlives any request, connection or process. While it waits for evidence it holds no open request. When the evidence arrives, it continues. After a crash it recovers without forgetting an external effect that already happened and without repeating it.
 
-## What a model looks like
+## What it should look like to build one
 
-Shipping an order needs a payment that covers it. That is two facts and one rule, and no step order:
+Take an order that ships only after a payment covers it. The developer declares the order, the payment as the provider reports it, the rule that the payment covers the total, and the outcome "shipped". They do not write the sequence. The rest of this README is what the framework is meant to guarantee for that one declaration. None of it is built yet.
 
-```python
-class Order(Value):
-    id: OrderId
-    total: Total
+- **The order is placed.** Nothing has paid, so the process waits. It holds no open request, connection or coroutine.
+- **The process dies.** It restarts and resumes the same invocation, on the same version of the program, with the same history.
+- **The payment callback arrives early.** It may land before the process has started waiting. It is kept, not lost.
+- **The same callback arrives twice.** It becomes one piece of evidence and one unit of work. A second callback with the same delivery identity but a different payload is flagged, not accepted.
+- **A callback arrives for a different order.** Matching field values is not enough. The source, tenant, order and version must match the declared relationship, or the callback is refused.
+- **The carrier accepts the shipment, then the write that records it fails.** The outcome is uncertain, not failed. The carrier's declared recovery policy decides whether to retry under the same identity, look the shipment up, or hold it as uncertain with no automatic retry. The shipment is not requested again by accident.
+- **A sibling step fails.** A shipment that already happened is not forgotten.
+- **The caller disconnects or cancels.** What was already done stays done.
 
-class PaymentCaptured(Record):
-    """What the provider says, under the provider's names."""
-    order: OrderId = Field(alias="order_id")
-    amount: Paid
+Each of these is a case in [`docs/REFACTOR_ACCEPTANCE.md`](docs/REFACTOR_ACCEPTANCE.md).
 
-class Covers(AtLeast[Paid, Total]):
-    """The payment is at least the total."""
+## What you declare, and what the framework owns
 
-class ShippingAuthority(Fact):
-    """The grounds to ship: the order, the payment, and that the payment covers it."""
-    order: Order
-    payment: PaymentCaptured
-    covered: Covers
-```
+| You declare | The framework owns |
+|---|---|
+| The values and the rules that must hold over them | Constructing only what the declared outcome needs |
+| The conclusions and the evidence each one needs | Admitting evidence and refusing what does not belong |
+| Which sources you trust, and how their evidence correlates to an invocation | Waiting, resuming and recovering across restarts |
+| The outcome you want | Deduplicating deliveries and giving each intended operation one identity |
+| How each external call is retried or reconciled | Recording uncertain outcomes and rejecting stale workers |
 
-`Covers` is the rule. Built from a payment of 50 and a total of 50 it constructs. Built from a payment of 20 and a total of 50 it is refused, and the refusal says which rule failed. A rule is a type that cannot be constructed with the wrong value.
-
-That is all the retained primitives establish. They do not yet bind that `Covers` to this order and this payment. As written, `ShippingAuthority` accepts a `Covers` that was built from any two amounts, and nothing checks that the payment names this order. Binding a conclusion's rule to the exact evidence it is made from is a requirement of the future engine, not something that runs today.
-
-The rest is target. The payment record arrives later from a webhook. It is accepted only if it came from the right provider, for this tenant and this order. A duplicate delivery changes nothing. The shipment is requested under one identity, so a retry or a recovery after a crash does not issue it twice. Whether the carrier ends up shipping once still depends on the carrier's idempotency or on reconciling its status afterward. None of that is written as a workflow.
+The left column is the business. The right column is what teams otherwise rewrite for every workflow. TCA's bet is that the left column is enough to derive the right.
 
 ## Where it stands
 
-- **Exists:** the value layer, in [`packages/python/type-construction-world`](packages/python/type-construction-world). Strict, frozen values, constrained scalars, records under a party's names, facts, computed values that cannot be forged, relations that refuse, and selections over finite tuples. Its tests pass. It cannot run a program.
+- **Exists:** the value layer, in [`packages/python/type-construction-world`](packages/python/type-construction-world). Strict, frozen values, constrained scalars, records under a party's names, facts, computed values that cannot be forged, relations that refuse, and selections over finite tuples. Its tests pass. It cannot run a program, so nothing in the list above runs yet.
 - **Removed:** the request-based engine, command line, HTTP package and demo. They remain in Git history as reference only.
 - **Not built:** evidence admission, invocations, waiting and recovery, external effects, and interfaces. The order is in [`TODO.md`](TODO.md).
 

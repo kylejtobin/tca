@@ -12,6 +12,31 @@ Retained declarative value and computation primitives, written as Pydantic class
 
 Every class is strict, frozen and refuses undeclared fields, except `Setting`, which accepts text.
 
+## A small model
+
+A payment that covers an order, using only the retained primitives:
+
+```python
+class Order(Value):
+    id: OrderId
+    total: Total
+
+class PaymentCaptured(Record):
+    """What the provider says, under the provider's names."""
+    order: OrderId = Field(alias="order_id")
+    amount: Paid
+
+class Covers(AtLeast[Paid, Total]):
+    """The payment is at least the total."""
+
+class ShippingAuthority(Fact):
+    order: Order
+    payment: PaymentCaptured
+    covered: Covers
+```
+
+`Covers` built from a payment of 50 and a total of 50 constructs. Built from 20 and 50 it is refused with `REFUTED`. Nothing here binds that `Covers` to the `order` and `payment` held by `ShippingAuthority`, or checks that the payment names that order. Those bindings are a requirement of the future engine.
+
 ## What is not here
 
 Invocation execution, evidence admission, persistence, external-system capabilities and interface projection are not implemented in this tree. The previous request-based engine, command line, HTTP package and demo were removed and remain in Git history as reference material only. The target architecture is in [`docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`](../../../docs/TCA_ARCHITECTURAL_FOUNDATIONS.md), and the behavior a replacement must meet is in [`docs/REFACTOR_ACCEPTANCE.md`](../../../docs/REFACTOR_ACCEPTANCE.md).
