@@ -33,6 +33,7 @@ from type_construction.engine import (
     Refuted,
     Run,
     Scope,
+    Unfilled,
     Unknown,
     clash,
     comparisons,
@@ -1514,3 +1515,186 @@ async def test_the_screened_order_runs_agree_with_every_established_exclusion(
         assert isinstance(done, Run)
         assert type(done.route.reply) is expected
         agreeing(proof, done.root)
+
+
+# --- conditional availability: absence alone, over alternatives and conjunctions ------------
+
+
+class Bonus(Scalar[str]):
+    """A bonus code the party may offer."""
+
+    root: str = Field(min_length=1)
+
+
+class Perked(Record):
+    """What the party says: the amount, and perhaps a coupon, and perhaps a bonus."""
+
+    amount: Amount
+    coupon: Coupon | None = None
+    bonus: Bonus | None = None
+
+
+class AskPerked(Action[Party, Perked]):
+    """Ask the party about one element, which may offer perks."""
+
+    element: Element
+
+    @override
+    async def perform(self) -> Json:
+        answers: dict[str, object] = json.loads(self.party.says.root)
+        return Json(json.dumps(answers[self.element.name.root]))
+
+
+class WithCoupon(Fact):
+    """An element with a coupon."""
+
+    element: Element
+    coupon: Coupon
+
+
+class WithBonus(Fact):
+    """An element with a bonus."""
+
+    element: Element
+    bonus: Bonus
+
+
+class CouponAgain(Fact):
+    """An element with the same coupon, held again."""
+
+    element: Element
+    coupon: Coupon
+
+
+class Perk(Fact):
+    """A coupon or a bonus: two optional sources, both of which the party may omit."""
+
+    element: Element
+    which: WithCoupon | WithBonus
+
+
+class PricedPerked(Fact):
+    """An element as the party quoted it: unconditional."""
+
+    element: Element
+    perked: Perked
+
+
+class Deal(Fact):
+    """A perk and the quote: a conjunction over a disjunction of optional evidence."""
+
+    element: Element
+    perk: Perk
+    priced: PricedPerked
+
+
+class Twice(Fact):
+    """The coupon through two facts: one source, shared."""
+
+    element: Element
+    first: WithCoupon
+    second: CouponAgain
+
+
+class Perks(Fact):
+    """Every element's deal and the coupon twice: a collection that may be empty, and whose
+    elements, when there are any, need what the party may omit."""
+
+    deals: tuple[Deal, ...]
+    twice: tuple[Twice, ...]
+
+
+class PerksReply(Reply[Perks]):
+    """What leaves."""
+
+
+class PerkOperation(Route[Elements, PerksReply]):
+    """Perk each element."""
+
+
+PERKED = program_of(
+    Name,
+    Element,
+    Elements,
+    Said,
+    Party,
+    Amount,
+    Coupon,
+    Bonus,
+    Perked,
+    AskPerked,
+    WithCoupon,
+    WithBonus,
+    CouponAgain,
+    Perk,
+    PricedPerked,
+    Deal,
+    Twice,
+    Perks,
+    PerksReply,
+    PerkOperation,
+    Deployment,
+)
+"""A route that answers only when the party offers a coupon or a bonus for every element."""
+
+COUPON = (*ELEMENT, "AskPerked", "heard", "coupon")
+BONUS = (*ELEMENT, "AskPerked", "heard", "bonus")
+"""The optional sites."""
+
+
+@pytest.mark.asyncio
+async def test_two_optional_sources_absent_together_make_a_route_conditional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    faults = faults_of(PERKED)
+    assert set(faults) == {("conditional", ("PerkOperation",)), ("ambiguous", ("Perk", "which"))}
+    assert faults["conditional", ("PerkOperation",)] == (
+        "PerkOperation answers only when request.each.[].AskPerked.heard.bonus,"
+        " request.each.[].AskPerked.heard.coupon arrive, and what declares it admits its"
+        " absence; an absence the business concludes from is a class"
+    )
+    proof = unproven(PERKED, PerkOperation)
+    found = by_class(proof)
+    assert conditions(found[WithCoupon]) == (COUPON,)
+    assert conditions(found[WithBonus]) == (BONUS,)
+    assert conditions(found[Perk]) == (BONUS, COUPON)
+    assert conditions(found[PricedPerked]) == ()
+    assert conditions(found[Deal]) == (BONUS, COUPON)
+    assert conditions(found[Twice]) == (COUPON,)
+    assert conditions(found[Perks]) == (BONUS, COUPON)
+    assert conditions(found[PerkOperation]) == (BONUS, COUPON)
+    treat = Construction(
+        PerkOperation,
+        Deal,
+        ELEMENT,
+        {
+            "element": found[Deal].premises["element"],
+            "which": (ConstructedRef(found[Perk]), ConstructedRef(found[PricedPerked])),
+        },
+    )
+    assert conditions(treat) == ()
+    (perks,) = joint((ConstructedRef(found[Perks]),)).open
+    assert not any(isinstance(s, ConstructedRef) and s.cls is Deal for s in perks)
+    monkeypatch.setenv("PARTY__SAYS", json.dumps({"a": {"amount": "5"}}))
+    blocked = await ran(PerkOperation, requested("a"), config(PERKED)(), proof)
+    assert isinstance(blocked, Blocked)
+    assert {
+        (c.occurrence.construction.cls, c.premise[0])
+        for c in blocked.causes
+        if isinstance(c, Unfilled)
+    } == {
+        (WithCoupon, "coupon"),
+        (WithBonus, "bonus"),
+        (CouponAgain, "coupon"),
+    }
+    monkeypatch.setenv("PARTY__SAYS", json.dumps({"a": {"amount": "5", "coupon": "TEN"}}))
+    done = await ran(PerkOperation, requested("a"), config(PERKED)(), proof)
+    assert isinstance(done, Run)
+    (deal,) = done.route.reply.of.deals
+    assert type(deal.perk.which) is WithCoupon
+    (twice,) = done.route.reply.of.twice
+    assert twice.first.coupon is twice.second.coupon
+    empty = await ran(PerkOperation, requested(), config(PERKED)(), proof)
+    assert isinstance(empty, Run)
+    assert empty.route.reply.of.deals == ()

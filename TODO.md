@@ -9,16 +9,7 @@ Not built, in order. The design for each is in `docs/decisions/`; the developer'
 
 ### Task 3: Runtime Construction and Execution Integrity - Done
 
-### Task 4: Route-Local Proof and Construction Soundness - Not Done
-
-Replace class-global proof reasoning with **occurrence-bound proof over the existing `Construction` graph**.
-
-- Prove required premises jointly, alternatives exclusively, and collections within their actual element scopes and cardinalities.
-- Bind conditions and constraints to their actual source references. Preserve conditional evidence without inventing facts from absence or refutation.
-- Derive proof conclusions from Pydantic's validated type semantics and occurrence-specific knowledge. Distinguish established, contradicted, and unproven.
-- Make symbolic proof and runtime construction agree. Remove class-global coexistence, reachability, and duplicated proof interpretations.
-
-**Outcome:** Each route has a sound proof of its construction possibilities, dependencies, and conditions, independent of infrastructure implementations.
+### Task 4: Route-Local Proof and Construction Soundness - Done
 
 ### Task 5: Occurrence-Bound Effect Authorization - Not Done
 
