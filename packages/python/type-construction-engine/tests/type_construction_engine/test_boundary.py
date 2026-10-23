@@ -156,7 +156,7 @@ def test_no_production_source_skips_validation() -> None:
     ]
     assert found == []
     engine = Path(inspect.getfile(type_construction.engine)).read_text()
-    assert engine.count("cls.model_validate(given)") == 1
+    assert engine.count("cls.model_validate(given, context=refusals)") == 1
     assert engine.count("adapter.validate_json(text, strict=True)") == 1
     assert engine.count("adapter.validate_python(data, strict=True)") == 1
     assert engine.count("await action.perform()") == 1
@@ -166,6 +166,7 @@ def test_no_production_source_skips_validation() -> None:
 READS = (
     "model_fields",
     "model_computed_fields",
+    "__pydantic_core_schema__",
     "__pydantic_generic_metadata__",
     "get_origin(",
     "get_args(",

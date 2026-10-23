@@ -47,7 +47,7 @@ stay strict; the call chooses the mode.
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
@@ -113,6 +113,7 @@ __all__ = [
     "Primitive",
     "Python",
     "Record",
+    "Refusals",
     "Refutable",
     "Relation",
     "Reply",
@@ -349,6 +350,15 @@ class Interval(NamedTuple):
     high_strict: bool = False
     """Whether the value is strictly below ``high``."""
 
+    @property
+    def empty(self) -> bool:
+        """Whether no value is in the interval: bounds that cross, or meet with either strict."""
+        if self.low is None or self.high is None:
+            return False
+        return self.low > self.high or (
+            self.low == self.high and (self.low_strict or self.high_strict)
+        )
+
 
 type Operand = Numeric | tuple[Numeric, ...]
 """What a computation reads from one operand field: a numeric, or a tuple of them."""
@@ -384,16 +394,39 @@ refusal whose every error is this type says only that the fact does not exist he
 error is a failure of the construction."""
 
 
+@dataclass(eq=False)
+class Refusals:
+    """What the declared conditions refused during one validation: the validation context a
+    construction passes to ``model_validate``, which Pydantic hands every validator as
+    ``info.context``. A condition that refuses notes itself here, with the field it validated,
+    and stamps its error with the number of that note, so the error is traced to the validator
+    that executed and to nothing raised anywhere else. Invocation-local: one per validation,
+    and nothing keeps it after."""
+
+    noted: list[tuple[str, Condition]] = field(default_factory=list)
+
+    def refusing(self, name: str, condition: Condition) -> int:
+        """A condition refusing at a field: its number in this validation."""
+        self.noted.append((name, condition))
+        return len(self.noted) - 1
+
+
 class Condition:
     """The one place a refutable kind's declared condition refuses: a field's schema adapter
     that lets Pydantic's own validation of the declared type, a ``Literal`` of orderings or a
-    tuple shape, admit or refuse what construction produced from validated operands, and names
-    that refusal ``REFUTED`` at the field. A kind that declares a condition field recognizes
-    its own refutation by that field, and by nothing raised anywhere else."""
+    tuple shape, admit or refuse what construction produced from validated operands. Its
+    refusal is ``REFUTED`` at the field, and, when the validation carries ``Refusals`` as its
+    context, noted there and stamped with the note's number. Pydantic's own error, its location
+    and its message are kept as raised."""
 
-    @staticmethod
-    def refused(message: LiteralString, **context: str | int) -> PydanticCustomError:
-        """The refusal of a declared condition over validated operands."""
+    def refused(
+        self, info: ValidationInfo, message: LiteralString, **context: str | int
+    ) -> PydanticCustomError:
+        """The refusal of this condition over validated operands, noted in the validation's
+        ``Refusals`` when it carries one."""
+        refusals, name = info.context, info.field_name
+        if isinstance(refusals, Refusals) and name is not None:
+            context["refusal"] = refusals.refusing(name, self)
         return PydanticCustomError(REFUTED, message, dict(context))
 
 
@@ -638,6 +671,7 @@ class Comparison(Computation, Condition):
         except ValidationError:
             observed = "{left} {sign} {right}"
             raise self.refused(
+                info,
                 observed,
                 left=self.left,
                 right=self.right,
@@ -650,32 +684,35 @@ class Comparison(Computation, Condition):
 
 class Refutable(Fact):
     """A fact that exists to refuse: a relation or a selection, whose refusal, when every error
-    is its own declared condition refusing, says only that the condition does not hold over
-    these operands, so the fact does not exist here. The kind owns that distinction: a
-    condition is a field whose metadata declares a ``Condition``, and a refutation is a refusal
-    whose every error is ``REFUTED`` at one of those fields and nowhere deeper. An operand that
-    did not construct, a value given for a computed field, or ``REFUTED`` raised by anything
-    that is not this kind's condition is a failure. The engine reads this through ``refuted``
-    and interprets no error itself."""
+    is one its own declared conditions raised, says only that the conditions do not hold over
+    these operands, so the fact does not exist here. The kind owns that distinction, and reads
+    it from the validation that executed: validated with ``Refusals`` as the context, each
+    condition that refused noted itself there and stamped its error; a refutation is a refusal
+    whose errors and notes correspond one to one, each error ``REFUTED`` at the noted field of
+    this class, raised by the ``Condition`` this class declares there. An operand that did not
+    construct, a value given for a computed field, ``REFUTED`` raised by any other validator,
+    at the condition's field or elsewhere, or a condition refusing deeper inside an operand, is
+    a failure. The engine reads this through ``refuted`` and interprets no error itself."""
 
     @classmethod
-    def conditions(cls) -> frozenset[str]:
-        """The fields this kind refuses by: those whose metadata declares a ``Condition``."""
-        return frozenset(
-            name
-            for name, info in cls.model_fields.items()
-            if any(isinstance(meta, Condition) for meta in info.metadata)
-        )
-
-    @classmethod
-    def refuted(cls, refusal: ValidationError) -> bool:
-        """Whether a refusal of this kind is its declared conditions not holding, and nothing
-        else."""
-        conditions = cls.conditions()
-        return all(
-            error["type"] == REFUTED and len(error["loc"]) == 1 and error["loc"][0] in conditions
-            for error in refusal.errors()
-        )
+    def refuted(cls, refusal: ValidationError, refusals: Refusals) -> bool:
+        """Whether a refusal of this kind, validated with ``refusals`` as its context, is its
+        declared conditions not holding, and nothing else."""
+        stamped: list[int] = []
+        for error in refusal.errors():
+            number = (error.get("ctx") or {}).get("refusal")
+            if error["type"] != REFUTED or not isinstance(number, int):
+                return False
+            if not 0 <= number < len(refusals.noted):
+                return False
+            name, condition = refusals.noted[number]
+            own = cls.model_fields.get(name)
+            if own is None or not any(meta is condition for meta in own.metadata):
+                return False
+            if tuple(error["loc"]) != (name,):
+                return False
+            stamped.append(number)
+        return sorted(stamped) == list(range(len(refusals.noted)))
 
 
 class Relation(Refutable):
@@ -822,18 +859,21 @@ class Shape(Condition):
         elements = handler.generate_schema(tuple[element, ...])
         declared = handler(source)
         return core_schema.chain_schema(
-            [elements, core_schema.no_info_wrap_validator_function(self.admitted, declared)]
+            [elements, core_schema.with_info_wrap_validator_function(self.admitted, declared)]
         )
 
     def admitted(
-        self, elements: tuple[object, ...], handler: ValidatorFunctionWrapHandler
+        self,
+        elements: tuple[object, ...],
+        handler: ValidatorFunctionWrapHandler,
+        info: ValidationInfo,
     ) -> object:
         """The validated elements admitted by the declared shape, or ``REFUTED``."""
         try:
             return handler(elements)
         except ValidationError as refusal:
             why, said = "; ".join(e["msg"] for e in refusal.errors()), "{why}"
-            raise self.refused(said, why=why, count=len(elements)) from None
+            raise self.refused(info, said, why=why, count=len(elements)) from None
 
 
 class Selection[E: BaseModel](Refutable):

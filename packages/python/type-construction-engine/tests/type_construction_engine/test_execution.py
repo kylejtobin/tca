@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequen
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any, TypeIs
+from typing import Annotated, Any, Literal, TypeIs
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
@@ -22,6 +22,7 @@ from type_construction.engine import (
     Constructed,
     ConstructedRef,
     Construction,
+    Given,
     HeardRef,
     InputRef,
     Occurrence,
@@ -39,7 +40,20 @@ from type_construction.engine import (
     scopes,
     symbolic,
 )
-from type_construction.world import REFUTED, AtMost, Connection, Json, Python, Record, Scalar
+from type_construction.world import (
+    COMPUTED,
+    REFUTED,
+    AtMost,
+    Comparison,
+    Connection,
+    Json,
+    Only,
+    Python,
+    Record,
+    Refusals,
+    Refutable,
+    Scalar,
+)
 
 from . import blockers, deadlock, fixed, stalls
 from . import occurrences as program
@@ -726,6 +740,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
                 "right_class": "Limit",
                 "sign": ">",
                 "ordering": 1,
+                "refusal": 0,
             },
         )
     ]
@@ -758,7 +773,11 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
         (
             "refuted",
             ("of",),
-            {"why": "Tuple should have at least 1 item after validation, not 0", "count": 0},
+            {
+                "why": "Tuple should have at least 1 item after validation, not 0",
+                "count": 0,
+                "refusal": 0,
+            },
         )
     ]
     for malformed_of in ({}, {"of": (valued.Limit(),)}):
@@ -787,7 +806,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
     refuted = construct(only, {"solo": solo, "of": ()})
     assert isinstance(refuted, ValidationError)
     assert [(e["type"], e["loc"], e.get("ctx")) for e in refuted.errors()] == [
-        ("refuted", ("of",), {"why": "Field required", "count": 0})
+        ("refuted", ("of",), {"why": "Field required", "count": 0, "refusal": 0})
     ]
     refuted = construct(only, {"solo": solo, "of": (total, total)})
     assert isinstance(refuted, ValidationError)
@@ -795,7 +814,11 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
         (
             "refuted",
             ("of",),
-            {"why": "Tuple should have at most 1 item after validation, not 2", "count": 2},
+            {
+                "why": "Tuple should have at most 1 item after validation, not 2",
+                "count": 2,
+                "refusal": 0,
+            },
         )
     ]
     assert isinstance(construct(only, {"solo": solo, "of": (total,)}), program.SoloTotal)
@@ -807,47 +830,80 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
 
 def forged(value: object, handler: ValidatorFunctionWrapHandler) -> object:
     """A validator that is not a declared condition yet raises the condition's error type."""
-    raise PydanticCustomError(REFUTED, "forged")
+    raise PydanticCustomError(REFUTED, "forged", {"refusal": 0})
+
+
+class Tagged(Scalar[str]):
+    """A tag a forged validator refuses."""
+
+    root: str = Field(min_length=1)
+
+
+class Forging(AtMost[stalls.Amount, stalls.Limit]):
+    """A relation with a field that forges the condition's error outside any condition."""
+
+    tag: Annotated[Tagged, WrapValidator(forged)]
+
+
+class Forger(Refutable):
+    """A refutable kind whose own condition field is wrapped by a validator forging the
+    condition's error at that very field, before the condition can run."""
+
+    value: stalls.Amount
+    bound: stalls.Limit
+    ordering: Annotated[Literal[-1, 0], Comparison(("value", "bound")), WrapValidator(forged)] = (
+        Field(default=COMPUTED, exclude=True)
+    )
+
+
+def refusal_of(cls: type[Refutable], given: Given) -> tuple[ValidationError, Refusals]:
+    """A refutable kind's refusal of what was given, validated with its own refusals record."""
+    refusals = Refusals()
+    with pytest.raises(ValidationError) as refusal:
+        cls.model_validate(given, context=refusals)
+    return refusal.value, refusals
 
 
 def test_a_refutation_is_only_what_the_kinds_own_conditions_refuse() -> None:
-    class Tagged(Scalar[str]):
-        """A tag a forged validator refuses."""
-
-        root: str = Field(min_length=1)
-
-    class Forging(AtMost[stalls.Amount, stalls.Limit]):
-        """A relation with a field that forges the condition's error outside any condition."""
-
-        tag: Annotated[Tagged, WrapValidator(forged)]
-
-    assert Forging.conditions() == {"ordering"}
-    with pytest.raises(ValidationError) as refusal:
-        Forging.model_validate(
-            {"value": stalls.Amount(Decimal(1)), "bound": stalls.Limit(), "tag": Tagged("t")}
-        )
-    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("refuted", ("tag",))]
-    assert not Forging.refuted(refusal.value)
-    with pytest.raises(ValidationError) as refusal:
-        Forging.model_validate(
-            {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit(), "tag": Tagged("t")}
-        )
-    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
+    held: Given = {"value": stalls.Amount(Decimal(1)), "bound": stalls.Limit()}
+    over: Given = {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit()}
+    refusal, refusals = refusal_of(Forging, {**held, "tag": Tagged("t")})
+    assert [(e["type"], e["loc"]) for e in refusal.errors()] == [("refuted", ("tag",))]
+    assert refusals.noted == []
+    assert not Forging.refuted(refusal, refusals)
+    refusal, refusals = refusal_of(Forging, {**over, "tag": Tagged("t")})
+    assert [(e["type"], e["loc"]) for e in refusal.errors()] == [
         ("refuted", ("ordering",)),
         ("refuted", ("tag",)),
     ]
-    assert not Forging.refuted(refusal.value)
+    assert [name for name, _ in refusals.noted] == ["ordering"]
+    assert not Forging.refuted(refusal, refusals)
+    refusal, refusals = refusal_of(Forger, over)
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refusal.errors()] == [
+        ("refuted", ("ordering",), {"refusal": 0})
+    ]
+    assert refusals.noted == []
+    assert not Forger.refuted(refusal, refusals)
+    refusal, refusals = refusal_of(stalls.Low, over)
+    assert [name for name, _ in refusals.noted] == ["ordering"]
+    assert stalls.Low.refuted(refusal, refusals)
+    assert not stalls.Low.refuted(refusal, Refusals())
+    refusal, refusals = refusal_of(stalls.Low, {"value": stalls.Limit(), "bound": stalls.Limit()})
+    assert [e["type"] for e in refusal.errors()] == ["is_instance_of", "uncomputed"]
+    assert refusals.noted == []
+    assert not stalls.Low.refuted(refusal, refusals)
     forging = Occurrence(Scope((), (), None), Construction(stalls.Operation, Forging, ()))
     with pytest.raises(ValidationError) as failure:
-        construct(
-            forging,
-            {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit(), "tag": Tagged("t")},
-        )
+        construct(forging, {**over, "tag": Tagged("t")})
     assert failure.value.__notes__ == ["at Forging"]
+    forger = Occurrence(Scope((), (), None), Construction(stalls.Operation, Forger, ()))
+    with pytest.raises(ValidationError) as failure:
+        construct(forger, over)
+    assert failure.value.__notes__ == ["at Forger"]
     cheap = Occurrence(Scope((), (), None), Construction(stalls.Operation, stalls.Cheap, ()))
     nested: dict[str, object] = {
         "element": stalls.Element(name=stalls.Name("a")),
-        "low": {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit()},
+        "low": dict(over),
     }
     with pytest.raises(ValidationError) as failure:
         construct(cheap, nested)  # type: ignore[arg-type]
@@ -855,6 +911,21 @@ def test_a_refutation_is_only_what_the_kinds_own_conditions_refuse() -> None:
         ("refuted", ("low", "ordering"))
     ]
     assert failure.value.__notes__ == ["at Cheap"]
+
+
+class Sole(Only[stalls.Element]):
+    """One element, chosen among elements."""
+
+
+def test_a_mixed_refusal_is_a_failure_and_a_pure_one_a_refutation() -> None:
+    elements = (stalls.Element(name=stalls.Name("a")), stalls.Element(name=stalls.Name("b")))
+    refusal, refusals = refusal_of(Sole, {"of": elements})
+    assert [e["type"] for e in refusal.errors()] == ["refuted"]
+    assert Sole.refuted(refusal, refusals)
+    refusal, refusals = refusal_of(Sole, {"of": (stalls.Name("a"),)})
+    assert [e["type"] for e in refusal.errors()] == ["model_type"]
+    assert refusals.noted == []
+    assert not Sole.refuted(refusal, refusals)
 
 
 @pytest.mark.asyncio

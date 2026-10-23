@@ -13,14 +13,23 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
-from typing import Literal, override
+from typing import Annotated, Literal, override
 
 import pytest
+from annotated_types import Ge, Gt, Le, Len, Lt, MinLen
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from pydantic import Field, PrivateAttr, ValidationError, computed_field
+from pydantic import (
+    AliasChoices,
+    AliasPath,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    computed_field,
+)
 from pydantic_core import PydanticSerializationError
 
 from type_construction.engine import (
@@ -411,9 +420,9 @@ def test_a_declaration_is_read_through_one_view(proof: Proof) -> None:
     assert declared(Heard, "parts").is_tuple
     assert [f.name for f in fields(Low)] == ["value", "bound", "ordering"]
     assert declared(Amount, "root").bounds == Interval(low=Decimal(0), low_strict=True)
-    assert declared(Low, "ordering").condition is not None
-    assert Low.conditions() == {"ordering"}
-    assert Largest.conditions() == {"of"}
+    assert [f.name for f in fields(Low) if f.condition is not None] == ["ordering"]
+    assert [f.name for f in fields(Largest) if f.condition is not None] == ["of"]
+    assert declared(Only[Element], "of").condition is not None
     assert Cheap.model_fields.keys() == {f.name for f in fields(Cheap)}
     assert proof.constructs(Operation)
     assert proof.sites(Operation, Portion) == ((*PART, "Portion"),)
@@ -904,3 +913,150 @@ async def test_a_replys_word_that_refuses_refuses_when_the_reply_is_serialized(
     with pytest.raises(PydanticSerializationError, match="less_than_equal") as refusal:
         done.model_dump_json()
     assert "1 validation error for Capped" in str(refusal.value)
+
+
+def accepted(cls: type[Scalar[int]], values: range) -> list[int]:
+    """The integers among a range Pydantic admits for a scalar."""
+    found: list[int] = []
+    for v in values:
+        try:
+            cls(v)
+        except ValidationError:
+            continue
+        found.append(v)
+    return found
+
+
+def within(interval: Interval, v: int) -> bool:
+    """Whether an integer lies in an interval."""
+    low_ok = interval.low is None or (
+        v > interval.low if interval.low_strict else v >= interval.low
+    )
+    high_ok = interval.high is None or (
+        v < interval.high if interval.high_strict else v <= interval.high
+    )
+    return low_ok and high_ok and not interval.empty
+
+
+@pytest.mark.parametrize(
+    ("declaration", "reversed_", "expected"),
+    [
+        ((Gt(0), Ge(5)), (Ge(5), Gt(0)), Interval(low=Decimal(5))),
+        ((Gt(4), Ge(5)), (Ge(5), Gt(4)), Interval(low=Decimal(5))),
+        ((Gt(5), Ge(5)), (Ge(5), Gt(5)), Interval(low=Decimal(6))),
+        ((Lt(10), Le(10)), (Le(10), Lt(10)), Interval(high=Decimal(9))),
+        ((Lt(10), Le(7)), (Le(7), Lt(10)), Interval(high=Decimal(7))),
+        ((Ge(3), Le(3)), (Le(3), Ge(3)), Interval(low=Decimal(3), high=Decimal(3))),
+        ((Gt(5), Lt(3)), (Lt(3), Gt(5)), Interval(low=Decimal(6), high=Decimal(2))),
+    ],
+)
+def test_bounds_are_what_pydantic_validates_whatever_the_order_of_the_constraints(
+    declaration: tuple[object, ...], reversed_: tuple[object, ...], expected: Interval
+) -> None:
+    class Forward(Scalar[int]):
+        root: Annotated[int, *declaration]
+
+    class Backward(Scalar[int]):
+        root: Annotated[int, *reversed_]
+
+    found = declared(Forward, "root").bounds
+    assert found == declared(Backward, "root").bounds == expected
+    assert interval(Forward) == interval(Backward) == expected
+    for cls in (Forward, Backward):
+        for v in range(-3, 15):
+            assert within(found, v) == (v in accepted(cls, range(-3, 15))), (cls, v)
+
+
+def test_a_repeated_constraint_keeps_what_pydantic_keeps_and_never_narrows_past_it() -> None:
+    class LastWins(Scalar[int]):
+        root: Annotated[int, Gt(3), Gt(0)]
+
+    class FirstGone(Scalar[int]):
+        root: Annotated[int, Gt(0), Gt(3)]
+
+    for cls in (LastWins, FirstGone):
+        found = declared(cls, "root").bounds
+        admitted = accepted(cls, range(-2, 8))
+        assert [v for v in range(-2, 8) if within(found, v)] == admitted
+    assert declared(LastWins, "root").bounds == Interval(low=Decimal(1))
+    assert declared(FirstGone, "root").bounds == Interval(low=Decimal(4))
+
+
+def test_a_contradictory_scalar_is_empty_and_a_relation_over_it_never_holds() -> None:
+    class Nothing(Scalar[Decimal]):
+        root: Decimal = Field(gt=5, lt=3)
+
+    class Strict(Scalar[Decimal]):
+        root: Decimal = Field(gt=3, le=3)
+
+    class Over(Beyond[Nothing, Limit]):
+        """A relation over a scalar no value satisfies."""
+
+    assert interval(Nothing).empty
+    assert interval(Strict).empty
+    assert not interval(Amount).empty
+    assert outcomes(interval(Nothing), interval(Limit)) == frozenset()
+    assert never(Over) == "holds"
+    with pytest.raises(ValidationError):
+        Nothing(Decimal(4))
+    with pytest.raises(ValidationError):
+        Strict(Decimal(3))
+
+
+def test_a_decimal_bound_keeps_its_strictness_and_a_width_constraint_only_widens() -> None:
+    class Open(Scalar[Decimal]):
+        root: Decimal = Field(gt=Decimal("0.5"), lt=Decimal("2.5"))
+
+    class Stepped(Scalar[Decimal]):
+        root: Decimal = Field(ge=0, le=10, multiple_of=3)
+
+    assert declared(Open, "root").bounds == Interval(
+        low=Decimal("0.5"), low_strict=True, high=Decimal("2.5"), high_strict=True
+    )
+    assert declared(Stepped, "root").bounds == Interval(low=Decimal(0), high=Decimal(10))
+    assert Stepped(Decimal(9)).root == 9
+    with pytest.raises(ValidationError):
+        Stepped(Decimal(8))
+
+
+def test_a_length_is_what_the_resolved_tuple_schema_admits() -> None:
+    class Few(Fact):
+        of: Annotated[tuple[Element, ...], Len(2, 4)]
+
+    class LastLength(Fact):
+        of: Annotated[tuple[Element, ...], MinLen(3), MinLen(1)]
+
+    class Pair(Fact):
+        of: tuple[Element, Element]
+
+    assert declared(Few, "of").length == (2, 4)
+    assert declared(LastLength, "of").length == (1, None)
+    assert LastLength(of=(Element(name=Name("a")),)).of
+    assert declared(Pair, "of").length == (2, 2)
+    assert declared(Largest, "of").length == (1, None)
+    assert declared(Only[Element], "of").length == (1, 1)
+    assert declared(Elements, "each").length == (0, None)
+
+
+def test_a_records_keys_are_every_alias_pydantic_accepts() -> None:
+    class Chosen(Record):
+        """A record naming one field by several keys and another by a nested path."""
+
+        amount: Amount = Field(validation_alias=AliasChoices("amount", "amt"))
+        word: Word = Field(validation_alias=AliasPath("data", "word"))
+        plain: Name
+
+    class Named(Record):
+        """A record that validates by field name as well as by alias."""
+
+        model_config = ConfigDict(validate_by_name=True, validate_by_alias=True)
+        amount: Amount = Field(alias="total")
+
+    assert declared(Chosen, "amount").aliases == {"amount", "amt"}
+    assert declared(Chosen, "amount").required_key is None
+    assert declared(Chosen, "word").aliases == {"data"}
+    assert declared(Chosen, "word").required_key == "data"
+    assert declared(Chosen, "plain").required_key == "plain"
+    assert declared(Named, "amount").aliases == {"total", "amount"}
+    assert declared(Named, "amount").required_key is None
+    assert Chosen.model_validate({"amt": Decimal(1), "data": {"word": "w"}, "plain": "p"}).word

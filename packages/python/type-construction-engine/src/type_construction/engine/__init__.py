@@ -84,16 +84,34 @@ from asyncio import CancelledError, Task, TaskGroup
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import Enum
 from itertools import combinations, product
 from types import MappingProxyType, ModuleType, NoneType, UnionType
-from typing import Literal, LiteralString, NamedTuple, Self, TypeIs, Union, get_args, get_origin
+from typing import (
+    Literal,
+    LiteralString,
+    NamedTuple,
+    Self,
+    TypeIs,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
-from annotated_types import Ge, Gt, Le, Lt, MaxLen, MinLen
 from opentelemetry import trace
 from opentelemetry.trace import Span
-from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, ValidationError, model_validator
+from pydantic import (
+    AliasChoices,
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    RootModel,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefined
 
@@ -110,6 +128,7 @@ from type_construction.world import (
     Json,
     Python,
     Record,
+    Refusals,
     Refutable,
     Relation,
     Reply,
@@ -583,9 +602,50 @@ class Declared:
         return self.info.is_required()
 
     @property
-    def alias(self) -> str:
-        """The name the field validates by."""
-        return str(self.info.validation_alias or self.info.alias or self.name)
+    def aliases(self) -> frozenset[str]:
+        """Every top-level key the field validates by, as Pydantic resolves it: the validation
+        alias, each choice of an ``AliasChoices``, the first step of an ``AliasPath``, and the
+        field's name when the class validates by name or declares no alias."""
+        declared_ = self.info.validation_alias or self.info.alias
+        choices = declared_.choices if isinstance(declared_, AliasChoices) else [declared_]
+        found = {
+            str(choice.path[0]) if isinstance(choice, AliasPath) else choice
+            for choice in choices
+            if isinstance(choice, (str, AliasPath))
+        }
+        by_name = self.cls.model_config.get("validate_by_name") or self.cls.model_config.get(
+            "populate_by_name"
+        )
+        if declared_ is None or by_name:
+            found.add(self.name)
+        return frozenset(found)
+
+    @property
+    def required_key(self) -> str | None:
+        """The one key a payload must carry for this field, when it is required and validates
+        by exactly one key; ``None`` when any of several keys would do, which no static
+        conclusion rests on."""
+        keys_ = self.aliases
+        return next(iter(keys_)) if self.required and len(keys_) == 1 else None
+
+    @property
+    def schema(self) -> Mapping[str, object]:
+        """The field's resolved core schema, as Pydantic built it for the class: what validates,
+        beneath any default, nullable, function or chain wrapper, a definition reference
+        resolved. The one source of the constraints Pydantic applies, since a repeated
+        constraint keeps the last declared and distinct constraints all apply."""
+        top: Mapping[str, object] = self.cls.__pydantic_core_schema__
+        definitions: dict[object, Mapping[str, object]] = {}
+        if top.get("type") == "definitions":
+            definitions = {d.get("ref"): d for d in listed(top.get("definitions"))}
+            top = mapped(top.get("schema"))
+        model = unwrapped(top, definitions)
+        if model.get("root_model"):
+            found = mapped(model.get("schema"))
+        else:
+            fields_ = mapped(unwrapped(mapped(model.get("schema")), definitions).get("fields"))
+            found = mapped(mapped(fields_.get(self.name)).get("schema"))
+        return unwrapped(found, definitions)
 
     @property
     def computation(self) -> Computation | None:
@@ -618,43 +678,105 @@ class Declared:
 
     @property
     def length(self) -> tuple[int, int | None]:
-        """How many elements a tuple admits: a fixed tuple's positions twice, else its
-        ``min_length`` and ``max_length``."""
-        if self.fixed:
-            return len(self.items), len(self.items)
-        low, high = 0, None
-        for meta in self.info.metadata:
-            match meta:
-                case MinLen(min_length=n):
-                    low = n
-                case MaxLen(max_length=n):
-                    high = n
-                case _:
-                    pass
-        return low, high
+        """How many elements the field's resolved tuple schema admits: a fixed tuple's
+        positions twice, else its ``min_length`` and ``max_length`` as Pydantic validates
+        them; unbounded for a schema that is no tuple."""
+        schema = self.schema
+        if schema.get("type") != "tuple":
+            return 0, None
+        if schema.get("variadic_item_index") is None:
+            positions = len(listed(schema.get("items_schema")))
+            return positions, positions
+        low, high = schema.get("min_length"), schema.get("max_length")
+        return (low if isinstance(low, int) else 0, high if isinstance(high, int) else None)
 
     @property
     def bounds(self) -> Interval:
-        """The interval the ``gt``, ``ge``, ``lt`` and ``le`` metadata declare. A field over
-        ``int`` has no value between two integers, so its strict bounds are the next integer's
-        non-strict ones."""
-        whole = self.annotation is int
-        found = Interval()
-        for meta in self.info.metadata:
-            match meta:
-                case Gt(gt=int() | float() | Decimal() as v):
-                    low = Decimal(str(v))
-                    found = found._replace(low=low + 1 if whole else low, low_strict=not whole)
-                case Ge(ge=int() | float() | Decimal() as v):
-                    found = found._replace(low=Decimal(str(v)), low_strict=False)
-                case Lt(lt=int() | float() | Decimal() as v):
-                    high = Decimal(str(v))
-                    found = found._replace(high=high - 1 if whole else high, high_strict=not whole)
-                case Le(le=int() | float() | Decimal() as v):
-                    found = found._replace(high=Decimal(str(v)), high_strict=False)
-                case _:
-                    pass
-        return found
+        """The interval the field's resolved numeric schema admits: ``gt`` and ``ge`` both
+        apply, so the lower bound is the stronger, strict when the strict one is at least the
+        other; ``lt`` and ``le`` likewise above. An integer schema has no value between two
+        integers, so a strict bound is the next integer's non-strict one. Bounds that cross
+        are an empty interval. A schema that is not numeric, or a constraint the interval
+        cannot represent, leaves the interval wider, never narrower: ``multiple_of`` and the
+        decimal digit limits only remove values from within it."""
+        schema = self.schema
+        if schema.get("type") not in ("int", "float", "decimal"):
+            return Interval()
+        whole = schema.get("type") == "int"
+        low = strongest(
+            [(decimal(schema.get("gt")), True), (decimal(schema.get("ge")), False)], above=True
+        )
+        high = strongest(
+            [(decimal(schema.get("lt")), True), (decimal(schema.get("le")), False)], above=False
+        )
+        if whole:
+            low = low and (low[0].to_integral_value(ROUND_FLOOR) + 1 if low[1] else low[0], False)
+            high = high and (
+                high[0].to_integral_value(ROUND_CEILING) - 1 if high[1] else high[0],
+                False,
+            )
+        return Interval(
+            low=low and low[0],
+            low_strict=bool(low and low[1]),
+            high=high and high[0],
+            high_strict=bool(high and high[1]),
+        )
+
+
+def mapped(schema: object) -> Mapping[str, object]:
+    """A core schema node as a mapping; an absent node is empty."""
+    return cast("Mapping[str, object]", schema) if isinstance(schema, Mapping) else {}
+
+
+def listed(schemas: object) -> list[Mapping[str, object]]:
+    """A core schema's list of nodes; an absent list is empty."""
+    return [mapped(s) for s in cast("list[object]", schemas)] if isinstance(schemas, list) else []
+
+
+WRAPPERS = frozenset(
+    {"default", "nullable", "function-wrap", "function-after", "function-before", "model"}
+)
+"""Core schema nodes that wrap the schema that validates the value: a default, ``None``
+admitted, a validator function around it, or the model around its fields."""
+
+
+def unwrapped(
+    schema: Mapping[str, object], definitions: Mapping[object, Mapping[str, object]]
+) -> Mapping[str, object]:
+    """The core schema beneath every wrapper: a definition reference resolved, a chain's last
+    step, a wrapper's inner schema; a model node is returned as is, since it is the root model
+    or the fields that are wanted of it."""
+    while True:
+        kind_ = schema.get("type")
+        if kind_ == "definition-ref":
+            schema = definitions.get(schema.get("schema_ref"), {})
+        elif kind_ == "chain":
+            steps = listed(schema.get("steps"))
+            schema = steps[-1] if steps else {}
+        elif kind_ in WRAPPERS and kind_ != "model":
+            schema = mapped(schema.get("schema"))
+        else:
+            return schema
+
+
+def decimal(bound: object) -> Decimal | None:
+    """A numeric constraint of a core schema as a ``Decimal``; ``None`` for none."""
+    return Decimal(str(bound)) if isinstance(bound, (int, float, Decimal)) else None
+
+
+type Endpoint = tuple[Decimal, bool]
+"""One end of an interval: the bound and whether it is strict."""
+
+
+def strongest(candidates: list[tuple[Decimal | None, bool]], *, above: bool) -> Endpoint | None:
+    """The bound that constrains most among those declared: the greatest lower bound or the
+    least upper bound, strict when a strict candidate is at least as constraining as the
+    other; ``None`` when none is declared."""
+    found = [(v, strict) for v, strict in candidates if v is not None]
+    if not found:
+        return None
+    best = max(v for v, _ in found) if above else min(v for v, _ in found)
+    return best, any(strict for v, strict in found if v == best)
 
 
 def fields(cls: type[BaseModel]) -> tuple[Declared, ...]:
@@ -1658,6 +1780,9 @@ def hull(intervals: Iterable[Interval]) -> Interval:
     """The interval that covers every interval given: the least low and the greatest high,
     unbounded where any is."""
     found = list(intervals)
+    if found and all(i.empty for i in found):
+        return found[0]
+    found = [i for i in found if not i.empty]
     if not found:
         return Interval()
     lows = [i.low for i in found]
@@ -1694,6 +1819,8 @@ def outcomes(left: Interval, right: Interval) -> frozenset[int]:
     """Which orderings two values can have, from what each can be: -1 when the first can be
     under the second, 0 when they can be equal, 1 when the first can be beyond the second."""
     found: set[int] = set()
+    if left.empty or right.empty:
+        return frozenset()
     if left.low is None or right.high is None or left.low < right.high:
         found.add(-1)
     if right.low is None or left.high is None or right.low < left.high:
@@ -1909,8 +2036,11 @@ def ambiguous(proof: Proof) -> list[InitErrorDetails]:
 
 
 def keys(cls: type[BaseModel], *, required: bool) -> frozenset[str]:
-    """The names a record validates by: each field's alias, or its name."""
-    return frozenset(f.alias for f in fields(cls) if f.required or not required)
+    """The keys a record validates by: with ``required``, the one key each required field
+    must carry, leaving out a field that accepts several; else every key any field accepts."""
+    if required:
+        return frozenset(k for f in fields(cls) if (k := f.required_key) is not None)
+    return frozenset(k for f in fields(cls) for k in f.aliases)
 
 
 def told_apart(a: type[BaseModel], b: type[BaseModel]) -> bool:
@@ -2345,10 +2475,11 @@ def construct(occurrence: Occurrence, given: Given) -> BaseModel | ValidationErr
     not hold here; any other refusal is a failure and propagates as Pydantic raised it, noted
     with the occurrence's concrete path, as a party's exception is."""
     cls = occurrence.construction.cls
+    refusals = Refusals()
     try:
-        return cls.model_validate(given)
+        return cls.model_validate(given, context=refusals)
     except ValidationError as refusal:
-        if issubclass(cls, Refutable) and cls.refuted(refusal):
+        if issubclass(cls, Refutable) and cls.refuted(refusal, refusals):
             return refusal
         refusal.add_note(f"at {'.'.join(occurrence.path)}")
         raise
