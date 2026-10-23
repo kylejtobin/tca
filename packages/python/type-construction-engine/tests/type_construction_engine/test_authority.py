@@ -1301,6 +1301,124 @@ async def test_a_branch_action_is_not_justified_by_the_competing_branch_being_ex
         assert [p.subject for p in performed(TellNegative)] == told
 
 
+# --- 9b. a choice among what arrives is held by the action performed under it ----------------
+
+
+class Quick(Value):
+    """A reading to be told of at once."""
+
+    reading: Reading
+
+
+class Slow(Value):
+    """A reading to be told of later."""
+
+    reading: Reading
+
+
+class Timed(Request):
+    """What arrives: a reading, quick or slow."""
+
+    kind: Quick | Slow
+
+
+class TellTimed(Action[Teller, Told]):
+    """Tell the teller of a reading, quick or slow: holds the choice it is performed under."""
+
+    kind: Quick | Slow
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(TellTimed, type(self.kind).__name__))
+        return Json(self.party.says.root)
+
+
+class TellReading(Action[Teller, Told]):
+    """Tell the teller of a reading: holds nothing of the choice its uses are made under."""
+
+    reading: Reading
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(TellReading, str(self.reading.root)))
+        return Json(self.party.says.root)
+
+
+class ToldQuick(Fact):
+    """A quick reading, told of."""
+
+    quick: Quick
+    told: Told
+
+
+class ToldSlow(Fact):
+    """A slow reading, told of."""
+
+    slow: Slow
+    told: Told
+
+
+class ToldTimed(Fact):
+    """Told of, quick or slow."""
+
+    which: ToldQuick | ToldSlow
+
+
+class ToldReply(Reply[ToldTimed]):
+    """What leaves."""
+
+
+class Tell(Route[Timed, ToldReply]):
+    """Tell of a reading."""
+
+
+TIMED: tuple[type[object], ...] = (
+    Reading,
+    Quick,
+    Slow,
+    Timed,
+    Said,
+    Teller,
+    Word,
+    Told,
+    ToldQuick,
+    ToldSlow,
+    ToldTimed,
+    ToldReply,
+    Tell,
+    Telling,
+)
+"""The two arrival alternatives and their conclusions, without the action."""
+
+HELD = program_of(*TIMED, TellTimed)
+"""The program whose action holds the choice among what arrives."""
+
+UNHELD = program_of(*TIMED, TellReading)
+"""The same program with the action holding only what both alternatives hold."""
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_an_action_under_a_choice_among_what_arrives_holds_the_choice() -> None:
+    faults = faults_of(UNHELD)
+    assert set(faults) == {("undecided", ("TellReading",))}
+    assert faults["undecided", ("TellReading",)] == (
+        "TellReading at the root is performed before Quick at request.kind, which ToldQuick at"
+        " ToldQuick needs, is established; TellReading holds nothing that establishes it"
+    )
+    proof = proven(HELD)
+    (timed,) = proof.justifications
+    assert [u.construction.cls for u in timed.uses] == [ToldQuick, ToldSlow]
+    assert [c.use.construction.cls for c in timed.coverages if c.use] == [ToldQuick, ToldSlow]
+    for told in (Quick, Slow):
+        PERFORMED.clear()
+        request = Timed(kind=told(reading=Reading(Decimal(1))))
+        done = await ran(Tell, request, config(HELD)(), proof)
+        assert isinstance(done, Run)
+        assert [p.subject for p in performed(TellTimed)] == [told.__name__]
+        assert type(done.route.reply.of.which) is (ToldQuick if told is Quick else ToldSlow)
+
+
 # --- 10. conditional programs and other capability implementations ---------------------------
 
 

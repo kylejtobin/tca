@@ -54,7 +54,8 @@ is heard brings its action, what is constructed brings one alternative of each p
 collection of each tuple field, and a collection brings its holder and, for a fixed collection,
 each position's element, or one element standing for any when the field admits no fewer than
 one; a variable collection may otherwise be empty and brings no element. A world clashes when
-one action occurrence would have heard two records, two relations over the same operand
+one key of what arrives or is heard would hold two classes, one action occurrence would have
+heard two records, two relations over the same operand
 references admit no ordering in common, a selection admits no count its collection can have,
 or the intervals of what supplies each number and the orderings of the relations over them
 have no solution together, where an unknown interval constrains nothing. The worlds are
@@ -2440,13 +2441,14 @@ so no world holds two alternatives of one field."""
 @dataclass(frozen=True)
 class Clash:
     """Why one world is impossible: the kind of incompatibility, and the sources responsible.
+    ``arrived``, two classes under one key of what arrives or is heard, which holds one;
     ``heard``, two records of one action occurrence, which hears one; ``ordering``, two
     relations over the same operand references admitting no ordering in common; ``count``, a
     selection over a collection of a number of positions it admits no count of, or two over one
     collection admitting none in common; ``bounds``, intervals of the references that supply
     numbers and orderings of the relations over them with no solution together."""
 
-    why: Literal["heard", "ordering", "count", "bounds"]
+    why: Literal["arrived", "heard", "ordering", "count", "bounds"]
     among: tuple[Source, ...]
 
 
@@ -2669,17 +2671,17 @@ def ordered(world: World) -> list[Source]:
 
 
 def clash(world: World) -> Clash | None:
-    """The first incompatibility within a world, or ``None``: two records of one action
-    occurrence; two relations contradicting over the same operands; a selection the number of
+    """The first incompatibility within a world, or ``None``: two classes under one key of what
+    arrives or is heard, a union's alternatives, of which the key holds one; two records of one
+    action occurrence; two relations contradicting over the same operands; a selection the number of
     positions of its collection refutes, or two selections over one collection with no count in
     common; or the bounds of what supplies each number and the orderings of the relations over
     them with no solution together. An unknown interval bounds nothing, and so refutes
     nothing."""
     sources = ordered(world)
-    heard_ = [r for r in sources if isinstance(r, HeardRef)]
-    for x, y in combinations(heard_, 2):
-        if x.action is y.action and x.record is not y.record:
-            return Clash("heard", (x, y))
+    found = held_twice(sources)
+    if found is not None:
+        return found
     made = [r for r in sources if isinstance(r, ConstructedRef)]
     relations = [r for r in made if is_relation(r.cls)]
     for x, y in combinations(relations, 2):
@@ -2699,6 +2701,24 @@ def clash(world: World) -> Clash | None:
     ]
     if not feasible(constraints):
         return Clash("bounds", (*relations, *bounds))
+    return None
+
+
+def held_twice(sources: Iterable[Source]) -> Clash | None:
+    """The first two sources of a world that one holder cannot hold together, or ``None``: two
+    records of one action occurrence, or two classes under one key of what arrives or is
+    heard, which a scope holds one instance under."""
+    arrived_ = [r for r in sources if isinstance(r, InputRef | HeardRef)]
+    for x, y in combinations(arrived_, 2):
+        if (
+            isinstance(x, HeardRef)
+            and isinstance(y, HeardRef)
+            and x.action is y.action
+            and x.record is not y.record
+        ):
+            return Clash("heard", (x, y))
+        if x.key == y.key and x.cls is not y.cls:
+            return Clash("arrived", (x, y))
     return None
 
 
@@ -3142,6 +3162,8 @@ def either(group: Group) -> str:
 def because_of(clash: Clash) -> str:
     """A clash for a message, in the developer's names."""
     match clash:
+        case Clash("arrived", (x, y)):
+            return f"{at(x)} and {at(y)} are held under one key, which holds one of them"
         case Clash("heard", (HeardRef() as x, HeardRef() as y)):
             heard_by = f"{x.action.cls.__name__} at {'.'.join(x.action.site)}"
             return f"{heard_by} hears one record, {x.record.__name__} or {y.record.__name__}"
