@@ -42,11 +42,11 @@ both available; ``unreached``, a class the reply of no route leads to; ``unmodel
 that names no kind; ``boundary``, a request that holds what does not arrive; ``config``, no one
 deployment; ``never``, a relation its operands' intervals make certain or impossible, or a
 construction whose premises are never all available together; ``undiscriminated``, two records
-one action hears that no field tells apart; ``undecided``, an action performed when one
-alternative of a choice is available and never when the other is, whose own premises do not
-exclude the other. Every fault is a structural invariant of the declarations or a contradiction
-the analysis establishes; that an admitted request may find no reply is no fault, since a
-reply is conditional on evidence, and a run without it ends blocked.
+one action hears that no field tells apart; ``undecided``, an action some run performs
+and then concludes the route without, since its premises exclude no alternative that leaves it
+out. Every fault is a structural invariant of the declarations or a contradiction the analysis
+establishes; that an admitted request may find no reply is no fault, since a reply is
+conditional on evidence, and a run without it ends blocked.
 
 What the proof concludes of the constructions it reads from their references and nothing else.
 A world is one way several sources are all available in one scope: what arrives is there, what
@@ -68,6 +68,28 @@ another site is another occurrence, a default is a default, and bounds that over
 a run exists. A reference to a member an optional field declares carries the sites it is
 conditional on, which is where a run that lacks it is blocked. ``Proof`` keeps each exclusion
 and each existence with its ways and clashes.
+
+An effect is justified by its construction, at startup and in the run. Of each action the proof
+asks whether a run can have the action's premises all available and construct the route without
+it: a world holding those premises and the route's own construction in which every reference to
+the action or to a record it hears is forbidden, where a collection whose element scope the
+world populates gathers that element. Every such way clashing is the action's
+``Justification``: whichever alternative a run takes once the premises are there, what the
+action hears is used. An action every alternative needs is justified by them and needs no
+evidence of the choice; one used under one alternative holds what excludes the other. An open
+way is a run that performs the effect for nothing, the fault ``undecided``, which names the
+choice taken without the action and the evidence, needed by the alternative that uses it, that
+would decide. In the run every construction is kept with the witness of what supplied it, the
+reference bound at each premise and the instance it dereferenced to, each collection and each
+element's, and the instance holds those very instances or the construction has failed. Before
+any action of a pass is performed each is authorized from that witness alone: its construction
+is the proof's for this route and justified, its scope is one this invocation opened at its
+site, each witness is a reference the construction binds that still dereferences to the same
+instance, the action and its party are the instances the witness holds, and the occurrence has
+not been performed in this invocation. The ``Execution`` so produced is what the effect
+boundary takes, and nothing else reaches ``perform``. An authorization that fails is a failure
+of the engine's own integrity, raised before any task of the pass is created, so no action of
+the pass is performed.
 
 A construction binds each premise to references the proof retains from the declarations, one per
 candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrence the run
@@ -105,7 +127,7 @@ the proof is a value the server computes once and passes in.
 """
 
 from asyncio import CancelledError, Task, TaskGroup
-from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Iterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
@@ -171,11 +193,13 @@ __all__ = [
     "ConstructedRef",
     "Construction",
     "Exclusion",
+    "Execution",
     "Existence",
     "Fault",
     "HeardRef",
     "InputRef",
     "Joint",
+    "Justification",
     "Known",
     "Proof",
     "Ref",
@@ -200,6 +224,7 @@ __all__ = [
     "holds",
     "interval",
     "joint",
+    "justifications",
     "models",
     "never",
     "opened",
@@ -1963,8 +1988,9 @@ def apart(cls: type[BaseModel], root: Context) -> Fault:
 class Proof(BaseModel):
     """Every route constructed symbolically, at startup, with what the proof concluded of the
     constructions: for each two alternatives at one field, whether they are never both
-    available, and for each construction, whether it can be available at all, each with the
-    ways it could be and the clash that refutes each way. Its validator refuses the program
+    available; for each construction, whether it can be available at all; for each action,
+    whether every run with its premises available uses what it hears; each with the ways it
+    could be otherwise and the clash that refutes each way. Its validator refuses the program
     with every fault at once."""
 
     model_config = ConfigDict(frozen=True, strict=True, arbitrary_types_allowed=True)
@@ -1975,6 +2001,7 @@ class Proof(BaseModel):
     faulted: tuple[Fault, ...]
     exclusions: tuple[Exclusion, ...]
     existences: tuple[Existence, ...]
+    justifications: tuple[Justification, ...]
 
     @property
     def routes(self) -> tuple[type[Route[Request, Reply[Fact]]], ...]:
@@ -2456,6 +2483,26 @@ class Existence:
         return self.joint.impossible
 
 
+@dataclass(frozen=True)
+class Justification:
+    """What the proof must establish of an action: that no run has its premises all available
+    and concludes the route without it. The ways are the worlds holding the action's premises
+    and the concluding constructions in which no reference to the action or to what it hears is
+    taken; established when every one clashes, so whichever alternative a run takes, what the
+    action hears is used; open otherwise, with a way the effect is performed for nothing. The
+    concluding constructions are the route's own, or, while the route is not constructed, those
+    of the route nothing consumes that lead to the action, together."""
+
+    action: Construction
+    concluding: tuple[Construction, ...]
+    joint: Joint
+
+    @property
+    def established(self) -> bool:
+        """Whether every run with the action's premises available uses what it hears."""
+        return self.joint.impossible
+
+
 def needs(source: Source) -> list[Group]:
     """What a source needs available with it, one group of alternatives each: nothing, for what
     arrives; its action, for what is heard; for a collection, its holder and the element
@@ -2474,14 +2521,29 @@ def needs(source: Source) -> list[Group]:
             return [*construction.premises.values(), *construction.collections.values()]
 
 
-def joint(sources: Iterable[Source]) -> Joint:
-    """Whether several sources can be available together: a depth-first search over the groups
-    of alternatives they need, one alternative per group, the group with the fewest alternatives
-    first, so what every way shares is placed before any way branches and a clash among it ends
-    the search at once; a world that clashes is not extended, since every extension clashes
-    too, and the first world completed without a clash ends the search, since one open way is
-    all an open obligation reports. Each way searched is kept with its clash."""
-    sources = tuple(sources)
+type Ways = tuple[tuple[World, Clash | None], ...]
+"""The worlds a search visited, each with the clash that refutes it, or ``None`` for the one way
+nothing refutes."""
+
+
+def nothing(source: Source) -> bool:  # noqa: ARG001
+    """The alternative no search forbids."""
+    return False
+
+
+def searched(
+    todo: list[Group], world: World = frozenset(), *, without: Callable[[Source], bool] = nothing
+) -> Ways:
+    """The worlds in which every group of alternatives has one available, from a world already
+    held: a depth-first search over the groups, one alternative per group, the group with the
+    fewest alternatives first, so what every way shares is placed before any way branches and
+    a clash among it ends the search at once; a world that clashes is not extended, since every
+    extension clashes too, and the first world completed without a clash ends the search, since
+    one open way is all an open obligation reports. An alternative ``without`` forbids is not
+    taken. A world is complete only when each collection that may be empty gathers the element
+    whose scope the world populates: an occurrence in an element's scope is that element
+    present, and a collection over it is not available without it. Each way searched is kept
+    with its clash."""
     ways: list[tuple[World, Clash | None]] = []
 
     def search(todo: list[Group], world: World) -> bool:
@@ -2490,6 +2552,13 @@ def joint(sources: Iterable[Source]) -> Joint:
             ways.append((world, found))
             return False
         if not todo:
+            missing = [
+                c.placed("[]")
+                for c in ordered(world)
+                if isinstance(c, Collected) and populated(c, world) and not gathered_in(c, world)
+            ]
+            if missing:
+                return search(missing, world)
             ways.append((world, None))
             return True
         index = min(range(len(todo)), key=lambda i: len(todo[i]))
@@ -2499,10 +2568,37 @@ def joint(sources: Iterable[Source]) -> Joint:
             if source in world
             else search([*needs(source), *rest], world | {source})
             for source in group
+            if not without(source)
         )
 
-    search([(source,) for source in sources], frozenset())
-    return Joint(sources, tuple(ways))
+    search(todo, world)
+    return tuple(ways)
+
+
+def joint(sources: Iterable[Source]) -> Joint:
+    """Whether several sources can be available together: ``searched`` from the empty world,
+    each source its own group."""
+    sources = tuple(sources)
+    return Joint(sources, searched([(source,) for source in sources]))
+
+
+def scope_of(source: Source) -> Site:
+    """The scope template a source is available in: a reference's, or a collection's holder's."""
+    return source.holder.scope if isinstance(source, Collected) else source.scope
+
+
+def populated(collected: Collected, world: World) -> bool:
+    """Whether a world holds an occurrence in the element scope of a variable collection, which
+    is that element present."""
+    element = (*collected.site, "[]")
+    return collected.positions is None and any(
+        scope_of(s)[: len(element)] == element for s in world
+    )
+
+
+def gathered_in(collected: Collected, world: World) -> bool:
+    """Whether a world holds an element of a variable collection."""
+    return any(r in world for r in collected.placed("[]"))
 
 
 def label(source: Source) -> tuple[Site, str, str]:
@@ -2716,10 +2812,9 @@ def inherited(construction: Construction) -> bool:
     )
 
 
-def performers(source: Source) -> list[Construction]:
-    """The action constructions some way a source is available performs: every one reached
-    through what it needs, by any alternative, by site."""
-    found: list[Construction] = []
+def closure(source: Source) -> list[Source]:
+    """Every source some way a source is available draws on: all reached through what it needs,
+    by any alternative, in one order."""
     seen: set[Source] = set()
     todo: list[Source] = [source]
     while todo:
@@ -2727,10 +2822,67 @@ def performers(source: Source) -> list[Construction]:
         if s in seen:
             continue
         seen.add(s)
-        if isinstance(s, ConstructedRef) and is_action(s.cls):
-            found.append(s.construction)
         todo.extend(alternative for group in needs(s) for alternative in group)
-    return sorted(found, key=lambda c: c.site)
+    return ordered(frozenset(seen))
+
+
+def uses(action: Construction) -> Callable[[Source], bool]:
+    """Whether a source is the action or a record it hears: what a world that performs the
+    effect for nothing may not hold."""
+
+    def used(source: Source) -> bool:
+        return (isinstance(source, ConstructedRef) and source.construction is action) or (
+            isinstance(source, HeardRef) and source.action is action
+        )
+
+    return used
+
+
+def leads_to(source: Source, action: Construction) -> bool:
+    """Whether some way a source is available uses an action."""
+    return any(map(uses(action), closure(source)))
+
+
+def consumed(constructions: Iterable[Construction]) -> set[Construction]:
+    """The constructions some construction among several binds, directly or as what a record
+    is heard by."""
+    found: set[Construction] = set()
+    for c in constructions:
+        for group in (*c.premises.values(), *c.collections.values()):
+            for source in group:
+                for s in closure(source):
+                    if isinstance(s, ConstructedRef):
+                        found.add(s.construction)
+                    elif isinstance(s, HeardRef):
+                        found.add(s.action)
+    return found
+
+
+def justification(action: Construction, concluding: Iterable[Construction]) -> Justification:
+    """Whether a run can have an action's premises all available and construct the concluding
+    constructions without it: the search from the empty world over the action's own needs and
+    the concluding constructions, taking no reference to the action or to what it hears."""
+    concluding = tuple(concluding)
+    todo = [*needs(ConstructedRef(action)), *((ConstructedRef(c),) for c in concluding)]
+    refs = (ConstructedRef(action), *(ConstructedRef(c) for c in concluding))
+    return Justification(action, concluding, Joint(refs, searched(todo, without=uses(action))))
+
+
+def justifications(constructions: Iterable[Construction]) -> tuple[Justification, ...]:
+    """The justification of each action construction, route by route, against the route's own
+    construction at the root or, while the route is not constructed there, against the
+    constructions of the route nothing consumes that lead to the action, together, so the
+    fault is reported with the rest."""
+    constructions = tuple(constructions)
+    found: list[Justification] = []
+    for route in dict.fromkeys(c.route for c in constructions):
+        own = [c for c in constructions if c.route is route]
+        goal = [c for c in own if c.cls is route and c.scope == ()]
+        tops = [c for c in own if c not in consumed(own)]
+        for action in (c for c in own if is_action(c.cls)):
+            concluding = goal or [t for t in tops if leads_to(ConstructedRef(t), action)]
+            found.append(justification(action, concluding))
+    return tuple(found)
 
 
 def where(scope: Site) -> str:
@@ -2823,28 +2975,104 @@ def ambiguous(proof: Proof) -> list[InitErrorDetails]:
     ]
 
 
-def undecided(proof: Proof) -> list[InitErrorDetails]:
-    """One ``undecided`` error per action performed in some way one alternative of an
-    established exclusion is available and in no way the other is, whose own premises do not
-    exclude the other: it would be performed whichever held."""
+class Choice(NamedTuple):
+    """One place a world concluded without an action: the construction and field whose
+    alternative it took, that alternative, and the one it left out, which leads to the
+    action."""
+
+    construction: Construction
+    field: str
+    taken: Source
+    left: Source
+
+
+def choices(world: World, action: Construction) -> list[Choice]:
+    """Where a world that concludes without an action passed it over: each field of a
+    construction it holds, and each element scope of a collection it gathers, with two
+    alternatives, of which the one it holds does not lead to the action and one it leaves out
+    does, in one order."""
+    found: list[Choice] = []
+    for c in (r.construction for r in ordered(world) if isinstance(r, ConstructedRef)):
+        groups: list[tuple[str, Group]] = list(c.premises.items())
+        for name, candidates in c.collections.items():
+            groups.append((name, candidates))
+            groups.extend(
+                (name, collected.placed(step))
+                for collected in candidates
+                if collected in world
+                for step in collected.every
+            )
+        for name, group in groups:
+            taken = picked(group, world)
+            if taken is None or leads_to(taken, action):
+                continue
+            found.extend(
+                Choice(c, name, taken, left)
+                for left in group
+                if left not in world and leads_to(left, action)
+            )
+    return found
+
+
+def deciders(choice: Choice, world: World) -> list[Source]:
+    """The evidence the alternative a world left out needs that the world excludes: a
+    refutable construction or a record heard that, held, would have decided the choice."""
     return [
-        fault(
-            "undecided",
-            "{action} is performed when {cls}.{name} holds {chosen} and not when it holds"
-            " {other}, yet holds nothing that decides between them",
-            (action.cls.__name__,),
-            action=action.cls.__name__,
-            cls=e.construction.cls.__name__,
-            name=e.field,
-            chosen=at(chosen_),
-            other=at(other),
-        )
-        for e in proof.exclusions
-        if e.established
-        for chosen_, other in ((e.left, e.right), (e.right, e.left))
-        for action in performers(chosen_)
-        if action not in performers(other) and not joint((ConstructedRef(action), other)).impossible
+        d
+        for d in closure(choice.left)
+        if d not in world
+        and ((isinstance(d, ConstructedRef) and refutable(d.cls)) or isinstance(d, HeardRef))
+        and all(c is not None for _, c in searched([(d,)], world))
     ]
+
+
+def undecided(proof: Proof) -> list[InitErrorDetails]:
+    """One ``undecided`` error per action whose justification is open: a run with its premises
+    available concludes the route without it, at the first choice the open way took without
+    it, with the evidence that would have decided the choice, which the action does not hold."""
+    found: list[InitErrorDetails] = []
+    for j in proof.justifications:
+        if j.established:
+            continue
+        world = j.joint.open[0]
+        action = j.action.cls.__name__
+        passed = choices(world, j.action)
+        if not passed:
+            found.append(
+                fault(
+                    "undecided",
+                    "{action} at {scope} is performed, and {route} concludes without it",
+                    (action,),
+                    action=action,
+                    scope=where(j.action.scope),
+                    route=j.action.route.__name__,
+                )
+            )
+            continue
+        choice = passed[0]
+        decided_by = deciders(choice, world)
+        why = (
+            f"{at(decided_by[0])}, which {at(choice.left)} needs, would decide it, and {action}"
+            " holds nothing that does"
+            if decided_by
+            else f"nothing {at(choice.left)} needs excludes {at(choice.taken)}"
+        )
+        found.append(
+            fault(
+                "undecided",
+                "{action} at {scope} is performed when {cls}.{name} holds {taken} as when it"
+                " holds {left}; {why}",
+                (action,),
+                action=action,
+                scope=where(j.action.scope),
+                cls=choice.construction.cls.__name__,
+                name=choice.field,
+                taken=at(choice.taken),
+                left=at(choice.left),
+                why=why,
+            )
+        )
+    return found
 
 
 def keys(cls: type[BaseModel], *, required: bool) -> frozenset[str]:
@@ -2902,6 +3130,7 @@ def proven(program: ModuleType) -> Proof:
         faulted=tuple(f for s in found for f in s.faulted),
         exclusions=exclusions(constructions),
         existences=existences(constructions),
+        justifications=justifications(constructions),
     )
 
 
@@ -2936,19 +3165,30 @@ type Given = dict[str, BaseModel | tuple[BaseModel, ...]]
 
 
 class Constructed(NamedTuple):
-    """A construction's instance in a scope, with the concrete paths of what supplied it."""
+    """A construction's instance in a scope, with the witness of what supplied it: the instance
+    holds the very instances the witness does, which the construction established."""
 
     instance: BaseModel
-    provenance: Provenance
+    supplied: Bound
+
+    @property
+    def provenance(self) -> Provenance:
+        """The concrete paths of what supplied each field."""
+        return self.supplied.provenance
 
 
 class Refuted(NamedTuple):
     """A refutable kind whose declared condition the evidence rejected in a scope: Pydantic's
-    refusal, every error of which is ``REFUTED``, and the concrete paths of the operands it was
+    refusal, every error of which is ``REFUTED``, and the witness of the operands it was
     constructed from."""
 
     refusal: ValidationError
-    provenance: Provenance
+    supplied: Bound
+
+    @property
+    def provenance(self) -> Provenance:
+        """The concrete paths of the operands."""
+        return self.supplied.provenance
 
 
 type Made = Constructed | Refuted
@@ -3144,14 +3384,56 @@ type Premise = tuple[str, int | None]
 index."""
 
 
-class Bound(NamedTuple):
-    """The transient result of dereferencing a construction's references in a scope: the
-    instance at each premise that is filled, with the concrete path of what supplied it, and
-    for each premise not filled each of its references with the state it dereferenced to."""
+class Witness(NamedTuple):
+    """One premise as a run supplied it: the reference bound at the field that dereferenced to
+    evidence, and the evidence, at its concrete path."""
 
-    given: Given
-    provenance: Provenance
+    ref: Ref
+    found: Available
+
+
+class Gathering(NamedTuple):
+    """One tuple field as a run supplied it: the collection gathered among the field's
+    candidates, and each element's witness, in element order."""
+
+    collected: Collected
+    elements: tuple[Witness, ...]
+
+
+class Bound(NamedTuple):
+    """A construction's references dereferenced in a scope: the witness at each premise field
+    that is filled and at each tuple field, the fresh instance constructed for each field the
+    class declares fresh, and for each premise not filled each of its references with the state
+    it dereferenced to. What a run constructs from, and keeps with what it constructed."""
+
+    premises: dict[str, Witness]
+    collections: dict[str, Gathering]
+    fresh: dict[str, Available]
     unfilled: dict[Premise, tuple[tuple[Ref, State], ...]]
+
+    @property
+    def given(self) -> Given:
+        """What is supplied for each field, as Pydantic takes it."""
+        return {
+            **{name: w.found.instance for name, w in self.premises.items()},
+            **{
+                name: tuple(w.found.instance for w in g.elements)
+                for name, g in self.collections.items()
+            },
+            **{name: a.instance for name, a in self.fresh.items()},
+        }
+
+    @property
+    def provenance(self) -> Provenance:
+        """The concrete paths of what supplied each field."""
+        return {
+            **{name: (w.found.path,) for name, w in self.premises.items()},
+            **{
+                name: tuple(w.found.path for w in g.elements)
+                for name, g in self.collections.items()
+            },
+            **{name: (a.path,) for name, a in self.fresh.items()},
+        }
 
 
 def one[T](found: list[T], cls: type[BaseModel], name: str, what: LiteralString) -> T | None:
@@ -3180,19 +3462,19 @@ def observed(refs: Iterable[Ref], scope: Scope) -> tuple[tuple[Ref, State], ...]
     return tuple((r, resolve(r, scope)) for r in refs)
 
 
-def available(states: Iterable[tuple[Ref, State]]) -> list[Available]:
-    """The evidence among what references dereferenced to."""
-    return [state for _, state in states if isinstance(state, Available)]
+def available(states: Iterable[tuple[Ref, State]]) -> list[Witness]:
+    """The evidence among what references dereferenced to, each with its reference."""
+    return [Witness(ref, state) for ref, state in states if isinstance(state, Available)]
 
 
 def bound(construction: Construction, scope: Scope) -> Bound:
-    """A construction's references dereferenced in a scope: the instance at each premise
+    """A construction's references dereferenced in a scope: the witness at each premise
     field's reference; for each tuple field the one collection among its candidates whose
-    holder is available with it, and every element scope's instance at the element references
+    holder is available with it, and every element scope's witness at the element references
     placed in that element's scope, its position's for a fixed tuple, in element order; for
     each premise nothing fills, what its references dereferenced to."""
-    given: Given = {}
-    provenance: Provenance = {}
+    premises_: dict[str, Witness] = {}
+    collections_: dict[str, Gathering] = {}
     unfilled: dict[Premise, tuple[tuple[Ref, State], ...]] = {}
     cls = construction.cls
     for name, refs in construction.premises.items():
@@ -3201,7 +3483,7 @@ def bound(construction: Construction, scope: Scope) -> Bound:
         if found is None:
             unfilled[name, None] = states
         else:
-            provenance[name], given[name] = (found.path,), found.instance
+            premises_[name] = found
     for name, candidates in construction.collections.items():
         states = observed((c.holder for c in candidates), scope)
         held = [
@@ -3213,7 +3495,7 @@ def bound(construction: Construction, scope: Scope) -> Bound:
         if collected is None:
             unfilled[name, None] = states
             continue
-        picked_: list[Available] = []
+        picked_: list[Witness] = []
         for index, element in enumerate(collected[1]):
             at_element = observed(
                 (r for r in collected[0].elements if r.scope == element.site), element
@@ -3224,9 +3506,8 @@ def bound(construction: Construction, scope: Scope) -> Bound:
             else:
                 picked_.append(found)
         if len(picked_) == len(collected[1]):
-            provenance[name] = tuple(f.path for f in picked_)
-            given[name] = tuple(f.instance for f in picked_)
-    return Bound(given, provenance, unfilled)
+            collections_[name] = Gathering(collected[0], tuple(picked_))
+    return Bound(premises_, collections_, {}, unfilled)
 
 
 def supplied(occurrence: Occurrence) -> Bound | None:
@@ -3238,9 +3519,56 @@ def supplied(occurrence: Occurrence) -> Bound | None:
         return None
     for f in fields(occurrence.construction.cls):
         if f.fresh:
-            found.provenance[f.name] = ((*occurrence.path, f.name),)
-            found.given[f.name] = f.classes[0]()
+            found.fresh[f.name] = Available((*occurrence.path, f.name), f.classes[0]())
     return found
+
+
+def substituted(instance: BaseModel, supplied_: Bound) -> list[str]:
+    """The fields of an instance that do not hold the very instance supplied for them, in
+    field order: a premise another instance stands at, a tuple field with other elements or
+    another count, a fresh field another instance stands at. Pydantic keeps an instance it is
+    given; a validator that put another there has broken the witness."""
+    found: list[str] = []
+    for name, w in supplied_.premises.items():
+        if getattr(instance, name) is not w.found.instance:
+            found.append(name)
+    for name, g in supplied_.collections.items():
+        value: object = getattr(instance, name)
+        if not (
+            is_elements(value)
+            and len(value) == len(g.elements)
+            and all(v is w.found.instance for v, w in zip(value, g.elements, strict=True))
+        ):
+            found.append(name)
+    found.extend(
+        name for name, a in supplied_.fresh.items() if getattr(instance, name) is not a.instance
+    )
+    return found
+
+
+def witnessed(occurrence: Occurrence, instance: BaseModel, supplied_: Bound) -> Constructed:
+    """A construction's instance with the witness of what supplied it, once the instance is
+    established to hold those very instances; one that holds another has failed, since what
+    its scope would keep of it is not what the run supplied, and the failure propagates as a
+    refusal at the fields substituted."""
+    swapped = substituted(instance, supplied_)
+    if swapped:
+        cls = occurrence.construction.cls
+        raise ValidationError.from_exception_data(
+            cls.__name__,
+            [
+                fault(
+                    "substituted",
+                    "{cls}.{name} at {path} holds another instance than the one supplied for it",
+                    (cls.__name__, name),
+                    cls=cls.__name__,
+                    name=name,
+                    path=".".join(occurrence.path),
+                )
+                for name in swapped
+            ],
+        )
+    return Constructed(instance, supplied_)
 
 
 def construct(occurrence: Occurrence, given: Given) -> BaseModel | ValidationError:
@@ -3479,16 +3807,140 @@ def hear[P: Connection, T: Record](action: Action[P, T], response: Json | Python
     return record
 
 
-async def performed_in_span(
-    occurrence: Occurrence, action: Action[Connection, Record], pass_: int
-) -> Record:
-    """Perform one action occurrence inside a span named for its class, carrying the party's
-    class name, the occurrence's concrete path, the pass it was built in, and ``tca.outcome``,
-    which is the outcome its task has: ``heard``, once what the party said validated as the
-    action's record, with the record's class name and path; ``failed``, the client's exception
-    or the refusal of what it returned, noted with the path and propagating, the span marked
-    as ``failing`` does; ``cancelled``, which is not the action's error and leaves the status
-    unset."""
+class Invocation(NamedTuple):
+    """One run as authorization sees it: the route requested, the proof it was accepted under,
+    the root scope whose tree holds every occurrence of this invocation, and the occurrences
+    already handed to the effect boundary."""
+
+    route: type[BaseModel]
+    proof: Proof
+    root: Scope
+    performed: set[Occurrence]
+
+
+class Execution(NamedTuple):
+    """One authorized effect, the only thing the effect boundary takes: the action occurrence,
+    the action instance its scope made, and the witness it was constructed from. Produced by
+    ``authorized`` and nowhere else; it is a record of this invocation, not a credential."""
+
+    occurrence: Occurrence
+    action: Action[Connection, Record]
+    supplied: Bound
+
+
+def unauthorized(invocation: Invocation, occurrence: Occurrence) -> str | None:
+    """Why an occurrence may not be performed in an invocation, or ``None``: it is misplaced;
+    its scope made no action of it; what supplied it is unbound; the instance or its party is
+    not what was supplied; or it was performed already."""
+    made = occurrence.made
+    why = misplaced(invocation, occurrence)
+    if why is not None:
+        return why
+    if not isinstance(made, Constructed) or not is_performed(made.instance):
+        return "its scope made no action of it"
+    why = unbound(occurrence.construction, occurrence.scope, made.supplied)
+    if why is not None:
+        return why
+    swapped = substituted(made.instance, made.supplied)
+    if swapped:
+        return f"{', '.join(swapped)} hold other instances than were supplied"
+    if occurrence in invocation.performed:
+        return "it was performed in this invocation already"
+    return None
+
+
+def misplaced(invocation: Invocation, occurrence: Occurrence) -> str | None:
+    """Why an occurrence is not one of this invocation's route, or ``None``: its construction
+    is not the proof's for the route; the proof does not justify it; its scope is not one the
+    invocation opened at the construction's site."""
+    construction, scope = occurrence.construction, occurrence.scope
+    route = invocation.route.__name__
+    if not any(c is construction for c in invocation.proof.constructs(invocation.route)):
+        return f"its construction is not in the proof of {route}"
+    if not any(j.action is construction and j.established for j in invocation.proof.justifications):
+        return f"the proof of {route} does not justify performing it"
+    if not any(s is scope for s in scopes(invocation.root)) or scope.site != construction.scope:
+        return "its scope is not one this invocation opened at its site"
+    return None
+
+
+def unbound(construction: Construction, scope: Scope, supplied_: Bound) -> str | None:
+    """Why a witness is not the construction's binding dereferenced in a scope, or ``None``:
+    other fields than the construction binds; a premise supplied by a reference the
+    construction does not bind at that field, or one that no longer dereferences to the same
+    instance; a tuple field supplied by a collection it does not bind, or one the scope no
+    longer gathers alike, element by element."""
+    if set(supplied_.premises) != set(construction.premises) or set(supplied_.collections) != set(
+        construction.collections
+    ):
+        return "what supplied it is not the construction's binding"
+    for name, w in supplied_.premises.items():
+        if not any(r is w.ref for r in construction.premises[name]):
+            return f"{name} was supplied by a reference the construction does not bind"
+        if not same(resolve(w.ref, scope), w):
+            return f"{name} no longer dereferences to what supplied it"
+    for name, g in supplied_.collections.items():
+        if not any(c is g.collected for c in construction.collections[name]):
+            return f"{name} was supplied by a collection the construction does not bind"
+        if not gathers(scope, g):
+            return f"{name} no longer gathers what supplied it"
+    return None
+
+
+def gathers(scope: Scope, gathering: Gathering) -> bool:
+    """Whether a scope still gathers the collection a tuple field was supplied with: as many
+    element scopes, each dereferencing an element reference of the collection to the very
+    instance it did."""
+    elements = scope.collection(gathering.collected.key)
+    return (
+        elements is not None
+        and len(elements) == len(gathering.elements)
+        and all(
+            any(r is w.ref for r in gathering.collected.elements) and same(resolve(w.ref, e), w)
+            for e, w in zip(elements, gathering.elements, strict=True)
+        )
+    )
+
+
+def same(state: State, witness: Witness) -> bool:
+    """Whether a reference dereferences now to the very instance it did when it supplied a
+    construction."""
+    return isinstance(state, Available) and state.instance is witness.found.instance
+
+
+def authorized(invocation: Invocation, occurrence: Occurrence) -> Execution:
+    """The execution of an action occurrence this invocation authorizes, from the witness of
+    what supplied it and nothing else; one it does not authorize is a failure of the engine's
+    integrity, raised, which the run propagates before any effect of the pass."""
+    why = unauthorized(invocation, occurrence)
+    made = occurrence.made
+    if why is not None or not isinstance(made, Constructed) or not is_performed(made.instance):
+        cls = occurrence.construction.cls
+        raise ValidationError.from_exception_data(
+            cls.__name__,
+            [
+                fault(
+                    "unauthorized",
+                    "{cls} at {path} is not performed: {why}",
+                    (cls.__name__,),
+                    cls=cls.__name__,
+                    path=".".join(occurrence.path),
+                    why=why or "its scope made no action of it",
+                )
+            ],
+        )
+    return Execution(occurrence, made.instance, made.supplied)
+
+
+async def performed_in_span(execution: Execution, pass_: int) -> Record:
+    """Perform one authorized execution inside a span named for the action's class, carrying
+    the party's class name, the occurrence's concrete path, the pass it was built in, and
+    ``tca.outcome``, which is the outcome its task has: ``heard``, once what the party said
+    validated as the action's record, with the record's class name and path; ``failed``, the
+    client's exception or the refusal of what it returned, noted with the path and propagating,
+    the span marked as ``failing`` does; ``cancelled``, which is not the action's error and
+    leaves the status unset."""
+    occurrence, action, _ = execution
     attributes = {
         "tca.party": type(action.party).__name__,
         "tca.site": ".".join(occurrence.path),
@@ -3579,10 +4031,13 @@ async def constructed[Q: Request, A: Reply[Fact]](
     """The passes of ``ran``. Each pass dereferences every construction of the route not yet
     made in a scope at its template and, where every reference resolves, asks Pydantic for it;
     a refutable kind whose declared condition does not hold is refuted in that scope, once; any
-    other refusal is a failure and propagates. The pass's actions are performed together in one
-    task group, across every scope, each heard at the one boundary, and each record enters the
-    scope its action was built in once every action of the pass was heard, as one ``admitted``
-    event on the route's span; a library kind's exception, or a refusal of what it returned,
+    other refusal is a failure and propagates; so is an instance that does not hold what was
+    supplied for it. The pass's actions are each authorized from the witness of what supplied
+    them, every one before any is performed, so an authorization that fails performs none; then
+    performed together in one task group, across every scope, each heard at the one boundary,
+    and each record enters the scope its action was built in once every action of the pass was
+    heard, as one ``admitted`` event on the route's span; a library kind's exception, or a
+    refusal of what it returned,
     cancels the group's other actions and propagates in an ``ExceptionGroup``, noted with the
     paths of the actions cancelled with it. An action's effect may have happened whenever its
     task started: one heard returned a validated record, one failed or cancelled may have had
@@ -3596,10 +4051,11 @@ async def constructed[Q: Request, A: Reply[Fact]](
     for c in proof.constants:
         root.arrived[None, (c.__name__,)] = c()
     goal = Occurrence(root, goal_of(route, constructions))
+    invocation = Invocation(route, proof, root, set())
     passes = 0
     while goal.made is None:
         passes += 1
-        performed: list[tuple[Occurrence, Action[Connection, Record]]] = []
+        ready: list[Occurrence] = []
         built = False
         for scope in list(scopes(root)):
             for construction in constructions:
@@ -3611,21 +4067,24 @@ async def constructed[Q: Request, A: Reply[Fact]](
                     continue
                 instance = construct(occurrence, found.given)
                 if isinstance(instance, ValidationError):
-                    scope.made[construction] = Refuted(instance, found.provenance)
+                    scope.made[construction] = Refuted(instance, found)
                     continue
                 built = True
-                scope.made[construction] = Constructed(instance, found.provenance)
-                if is_performed(instance):
-                    performed.append((occurrence, instance))
+                scope.made[construction] = witnessed(occurrence, instance, found)
+                if is_action(construction.cls):
+                    ready.append(occurrence)
+        executions = [authorized(invocation, o) for o in ready]
+        invocation.performed.update(ready)
+        performed = [e.occurrence for e in executions]
         tasks: list[Task[Record]] = []
         try:
             async with TaskGroup() as group:
-                tasks = [group.create_task(performed_in_span(o, a, passes)) for o, a in performed]
+                tasks = [group.create_task(performed_in_span(e, passes)) for e in executions]
         except BaseExceptionGroup as failed:
-            failed.add_note(outcomes_of([o for o, _ in performed], tasks))
+            failed.add_note(outcomes_of(performed, tasks))
             raise
-        records = heard_in([o for o, _ in performed], tasks, passes)
-        for (o, _), record in zip(performed, records, strict=True):
+        records = heard_in(performed, tasks, passes)
+        for o, record in zip(performed, records, strict=True):
             arrived(record, o.construction, (), o.scope)
             span.add_event(
                 "admitted",

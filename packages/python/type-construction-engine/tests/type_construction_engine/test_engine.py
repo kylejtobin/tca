@@ -899,10 +899,12 @@ def test_an_action_or_a_connection_without_a_library_kind_cannot_be_constructed(
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("party")
 async def test_an_answer_is_one_span_per_route_and_one_per_performed_action() -> None:
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
     exporter = InMemorySpanExporter()
-    provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    trace.set_tracer_provider(provider)
     await operate('{"each": [{"name": "a"}, {"name": "b"}]}')
     spans = sorted(
         ((s.name, dict(s.attributes or {})) for s in exporter.get_finished_spans()),

@@ -28,6 +28,7 @@ from type_construction.engine import (
     HeardRef,
     InputRef,
     Joint,
+    Justification,
     Proof,
     Ref,
     Refuted,
@@ -41,7 +42,6 @@ from type_construction.engine import (
     exclusions,
     joint,
     models,
-    performers,
     proven,
     ran,
     resolve,
@@ -194,8 +194,9 @@ def faults_of(program: ModuleType) -> dict[tuple[str, tuple[object, ...]], str]:
 
 
 def unproven[Q: Request, A: Reply[Fact]](program: ModuleType, route: type[Route[Q, A]]) -> Proof:
-    """A program's constructions and exclusions as a ``Proof`` the validator did not see: how a
-    run is driven over a program the proof refuses, to observe what the proof foresaw."""
+    """A program's constructions and exclusions as a ``Proof`` the validator did not see, every
+    action's justification forged as established: how a run is driven over a program the proof
+    refuses, to observe what the proof foresaw."""
     found = symbolic(route, models(program))
     return Proof.model_construct(
         program=program.__name__,
@@ -205,6 +206,11 @@ def unproven[Q: Request, A: Reply[Fact]](program: ModuleType, route: type[Route[
         faulted=(),
         exclusions=exclusions(found.constructions),
         existences=(),
+        justifications=tuple(
+            Justification(c, (), Joint((ConstructedRef(c),), ()))
+            for c in found.constructions
+            if issubclass(c.cls, Action)
+        ),
     )
 
 
@@ -398,7 +404,12 @@ def test_competing_producers_are_accepted_only_where_both_are_never_available() 
     assert which.established
     assert [c.why for c in which.joint.clashes] == ["ordering"]
     faults = faults_of(LOOSE)
-    assert set(faults) == {("ambiguous", ("Loose", "which"))}
+    assert set(faults) == {("ambiguous", ("Loose", "which")), ("undecided", ("Ask",))}
+    assert faults["undecided", ("Ask",)] == (
+        "Ask at request.each.[] is performed when Loose.which holds Other at request.each.[].Other"
+        " as when it holds Cheap at request.each.[].Cheap; nothing Cheap at request.each.[].Cheap"
+        " needs excludes Other at request.each.[].Other"
+    )
     assert faults["ambiguous", ("Loose", "which")] == (
         "Loose.which at request.each.[] may hold both Cheap at request.each.[].Cheap and Other at"
         " request.each.[].Other; with Low at request.each.[].Low holding, nothing excludes either"
@@ -1016,7 +1027,7 @@ MINGLED = program_of(
 
 def test_alternative_branches_keep_their_separate_assumptions() -> None:
     faults = faults_of(MINGLED)
-    assert set(faults) == {("ambiguous", ("Mingled", "which"))}
+    assert set(faults) == {("ambiguous", ("Mingled", "which")), ("undecided", ("Ask",))}
     proof = unproven(MINGLED, MingleOperation)
     found = by_class(proof)
     low, high = ConstructedRef(found[Low]), ConstructedRef(found[High])
@@ -1181,16 +1192,21 @@ async def test_bounded_runs_never_contradict_established_exclusions(
                 ]
 
 
-def test_an_action_is_decided_only_by_its_own_premises_excluding_the_other_branch() -> None:
+def test_an_action_is_justified_by_its_own_premises_excluding_every_way_without_it() -> None:
     proof = proven(test_engine.PROGRAM)
     found = placed(proof, test_engine.Operation)
     valued = exclusion_at(proof, test_engine.Concluded, "valued")
     assert valued.established
-    cheap, dear = valued.left, valued.right
-    only_dear = [a for a in performers(dear) if a not in performers(cheap)]
-    assert [a.cls for a in only_dear] == [test_engine.Notify]
+    cheap = valued.left
     assert joint((ConstructedRef(found[test_engine.Notify, ELEMENT]), cheap)).impossible
-    assert [a.cls for a in performers(cheap) if a not in performers(dear)] == []
+    by_action = {j.action.cls: j for j in proof.justifications}
+    assert set(by_action) == {test_engine.Asked, test_engine.Notify}
+    assert all(j.established for j in by_action.values())
+    assert all(j.concluding == (found[test_engine.Operation, ()],) for j in by_action.values())
+    assert by_action[test_engine.Asked].joint.ways == ()
+    notify = by_action[test_engine.Notify].joint
+    assert notify.open == ()
+    assert {c.why for c in notify.clashes} == {"ordering"}
 
 
 def test_the_proof_keeps_each_conclusion_with_its_ways_and_clashes() -> None:
