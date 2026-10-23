@@ -33,7 +33,7 @@ constants: the declared tree of the request and the deployment is the tree of sy
 passes construct every class the route's reply leads to wherever it binds, an action's records
 enter as alternatives, and at the fixed point every construction is bound again against the
 whole tree, so a candidate that appeared late is still seen. ``Proof`` is constructed from the
-placements, what was left waiting and the faults; its validator refuses the program with one
+constructions, what was left waiting and the faults; its validator refuses the program with one
 ``ValidationError`` naming every fault: ``missing``, a field no occurrence fills; ``collects``,
 a tuple over a class no collection's elements hold; ``unplaceable``, a class whose fields are
 never visible from one scope; ``cycle``, classes that wait on each other; ``route``, a route
@@ -45,12 +45,12 @@ certain or impossible; ``undiscriminated``, two records one action hears that no
 apart; ``undecided``, an action performed on one branch of a choice that holds nothing deciding
 it.
 
-A placement binds each premise to references the proof retains from the declarations, one per
+A construction binds each premise to references the proof retains from the declarations, one per
 candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrence the run
 constructs, a ``HeardRef`` to a record an action hears or a member of it; a tuple field to the
 collection's holder and one reference per element class in the element's scope. A run is the
 same construction over instances at the same sites. The request and the deployment arrive and
-are walked into scopes; each pass dereferences every placement of the route not yet constructed
+are walked into scopes; each pass dereferences every construction of the route not yet constructed
 or refuted in a scope at its site, and where every reference resolves asks
 ``cls.model_validate`` over the instances found, a fresh scalar constructed for the holder, and
 a tuple field every element scope's instance in element order, the empty tuple for no element.
@@ -97,7 +97,6 @@ from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, ValidationEr
 from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefined
 
 from type_construction.world import (
-    REFUTED,
     Action,
     Comparison,
     Computation,
@@ -109,6 +108,7 @@ from type_construction.world import (
     Json,
     Python,
     Record,
+    Refutable,
     Relation,
     Reply,
     Request,
@@ -122,10 +122,10 @@ __all__ = [
     "Blocked",
     "Collected",
     "ConstructedRef",
+    "Construction",
     "Fault",
     "HeardRef",
     "InputRef",
-    "Placement",
     "Proof",
     "Ref",
     "Run",
@@ -180,17 +180,51 @@ DEPLOYMENT: Site = ("deployment",)
 HEARD = "heard"
 """The last step of a record's site: what its action heard."""
 
-REFERENCE = ConfigDict(frozen=True, strict=True)
-"""Configuration for a reference: a frozen, hashable value the proof retains and the run
-dereferences."""
+tracer = trace.get_tracer("type_construction.engine")
+"""Spans named by the program's classes: one per answer, named for the route, with one child per
+performed action, named for the action. Attributes are class names and counts, never contents.
+With no SDK configured these are no-ops; the deployment supplies the SDK and the exporter."""
 
 
-class InputRef(BaseModel):
-    """A reference to an occurrence that arrives: the request, the deployment, a constant, or
-    a member of one, in the scope at a site, of its class. Dereferenced in a run to what the
-    scope chain holds at the site; present from the start or never."""
+@dataclass(eq=False)
+class Construction:
+    """One class a route constructs, in the scope at a site template: the one record of how it
+    constructs, which the proof, the run and the explanation of a run all read. Each required
+    single field binds to the references of its candidate sources, alternatives among them;
+    each tuple field to the collection it gathers; each fresh field to the class constructed
+    for the holder; ``because`` is the optional sites it exists only when they arrive. The
+    declaration analysis writes the binding when the class first binds and once more against
+    the whole tree at the fixed point; after the analysis nothing writes it. A construction is
+    its object: a reference to one is a reference to this, never to a name or a path."""
 
-    model_config = REFERENCE
+    route: type[BaseModel]
+    cls: type[BaseModel]
+    scope: Site
+    premises: dict[str, tuple[Ref, ...]] = field(default_factory=dict[str, tuple["Ref", ...]])
+    collections: dict[str, Collected] = field(default_factory=dict[str, "Collected"])
+    freshly: dict[str, type[BaseModel]] = field(default_factory=dict[str, type[BaseModel]])
+    because: tuple[Site, ...] = ()
+
+    def __repr__(self) -> str:
+        return f"Construction({self.route.__name__}: {'.'.join(self.site)})"
+
+    @property
+    def site(self) -> Site:
+        """The declared site: the scope's and the class's name, for a concrete path."""
+        return (*self.scope, self.cls.__name__)
+
+    def rebound(self, found: Construction) -> None:
+        """The binding against the whole tree, in place of the first."""
+        self.premises, self.collections = found.premises, found.collections
+        self.freshly, self.because = found.freshly, found.because
+
+
+@dataclass(frozen=True)
+class InputRef:
+    """A reference to what arrives: the request, the deployment, a constant, or a member of
+    one, in the scope at a site, of a class. It dereferences to what the scope chain holds for
+    it, present from the start or never."""
+
     scope: Site
     member: Site
     cls: type[BaseModel]
@@ -200,72 +234,112 @@ class InputRef(BaseModel):
         """The declared site: the scope's and the member path."""
         return (*self.scope, *self.member)
 
+    @property
+    def key(self) -> Key:
+        """What a scope holds it under: no origin, and its site."""
+        return (None, self.site)
+
     def held(self, cls: type[BaseModel], name: str) -> InputRef:
-        """The reference to what a single field of this occurrence holds."""
+        """The reference to what a single field of this holds."""
         return InputRef(scope=self.scope, member=(*self.member, name), cls=cls)
 
     def element(self, cls: type[BaseModel], name: str, step: str) -> InputRef:
-        """The reference to an element of a tuple field of this occurrence: in the element's
-        own scope."""
+        """The reference to an element of a tuple field of this, in the element's own scope."""
         return InputRef(scope=(*self.site, name, step), member=(), cls=cls)
 
 
-class ConstructedRef(BaseModel):
-    """A reference to an occurrence the run constructs: its class, in the scope at a site.
-    Dereferenced to the occurrence, which is constructed, refuted, or pending."""
+@dataclass(frozen=True)
+class ConstructedRef:
+    """A reference to what the run constructs: the construction itself. It dereferences to that
+    occurrence in the scope chain, constructed, refuted or pending."""
 
-    model_config = REFERENCE
-    scope: Site
-    cls: type[BaseModel]
+    construction: Construction
+
+    @property
+    def cls(self) -> type[BaseModel]:
+        """The class constructed."""
+        return self.construction.cls
+
+    @property
+    def scope(self) -> Site:
+        """The scope template the construction is placed at."""
+        return self.construction.scope
 
     @property
     def site(self) -> Site:
-        """The declared site: the scope's and the class's name."""
-        return (*self.scope, self.cls.__name__)
+        """The declared site."""
+        return self.construction.site
 
 
-class HeardRef(BaseModel):
-    """A reference to what an action occurrence heard: the action's class in the scope at a
-    site, the record among those it declares, and the member path under the record, of its
-    class. Dereferenced to the record the action heard, which is pending while the action is,
-    another record than named, or the one named without the member."""
+@dataclass(frozen=True)
+class HeardRef:
+    """A reference to what an action heard: the action's construction, the record among those
+    it declares, and the member path under the record, of a class. It dereferences to what the
+    action heard in the scope chain: pending while the action is, the record named, another
+    record, or the record named without the member."""
 
-    model_config = REFERENCE
-    scope: Site
-    action: type[BaseModel]
+    action: Construction
     record: type[BaseModel]
     member: Site
     cls: type[BaseModel]
 
     @property
+    def scope(self) -> Site:
+        """The scope template the action is placed at, where its record enters."""
+        return self.action.scope
+
+    @property
     def site(self) -> Site:
         """The declared site: the action's, ``heard``, and the member path."""
-        return (*self.scope, self.action.__name__, HEARD, *self.member)
+        return (*self.action.site, HEARD, *self.member)
 
-    def held(self, cls: type[BaseModel], *steps: str) -> HeardRef:
-        """The reference to a member of the record, at the steps under its member path."""
-        return HeardRef(
-            scope=self.scope,
-            action=self.action,
-            record=self.record,
-            member=(*self.member, *steps),
-            cls=cls,
-        )
+    @property
+    def key(self) -> Key:
+        """What a scope holds it under: the action, and the member path."""
+        return (self.action, self.member)
+
+    def held(self, cls: type[BaseModel], name: str) -> HeardRef:
+        """The reference to what a single field of this holds."""
+        return HeardRef(self.action, self.record, (*self.member, name), cls)
 
     def element(self, cls: type[BaseModel], name: str, step: str) -> HeardRef:
-        """The reference to an element of a tuple field of the record: under the action's
-        scope, at the element's step."""
-        return self.held(cls, name, step)
+        """The reference to an element of a tuple field of this, in the element's own scope."""
+        return HeardRef(self.action, self.record, (*self.member, name, step), cls)
 
 
 type Ref = InputRef | ConstructedRef | HeardRef
 """Where a bound premise comes from, retained from the declarations: the one thing a run
 dereferences to construct, and to explain what it could not."""
 
-tracer = trace.get_tracer("type_construction.engine")
-"""Spans named by the program's classes: one per answer, named for the route, with one child per
-performed action, named for the action. Attributes are class names and counts, never contents.
-With no SDK configured these are no-ops; the deployment supplies the SDK and the exporter."""
+type Key = tuple[Construction | None, Site]
+"""What a scope holds an arrived instance or a collection under: its origin, the action that
+heard it or none for what arrives, and the member path, the whole declared site for what
+arrives."""
+
+
+@dataclass(frozen=True)
+class Collected:
+    """Where a construction's tuple field gathers: the reference to the occurrence that holds
+    the collection, the tuple field's name, the references to the elements it takes, one per
+    element class, each in the element's scope, ``"[]"`` for every element of a variable tuple
+    and a position for each of a fixed one, and the positions the holder declares, ``None``
+    for ``tuple[E, ...]``."""
+
+    holder: InputRef | HeardRef
+    name: str
+    elements: tuple[Ref, ...]
+    positions: int | None
+
+    @property
+    def site(self) -> Site:
+        """The collection's declared site."""
+        return (*self.holder.site, self.name)
+
+    @property
+    def key(self) -> Key:
+        """What a scope holds the collection under: the holder's origin, and the field."""
+        origin, member = self.holder.key
+        return (origin, (*member, self.name))
 
 
 def is_model(cls: object) -> TypeIs[type[BaseModel]]:
@@ -355,9 +429,9 @@ def carries(cls: type[BaseModel]) -> bool:
 
 
 def refutable(cls: type[BaseModel]) -> bool:
-    """Whether a class's refusal says only that it does not hold for these operands: a relation
-    or a selection, the kinds that exist to refuse."""
-    return is_relation(cls) or is_selection(cls)
+    """Whether a class is a refutable kind, one whose refusal can say only that it does not
+    hold for these operands."""
+    return issubclass(cls, Refutable)
 
 
 def declared(cls: type[object]) -> bool:
@@ -651,15 +725,17 @@ def names(classes_: Iterable[type[BaseModel]]) -> str:
 
 @dataclass(eq=False)
 class Context:
-    """One scope of the symbolic tree: opened at a root or an element, owning the symbols
-    declared or constructed there, seeing its parent's. ``many`` when it stands for every
-    element of ``tuple[E, ...]``."""
+    """One scope of the symbolic tree, a discovery structure of the analysis: opened at a root
+    or an element, owning the symbols declared or constructed there, seeing its parent's.
+    ``many`` when it stands for every element of ``tuple[E, ...]``. Every context of one tree
+    shares ``symbols``, each symbol by its reference."""
 
     site: Site
     parent: Context | None
     many: bool = field(kw_only=True)
     owned: list[Symbol] = field(default_factory=list["Symbol"])
     children: list[Context] = field(default_factory=list["Context"])
+    symbols: dict[Ref, Symbol] = field(default_factory=dict[Ref, "Symbol"])
 
     @property
     def chain(self) -> Iterator[Context]:
@@ -675,33 +751,53 @@ class Context:
 
     def opened(self, site: Site, *, many: bool) -> Context:
         """A child context under this one."""
-        child = Context(site, self, many=many)
+        child = Context(site, self, many=many, symbols=self.symbols)
         self.children.append(child)
         return child
+
+    def own(self, symbol: Symbol) -> Symbol:
+        """A symbol owned here and registered by its reference."""
+        self.owned.append(symbol)
+        self.symbols[symbol.ref] = symbol
+        return symbol
 
 
 @dataclass(frozen=True)
 class Gathered:
-    """One collection as a class gathers it: the site of the tuple field, the symbol that
-    holds it, the element symbols, alternatives among them, and the positions the field
-    declares, ``None`` for ``tuple[E, ...]``."""
+    """One collection as the analysis sees it: the symbol that holds it, the tuple field, the
+    element symbols, alternatives among them, and the positions the field declares."""
 
-    site: Site
     holder: Symbol
+    name: str
     elements: tuple[Symbol, ...]
     positions: int | None
+
+    @property
+    def site(self) -> Site:
+        """The collection's declared site."""
+        return (*self.holder.site, self.name)
 
     @property
     def contexts(self) -> tuple[Context, ...]:
         """The element contexts, in order, each once."""
         return tuple(dict.fromkeys(e.context for e in self.elements))
 
+    def collected(self, elements: Iterable[Symbol]) -> Collected:
+        """The collection as a construction gathers it: by references."""
+        holder = self.holder.ref
+        if isinstance(holder, ConstructedRef):
+            held_by_construction = f"{'.'.join(self.site)} is held by a construction"
+            raise TypeError(held_by_construction)
+        return Collected(
+            holder, self.name, tuple(dict.fromkeys(e.ref for e in elements)), self.positions
+        )
+
 
 @dataclass(eq=False)
 class Symbol:
-    """One occurrence of the proof: a class at a site in a context. What arrived or was heard
-    holds the symbols of its contents; what was constructed holds the symbols it was bound to,
-    which are references, not new occurrences."""
+    """One occurrence as the analysis sees it: a class at its reference in a context. What
+    arrived or was heard holds the symbols of its contents; what was constructed holds its
+    construction in its reference and nothing more here."""
 
     cls: type[BaseModel]
     ref: Ref
@@ -743,8 +839,7 @@ def declared_symbol(
     of this one. What a field admitting ``None`` holds exists only when it arrives, and so does
     everything under it. A class already on the lineage is not descended into."""
     cls, site = ref.cls, ref.site
-    symbol = Symbol(cls, ref, context, because=because)
-    context.owned.append(symbol)
+    symbol = context.own(Symbol(cls, ref, context, because=because))
     if cls in lineage:
         return symbol
     lineage = lineage | {cls}
@@ -764,9 +859,7 @@ def declared_symbol(
                 declared_symbol(ref.element(c, name, step), child, lineage, because)
                 for c in options(element)
             )
-        symbol.collected[name] = Gathered(
-            (*site, name), symbol, tuple(found), positions(info.annotation)
-        )
+        symbol.collected[name] = Gathered(symbol, name, tuple(found), positions(info.annotation))
     return symbol
 
 
@@ -775,28 +868,6 @@ class Ambiguity(NamedTuple):
 
     field: str
     message: str
-
-
-@dataclass(frozen=True)
-class Binding:
-    """How a class binds in a context: the symbols of each premise, alternatives among them,
-    the fresh classes constructed for the holder, and the collection each tuple field gathers;
-    ``anchored`` when the context owns a premise or holds a gathered collection."""
-
-    singles: dict[str, tuple[Symbol, ...]]
-    freshly: dict[str, type[BaseModel]]
-    collections: dict[str, Gathered]
-    anchored: bool
-
-    @property
-    def because(self) -> tuple[Site, ...]:
-        """The optional sites the construction exists only when they arrive: every premise's,
-        and every gathered element's."""
-        bound = (
-            *(s for found in self.singles.values() for s in found),
-            *(e for g in self.collections.values() for e in g.elements),
-        )
-        return tuple(dict.fromkeys(site for s in bound for site in s.because))
 
 
 def single(name: str, classes_: Options, context: Context) -> tuple[Symbol, ...] | Ambiguity | None:
@@ -811,19 +882,27 @@ def single(name: str, classes_: Options, context: Context) -> tuple[Symbol, ...]
     return tuple(found) or None
 
 
-def reached_from(symbols: Iterable[Symbol]) -> dict[Site, Gathered]:
+def reached_from(symbols: Iterable[Symbol], context: Context) -> dict[Site, Gathered]:
     """Every collection reached from symbols through product fields, by site: what a bound
-    premise holds, and what that holds in turn."""
+    premise holds, and what that holds in turn; through a constructed premise, what its
+    construction gathers and what its premises hold."""
     found: dict[Site, Gathered] = {}
-    seen: set[int] = set()
-    todo = list(symbols)
+    seen: set[Ref] = set()
+    todo = [s.ref for s in symbols]
     while todo:
-        symbol = todo.pop()
-        if id(symbol) in seen:
+        ref = todo.pop()
+        if ref in seen:
             continue
-        seen.add(id(symbol))
-        found.update({g.site: g for g in symbol.collected.values()})
-        todo.extend(s for alternatives in symbol.held.values() for s in alternatives)
+        seen.add(ref)
+        if isinstance(ref, ConstructedRef):
+            for collected in ref.construction.collections.values():
+                holder = context.symbols[collected.holder]
+                found[collected.site] = holder.collected[collected.name]
+            todo.extend(r for refs in ref.construction.premises.values() for r in refs)
+        else:
+            symbol = context.symbols[ref]
+            found.update({g.site: g for g in symbol.collected.values()})
+            todo.extend(s.ref for alternatives in symbol.held.values() for s in alternatives)
     return found
 
 
@@ -840,14 +919,14 @@ def chosen(classes_: Options, context: Context) -> list[Symbol]:
 def compatible(cls: type[BaseModel], name: str, source: Gathered) -> bool:
     """Whether a tuple field may gather a collection of the source's declared shape:
     ``tuple[E, ...]`` gathers any; a fixed tuple gathers a fixed tuple of the same positions;
-    a relation or a selection gathers any, since refusing the count is what it declares."""
+    a refutable kind gathers any, since refusing the count is what it declares."""
     wanted = positions(cls.model_fields[name].annotation)
     return wanted is None or refutable(cls) or wanted == source.positions
 
 
 def gather(
     cls: type[BaseModel], name: str, classes_: Options, pool: Mapping[Site, Gathered]
-) -> Gathered | Ambiguity | None:
+) -> Collected | Ambiguity | None:
     """The one collection among a pool, of a shape the field may gather, whose every element
     context owns one of the field's classes, with those elements gathered in order; ambiguous
     with two such collections, or an element context owning a class at two sites; ``None``
@@ -874,34 +953,62 @@ def gather(
                     name, f"{member.__name__} is at {len(sites)} sites per element: {where}"
                 )
         picked.extend(own)
-    declared_as = positions(cls.model_fields[name].annotation)
-    return Gathered(found.site, found.holder, tuple(picked), declared_as)
+    return found.collected(picked)
 
 
-def bind(cls: type[BaseModel], context: Context) -> Binding | Ambiguity | None:
-    """How a class binds in a context, read from its fields: each required single field to the
-    visible symbols of its classes, each tuple field to one collection reached through the
-    bound premises or, when they reach none, held by the context; ``None`` while a field has
-    nothing; the ambiguity of the first field with more than one candidate."""
+def bound_in(
+    route: type[BaseModel], cls: type[BaseModel], context: Context
+) -> Construction | Ambiguity | None:
+    """How a class constructs in a context, read from its fields: each required single field
+    bound to the visible symbols of its classes, each tuple field to one collection reached
+    through the bound premises or, when they reach none, held by the context; ``None`` while
+    a field has nothing; the ambiguity of the first field with more than one candidate."""
     singles: dict[str, tuple[Symbol, ...]] = {}
     for name, classes_ in premises(cls).items():
         found = single(name, classes_, context)
         if found is None or isinstance(found, Ambiguity):
             return found
         singles[name] = found
-    pool = reached_from(s for found in singles.values() for s in found) or held_by(context)
-    collections: dict[str, Gathered] = {}
+    pool = reached_from((s for found in singles.values() for s in found), context) or held_by(
+        context
+    )
+    collections: dict[str, Collected] = {}
     for name, classes_ in collects(cls).items():
-        found = gather(cls, name, classes_, pool)
-        if found is None or isinstance(found, Ambiguity):
-            return found
-        collections[name] = found
-    anchors = [
+        gathered = gather(cls, name, classes_, pool)
+        if gathered is None or isinstance(gathered, Ambiguity):
+            return gathered
+        collections[name] = gathered
+    sources = (
         *(s for found in singles.values() for s in found),
-        *(g.holder for g in collections.values()),
+        *(context.symbols[e] for g in collections.values() for e in g.elements),
+    )
+    return Construction(
+        route,
+        cls,
+        context.site,
+        {n: tuple(dict.fromkeys(s.ref for s in found)) for n, found in singles.items()},
+        collections,
+        freshly(cls),
+        tuple(dict.fromkeys(site for s in sources for site in s.because)),
+    )
+
+
+def anchored(construction: Construction, context: Context) -> bool:
+    """Whether the context owns one of the construction's premises or holds a collection it
+    gathers, so the class is constructed here; a class with neither is constructed at the
+    root."""
+    anchors = [
+        *(r for refs in construction.premises.values() for r in refs),
+        *(c.holder for c in construction.collections.values()),
     ]
-    anchored = any(a.context is context for a in anchors) if anchors else context.parent is None
-    return Binding(singles, freshly(cls), collections, anchored)
+    if not anchors:
+        return context.parent is None
+    return any(
+        r.construction.scope == context.site
+        if isinstance(r, ConstructedRef)
+        else context.symbols[r].context is context
+        for r in anchors
+    )
 
 
 def contexts(root: Context) -> Iterator[Context]:
@@ -911,50 +1018,20 @@ def contexts(root: Context) -> Iterator[Context]:
         yield from contexts(child)
 
 
-def symbolized(cls: type[BaseModel], context: Context, binding: Binding) -> Symbol:
-    """The symbol of a class constructed in a context: at the context's site under its own name,
-    holding what it was bound to. An action's records enter the context as alternatives at the
-    action's ``heard`` site, with everything they declare."""
-    symbol = Symbol(
-        cls,
-        ConstructedRef(scope=context.site, cls=cls),
-        context,
-        binding.singles,
-        binding.collections,
-        binding.because,
+def symbolized(construction: Construction, context: Context) -> Symbol:
+    """The symbol of a construction in its context, under the construction's own reference. An
+    action's records enter the context as alternatives at the action's ``heard`` site, with
+    everything they declare."""
+    symbol = context.own(
+        Symbol(
+            construction.cls, ConstructedRef(construction), context, because=construction.because
+        )
     )
-    context.owned.append(symbol)
-    if is_action(cls):
-        for record in heard(cls):
-            ref = HeardRef(scope=context.site, action=cls, record=record, member=(), cls=record)
-            declared_symbol(ref, context, frozenset(), binding.because)
+    if is_action(construction.cls):
+        for record in heard(construction.cls):
+            ref = HeardRef(construction, record, (), record)
+            declared_symbol(ref, context, frozenset(), construction.because)
     return symbol
-
-
-class Collected(BaseModel):
-    """Where a placement's tuple field gathers: the collection's site, the reference to the
-    occurrence that holds it, and the references to the elements it takes, one per element
-    class, each in the element's scope, ``"[]"`` for every element of a variable tuple and a
-    position for each of a fixed one."""
-
-    model_config = REFERENCE
-    site: Site
-    holder: Ref
-    elements: tuple[Ref, ...]
-
-
-class Placement(BaseModel):
-    """One class constructed in one route, in the scope at a site, and where each field binds:
-    the references of each single field's candidates, the fresh class of each fresh field, and
-    the collection each tuple field gathers. The run constructs exactly this."""
-
-    model_config = REFERENCE
-    route: type[BaseModel]
-    cls: type[BaseModel]
-    scope: Site
-    singles: dict[str, tuple[Ref, ...]]
-    freshly: dict[str, type[BaseModel]]
-    collections: dict[str, Collected]
 
 
 class Waiting(BaseModel):
@@ -1020,45 +1097,22 @@ def rooted[Q: Request, A: Reply[Fact]](
     """The root context of a route's symbolic tree: its request, the deployment and every
     constant, with everything the first two declare."""
     root = Context((), None, many=False)
-    declared_symbol(InputRef(scope=(), member=REQUEST, cls=asked(route)), root, PLACED)
+    declared_symbol(InputRef((), REQUEST, asked(route)), root, PLACED)
     for deployment in classes_:
         if is_config(deployment):
-            declared_symbol(InputRef(scope=(), member=DEPLOYMENT, cls=deployment), root, PLACED)
+            declared_symbol(InputRef((), DEPLOYMENT, deployment), root, PLACED)
     for c in classes_:
         if constant(c):
-            root.owned.append(Symbol(c, InputRef(scope=(), member=(c.__name__,), cls=c), root))
+            root.own(Symbol(c, InputRef((), (c.__name__,), c), root))
     return root
 
 
 class Symbolic(NamedTuple):
     """What constructing a route symbolically produced."""
 
-    placed: list[Placement]
+    constructions: list[Construction]
     waiting: list[Waiting]
     faulted: list[Fault]
-
-
-def placement(
-    route: type[BaseModel], cls: type[BaseModel], context: Context, binding: Binding
-) -> Placement:
-    """A binding as the run reads it: the references the bound symbols carry."""
-    return Placement(
-        route=route,
-        cls=cls,
-        scope=context.site,
-        singles={
-            n: tuple(dict.fromkeys(s.ref for s in found)) for n, found in binding.singles.items()
-        },
-        freshly=binding.freshly,
-        collections={
-            n: Collected(
-                site=g.site,
-                holder=g.holder.ref,
-                elements=tuple(dict.fromkeys(e.ref for e in g.elements)),
-            )
-            for n, g in binding.collections.items()
-        },
-    )
 
 
 def symbolic[Q: Request, A: Reply[Fact]](
@@ -1066,11 +1120,11 @@ def symbolic[Q: Request, A: Reply[Fact]](
 ) -> Symbolic:
     """The proof's construction of one route: passes over the symbolic tree constructing every
     class the route builds wherever it binds, until a pass constructs nothing; then every
-    construction bound again against the whole tree, which is what the placements say, and
-    every class never constructed explained."""
+    construction bound again against the whole tree, so a candidate that appeared late is
+    still seen, and every class never constructed explained."""
     root = rooted(route, classes_)
     asked_for = built_by(route, classes_)
-    constructed: list[tuple[type[BaseModel], Context]] = []
+    constructed: list[tuple[Construction, Context]] = []
     done: dict[Context, set[type[BaseModel]]] = {}
     moved = True
     while moved:
@@ -1079,27 +1133,27 @@ def symbolic[Q: Request, A: Reply[Fact]](
             for cls in asked_for:
                 if cls in done.setdefault(context, set()):
                     continue
-                found = bind(cls, context)
-                if isinstance(found, Binding) and found.anchored:
-                    symbolized(cls, context, found)
-                    constructed.append((cls, context))
+                found = bound_in(route, cls, context)
+                if isinstance(found, Construction) and anchored(found, context):
+                    symbolized(found, context)
+                    constructed.append((found, context))
                     done[context].add(cls)
                     moved = True
-    placed: list[Placement] = []
     faulted: list[Fault] = []
-    for cls, context in constructed:
-        found = bind(cls, context)
-        if isinstance(found, Binding):
-            placed.append(placement(route, cls, context, found))
+    for construction, context in constructed:
+        cls = construction.cls
+        found = bound_in(route, cls, context)
+        if isinstance(found, Construction):
+            construction.rebound(found)
         elif isinstance(found, Ambiguity):
             faulted.append(ambiguity(cls, found))
         if is_route(cls) and context.parent is not None:
             faulted.append(misrouted(cls, context))
-        if is_route(cls) and isinstance(found, Binding) and found.because:
+        if is_route(cls) and isinstance(found, Construction) and found.because:
             faulted.append(conditional(cls, found.because))
-    never_built = [c for c in asked_for if not any(c is b for b, _ in constructed)]
+    never_built = [c for c in asked_for if not any(c is b.cls for b, _ in constructed)]
     waiting, faults = unexplained(route, never_built, classes_, root)
-    return Symbolic(placed, waiting, [*faulted, *faults])
+    return Symbolic([c for c, _ in constructed], waiting, [*faulted, *faults])
 
 
 def ambiguity(cls: type[BaseModel], found: Ambiguity) -> Fault:
@@ -1194,7 +1248,7 @@ def unexplained(
     waiting: list[Waiting] = []
     faults: list[Fault] = []
     for cls in never_built:
-        found = [bind(cls, c) for c in contexts(root)]
+        found = [bound_in(route, cls, c) for c in contexts(root)]
         if any(isinstance(f, Ambiguity) for f in found):
             faults.extend(ambiguity(cls, f) for f in found if isinstance(f, Ambiguity))
             continue
@@ -1278,10 +1332,10 @@ class Proof(BaseModel):
     """Every route constructed symbolically, at startup; its validator refuses the program with
     every fault at once."""
 
-    model_config = ConfigDict(frozen=True, strict=True)
+    model_config = ConfigDict(frozen=True, strict=True, arbitrary_types_allowed=True)
     program: str
     classes: tuple[type[BaseModel], ...]
-    placed: tuple[Placement, ...]
+    constructions: tuple[Construction, ...]
     waiting: tuple[Waiting, ...]
     faulted: tuple[Fault, ...]
 
@@ -1290,22 +1344,22 @@ class Proof(BaseModel):
         """The program's routes."""
         return tuple(c for c in self.classes if is_route(c))
 
-    def placements(self, route: type[BaseModel]) -> tuple[Placement, ...]:
-        """Every placement of a route, in construction order."""
-        return tuple(p for p in self.placed if p.route is route)
+    def constructs(self, route: type[BaseModel]) -> tuple[Construction, ...]:
+        """Every construction of a route, in construction order."""
+        return tuple(c for c in self.constructions if c.route is route)
 
     def built[Q: Request, A: Reply[Fact]](
         self, route: type[Route[Q, A]]
     ) -> tuple[type[BaseModel], ...]:
         """The classes a route's run constructs, in definition order."""
-        placed = {p.cls for p in self.placements(route)}
+        placed = {c.cls for c in self.constructs(route)}
         return tuple(c for c in self.classes if c in placed)
 
     def sites[Q: Request, A: Reply[Fact]](
         self, route: type[Route[Q, A]], cls: type[BaseModel]
     ) -> tuple[Site, ...]:
         """The sites at which a route constructs a class."""
-        return tuple((*p.scope, cls.__name__) for p in self.placements(route) if p.cls is cls)
+        return tuple(c.site for c in self.constructs(route) if c.cls is cls)
 
     @property
     def constants(self) -> tuple[type[BaseModel], ...]:
@@ -1896,7 +1950,7 @@ def proven(program: ModuleType) -> Proof:
     return Proof(
         program=program.__name__,
         classes=classes_,
-        placed=tuple(p for s in found for p in s.placed),
+        constructions=tuple(c for s in found for c in s.constructions),
         waiting=tuple(w for s in found for w in s.waiting),
         faulted=tuple(f for s in found for f in s.faulted),
     )
@@ -1929,37 +1983,47 @@ type Provenance = dict[str, tuple[Site, ...]]
 """Which occurrences supplied each field of a construction: the concrete path of each."""
 
 type Given = dict[str, BaseModel | tuple[BaseModel, ...]]
-"""What a scope supplies for a placement's fields, as Pydantic takes it."""
+"""What a scope supplies for a construction's fields, as Pydantic takes it."""
+
+
+class Constructed(NamedTuple):
+    """A construction's instance in a scope, with the concrete paths of what supplied it."""
+
+    instance: BaseModel
+    provenance: Provenance
 
 
 class Refuted(NamedTuple):
-    """A relation or a selection whose declared condition the evidence rejected in a scope:
-    Pydantic's refusal, every error of which is ``REFUTED``, and the concrete paths of the
-    bound premises it was constructed from."""
+    """A refutable kind whose declared condition the evidence rejected in a scope: Pydantic's
+    refusal, every error of which is ``REFUTED``, and the concrete paths of the operands it was
+    constructed from."""
 
     refusal: ValidationError
     provenance: Provenance
 
 
+type Made = Constructed | Refuted
+"""What a scope holds for a construction once a pass asked for it."""
+
+
 @dataclass(eq=False)
 class Scope:
-    """One scope of a run: opened at a root or an element, owning the instances at the sites
-    declared or constructed there and the collections those instances hold, seeing its parent's.
-    The same shape as the proof's ``Context``, over instances. ``site`` is the declared site the
-    proof placed at, ``"[]"`` for an element of a variable tuple; ``path`` is this invocation's
-    concrete path, ``"[1]"`` for the second element, and every occurrence's concrete path is
-    the path of the scope that owns it with its site under that scope's."""
+    """One scope of a run: opened at a root or an element, holding what arrived or was heard
+    there by its key, the collections those hold, and what each construction placed here made,
+    seeing its parent's. The same shape as the analysis's ``Context``, over instances. ``site``
+    is the declared site template, ``"[]"`` for an element of a variable tuple; ``path`` is
+    this invocation's concrete path, ``"[1]"`` for the second element, and every occurrence's
+    concrete path is the path of the scope that owns it with its site under that scope's."""
 
     site: Site
     path: Site
     parent: Scope | None
-    owned: dict[Site, BaseModel] = field(default_factory=dict[Site, BaseModel])
-    collections: dict[Site, tuple[Scope, ...]] = field(
-        default_factory=dict[Site, tuple["Scope", ...]]
+    arrived: dict[Key, BaseModel] = field(default_factory=dict[Key, BaseModel])
+    collections: dict[Key, tuple[Scope, ...]] = field(
+        default_factory=dict[Key, tuple["Scope", ...]]
     )
     children: list[Scope] = field(default_factory=list["Scope"])
-    provenance: dict[Site, Provenance] = field(default_factory=dict[Site, Provenance])
-    refuted: dict[Site, Refuted] = field(default_factory=dict[Site, "Refuted"])
+    made: dict[Construction, Made] = field(default_factory=dict[Construction, Made])
 
     @property
     def chain(self) -> Iterator[Scope]:
@@ -1970,51 +2034,51 @@ class Scope:
             found = found.parent
 
     def at(self, site: Site) -> Site:
-        """The concrete path of an occurrence this scope owns at a site."""
+        """The concrete path of a declared site under this scope's."""
         return (*self.path, *site[len(self.site) :])
 
     def within(self, site: Site) -> Scope:
-        """The scope of this chain at a declared scope site: where a reference's occurrence
-        is owned."""
-        return next(s for s in self.chain if s.site == site)
+        """The scope of this chain at a declared scope template: where a reference's occurrence
+        is owned. A template this chain does not pass through is a reference that does not
+        apply here, which the proof excludes."""
+        found = [s for s in self.chain if s.site == site]
+        if not found:
+            unseen = f"{'.'.join(self.path)} sees no scope at {'.'.join(site)}"
+            raise LookupError(unseen)
+        return found[0]
 
-    def located(self, site: Site) -> tuple[Site, BaseModel] | None:
-        """The instance at a site this scope sees, with its concrete path, or ``None``."""
-        for scope in self.chain:
-            if (found := scope.owned.get(site)) is not None:
-                return scope.at(site), found
-        return None
+    def holding(self, key: Key) -> Scope | None:
+        """The scope of this chain that holds an arrived instance under a key, or ``None``."""
+        return next((s for s in self.chain if key in s.arrived), None)
 
-    def collection(self, site: Site) -> tuple[Scope, ...] | None:
+    def collection(self, key: Key) -> tuple[Scope, ...] | None:
         """The element scopes of a collection this scope sees, or ``None``."""
-        for scope in self.chain:
-            if (found := scope.collections.get(site)) is not None:
-                return found
-        return None
+        return next((s.collections[key] for s in self.chain if key in s.collections), None)
 
 
-def arrived(instance: BaseModel, site: Site, scope: Scope) -> None:
-    """Enter what arrived into a scope at its site, with everything it holds: each model a single
-    field holds at the field's site, and each tuple of models as a collection, one child scope
-    per element at the element's site, holding the element and what it holds in turn."""
-    scope.owned[site] = instance
+def arrived(instance: BaseModel, origin: Construction | None, member: Site, scope: Scope) -> None:
+    """Enter what arrived or was heard into a scope under its key, with everything it holds:
+    each model a single field holds under the member's key, and each tuple of models as a
+    collection, one child scope per element at the element's declared site, holding the
+    element and what it holds in turn."""
+    declared = member if origin is None else (*origin.site, HEARD, *member)
+    scope.arrived[origin, member] = instance
     for name, info in type(instance).model_fields.items():
         value: object = getattr(instance, name)
         if isinstance(value, BaseModel):
-            arrived(value, (*site, name), scope)
+            arrived(value, origin, (*member, name), scope)
         elif is_elements(value):
             opened_: list[Scope] = []
             for index, element in enumerate(value):
                 if isinstance(element, BaseModel):
+                    step = position(info.annotation, index)
                     child = Scope(
-                        (*site, name, position(info.annotation, index)),
-                        (*scope.at(site), name, f"[{index}]"),
-                        scope,
+                        (*declared, name, step), (*scope.at(declared), name, f"[{index}]"), scope
                     )
                     scope.children.append(child)
-                    arrived(element, child.site, child)
+                    arrived(element, origin, (*member, name, step), child)
                     opened_.append(child)
-            scope.collections[(*site, name)] = tuple(opened_)
+            scope.collections[origin, (*member, name)] = tuple(opened_)
 
 
 def scopes(root: Scope) -> Iterator[Scope]:
@@ -2025,75 +2089,131 @@ def scopes(root: Scope) -> Iterator[Scope]:
 
 
 class Occurrence(NamedTuple):
-    """A placement in a concrete scope: one occurrence of a class the run constructs, with what
-    the scope holds of it, constructed or refuted."""
+    """A construction in a concrete scope: one occurrence of a class the run constructs, with
+    what the scope made of it."""
 
     scope: Scope
-    placed: Placement
-
-    @property
-    def site(self) -> Site:
-        """The declared site: the scope's and the class's name."""
-        return (*self.scope.site, self.placed.cls.__name__)
+    construction: Construction
 
     @property
     def path(self) -> Site:
         """The concrete path."""
-        return self.scope.at(self.site)
+        return self.scope.at(self.construction.site)
 
     @property
-    def constructed(self) -> BaseModel | None:
-        """The instance, once constructed."""
-        return self.scope.owned.get(self.site)
+    def made(self) -> Made | None:
+        """What the scope made of it, once a pass asked for it."""
+        return self.scope.made.get(self.construction)
 
-    @property
-    def refuted(self) -> Refuted | None:
-        """The refutation, once refuted."""
-        return self.scope.refuted.get(self.site)
+
+class Available(NamedTuple):
+    """A reference dereferenced to evidence: the instance, at its concrete path."""
+
+    path: Site
+    instance: BaseModel
+
+
+class Pending(NamedTuple):
+    """A reference dereferenced to an occurrence no pass has made yet: a constructed premise, or
+    the action whose record a premise is bound to."""
+
+    occurrence: Occurrence
+
+
+class Absent(NamedTuple):
+    """A reference to what arrives dereferenced to nothing of the referenced class: the concrete
+    path, and what is there instead, if anything."""
+
+    path: Site
+    found: BaseModel | None
+
+
+class Heard(NamedTuple):
+    """A reference to a record dereferenced to what its action heard instead: another record
+    than the one named, or the one named without the member."""
+
+    action: Occurrence
+    record: BaseModel | None
+
+
+class Rejected(NamedTuple):
+    """A reference to a construction dereferenced to its refutation."""
+
+    occurrence: Occurrence
+    refuted: Refuted
+
+
+type State = Available | Pending | Absent | Heard | Rejected
+"""What a reference dereferences to in the observed state of a run."""
+
+
+def resolve(ref: Ref, scope: Scope) -> State:
+    """One reference dereferenced from a scope, the same way in a pass and in the explanation of
+    a run that ended: what arrives is held by the chain or absent; what is constructed is made,
+    refuted or pending in the scope at its template; what is heard is pending while its action
+    is, else held by the chain under the action, or the action heard otherwise."""
+    match ref:
+        case InputRef():
+            holder = scope.holding(ref.key)
+            path = (holder or scope.within(ref.scope)).at(ref.site)
+            found = None if holder is None else holder.arrived[ref.key]
+            return Available(path, found) if is_exactly(found, ref.cls) else Absent(path, found)
+        case ConstructedRef():
+            occurrence = Occurrence(scope.within(ref.scope), ref.construction)
+            made = occurrence.made
+            if isinstance(made, Constructed):
+                return Available(occurrence.path, made.instance)
+            if isinstance(made, Refuted):
+                return Rejected(occurrence, made)
+            return Pending(occurrence)
+        case HeardRef():
+            occurrence = Occurrence(scope.within(ref.scope), ref.action)
+            if occurrence.made is None:
+                return Pending(occurrence)
+            holder = scope.holding(ref.key)
+            found = None if holder is None else holder.arrived[ref.key]
+            return (
+                Available(holder.at(ref.site), found)
+                if holder is not None and is_exactly(found, ref.cls)
+                else Heard(occurrence, occurrence.scope.arrived.get((ref.action, ())))
+            )
+
+
+def is_exactly(found: BaseModel | None, cls: type[BaseModel]) -> TypeIs[BaseModel]:
+    """Whether what a scope holds is an instance of the referenced class itself: two
+    alternatives share a site, and the one that arrived is the one whose class the reference
+    names."""
+    return type(found) is cls
 
 
 type Premise = tuple[str, int | None]
-"""One premise of a placement: a single field, or one element of a tuple field by its index."""
+"""One premise of a construction: a single field, or one element of a tuple field by its
+index."""
 
 
 class Bound(NamedTuple):
-    """What a scope holds at a placement's bound references: the instance at each premise that
-    is filled, with the concrete path of the occurrence that supplied it, and for each premise
-    not filled its references, each with the scope it is dereferenced from, the element's for
-    an element."""
+    """The transient result of dereferencing a construction's references in a scope: the
+    instance at each premise that is filled, with the concrete path of what supplied it, and
+    for each premise not filled the scope it is dereferenced from, the element's for an
+    element, and its references."""
 
     given: Given
     provenance: Provenance
-    unfilled: dict[Premise, list[tuple[Scope, Ref]]]
+    unfilled: dict[Premise, tuple[Scope, tuple[Ref, ...]]]
 
 
-type Located = tuple[Site, BaseModel]
-"""An instance a scope sees, with its concrete path."""
-
-
-def found_at(refs: Iterable[Ref], scope: Scope) -> list[Located]:
-    """The instances a scope sees at the references' sites, of the referenced classes, with
-    their paths: two alternatives share a site, and the one that arrived is the one whose class
-    the reference names. An element's scope sees its own element's sites and no sibling's."""
-    return [
-        found
-        for r in refs
-        if (found := scope.located(r.site)) is not None and type(found[1]) is r.cls
-    ]
-
-
-def present(found: list[Located], placed: Placement, name: str) -> Located | None:
+def present(found: list[Available], cls: type[BaseModel], name: str) -> Available | None:
     """The one instance found for a field; ``None`` for none; a failure for more than one, which
     the proof excludes and the run refuses to choose among."""
     if len(found) > 1:
         raise ValidationError.from_exception_data(
-            placed.cls.__name__,
+            cls.__name__,
             [
                 fault(
                     "ambiguous",
                     "{cls}.{name} found {n} instances where the proof bound one",
-                    (placed.cls.__name__, name),
-                    cls=placed.cls.__name__,
+                    (cls.__name__, name),
+                    cls=cls.__name__,
                     name=name,
                     n=len(found),
                 )
@@ -2102,79 +2222,70 @@ def present(found: list[Located], placed: Placement, name: str) -> Located | Non
     return found[0] if found else None
 
 
-def bound(placed: Placement, scope: Scope) -> Bound:
-    """What a scope holds at a placement's bound references: the instance at each single
-    field's reference, and for each tuple field every element scope's instance at the bound
-    element references, in element order; the references of each premise nothing fills."""
+def available(refs: Iterable[Ref], scope: Scope) -> list[Available]:
+    """The references among several that dereference to evidence from a scope."""
+    return [found for r in refs if isinstance(found := resolve(r, scope), Available)]
+
+
+def bound(construction: Construction, scope: Scope) -> Bound:
+    """A construction's references dereferenced in a scope: the instance at each single field's
+    reference, and for each tuple field every element scope's instance at the element
+    references placed in that element's scope, its position's for a fixed tuple, in element
+    order; the references of each premise nothing fills."""
     given: Given = {}
     provenance: Provenance = {}
-    unfilled: dict[Premise, list[tuple[Scope, Ref]]] = {}
-    for name, refs in placed.singles.items():
-        found = present(found_at(refs, scope), placed, name)
+    unfilled: dict[Premise, tuple[Scope, tuple[Ref, ...]]] = {}
+    cls = construction.cls
+    for name, refs in construction.premises.items():
+        found = present(available(refs, scope), cls, name)
         if found is None:
-            unfilled[name, None] = [(scope, r) for r in refs]
+            unfilled[name, None] = (scope, refs)
         else:
-            provenance[name], given[name] = (found[0],), found[1]
-    for name, collected in placed.collections.items():
-        elements = scope.collection(collected.site)
+            provenance[name], given[name] = (found.path,), found.instance
+    for name, collected in construction.collections.items():
+        elements = scope.collection(collected.key)
         if elements is None:
-            unfilled[name, None] = [(scope, collected.holder)]
+            unfilled[name, None] = (scope, (collected.holder,))
             continue
-        picked: list[Located] = []
+        picked: list[Available] = []
         for index, element in enumerate(elements):
-            found = present(found_at(collected.elements, element), placed, name)
+            refs = tuple(r for r in collected.elements if r.scope == element.site)
+            found = present(available(refs, element), cls, name)
             if found is None:
-                unfilled[name, index] = [(element, r) for r in collected.elements]
+                unfilled[name, index] = (element, refs)
             else:
                 picked.append(found)
         if len(picked) == len(elements):
-            provenance[name] = tuple(path for path, _ in picked)
-            given[name] = tuple(instance for _, instance in picked)
+            provenance[name] = tuple(f.path for f in picked)
+            given[name] = tuple(f.instance for f in picked)
     return Bound(given, provenance, unfilled)
 
 
-def supplied(placed: Placement, scope: Scope) -> Bound | None:
-    """What a scope supplies for a placement when every premise is filled, with a fresh instance
-    for each fresh field; ``None`` while any is not, so the class is asked again next pass."""
-    found = bound(placed, scope)
+def supplied(occurrence: Occurrence) -> Bound | None:
+    """What a scope supplies for a construction when every premise is filled, with a fresh
+    instance for each fresh field; ``None`` while any is not, so the class is asked again next
+    pass."""
+    found = bound(occurrence.construction, occurrence.scope)
     if found.unfilled:
         return None
-    built_at = scope.at((*scope.site, placed.cls.__name__))
-    for name, cls in placed.freshly.items():
-        found.provenance[name], found.given[name] = ((*built_at, name),), cls()
+    for name, cls in occurrence.construction.freshly.items():
+        found.provenance[name], found.given[name] = ((*occurrence.path, name),), cls()
     return found
 
 
-def construct(placed: Placement, given: Given, path: Site) -> BaseModel | ValidationError:
-    """Ask Pydantic for a placement with what a scope supplied: the instance, or the refusal
-    whose every error the kind raised as ``REFUTED``, its declared condition not holding over
-    what was supplied, which says only that it does not hold here; any other refusal is a
-    failure and propagates as Pydantic raised it, noted with the occurrence's concrete path, as
-    a party's exception is."""
+def construct(occurrence: Occurrence, given: Given) -> BaseModel | ValidationError:
+    """Ask Pydantic for an occurrence with what its scope supplied: the instance, or the refusal
+    a refutable kind owns as its declared condition not holding, which says only that it does
+    not hold here; any other refusal is a failure and propagates as Pydantic raised it, noted
+    with the occurrence's concrete path, as a party's exception is."""
+    cls = occurrence.construction.cls
     try:
-        return placed.cls.model_validate(given)
+        return cls.model_validate(given)
     except ValidationError as refusal:
-        if all(e["type"] == REFUTED for e in refusal.errors()):
+        if issubclass(cls, Refutable) and cls.refuted(refusal):
             return refusal
-        refusal.add_note(f"at {'.'.join(path)}")
+        refusal.add_note(f"at {'.'.join(occurrence.path)}")
         raise
-
-
-class Heard(NamedTuple):
-    """What an action occurrence heard, dereferenced from a premise bound to its record: the
-    record, which is another than the reference names, or the one named without the member the
-    reference reaches."""
-
-    action: Occurrence
-    record: BaseModel | None
-
-
-class Absent(NamedTuple):
-    """A reference to what arrives, dereferenced to nothing of the referenced class: the
-    concrete path, and what is there instead, if anything."""
-
-    path: Site
-    found: BaseModel | None
 
 
 class Unfilled(NamedTuple):
@@ -2198,74 +2309,52 @@ type Cause = Unfilled | Refutation
 """Why an occurrence can never construct: a premise nothing fills, or its own condition
 rejected."""
 
-type Index = Mapping[tuple[Site, type[BaseModel]], Placement]
-"""A route's placements by the scope site and class a reference names."""
+
+def causes(
+    occurrence: Occurrence, blocked: Mapping[Occurrence, tuple[Cause, ...]]
+) -> tuple[Cause, ...]:
+    """Why an occurrence can never construct, from its own references dereferenced in the
+    observed state: for each premise nothing fills, every reference is a cause, a rejected
+    condition or an absent source, or a pending occurrence already blocked, whose causes it
+    inherits; a premise with a pending occurrence not blocked may still fill, and is no
+    cause. Empty while no premise is blocked."""
+    found: list[Cause] = []
+    for premise, (at, refs) in bound(occurrence.construction, occurrence.scope).unfilled.items():
+        here: list[Cause] = []
+        for ref in refs:
+            match resolve(ref, at):
+                case Pending(pending):
+                    if pending not in blocked:
+                        break
+                    here.extend(blocked[pending])
+                case Rejected(rejected, refuted):
+                    here.append(Refutation(rejected, refuted))
+                case Absent() | Heard() as state:
+                    here.append(Unfilled(occurrence, premise, ref, state))
+                case Available():
+                    break
+        else:
+            found.extend(here)
+    return tuple(found)
 
 
-def candidate(
-    ref: Ref, at: Scope, consumer: Occurrence, premise: Premise, index: Index
-) -> Occurrence | Cause:
-    """One reference of a consumer's unfilled premise dereferenced in the observed state: the
-    pending occurrence that could still fill it, else the cause why nothing will. What arrives
-    is absent; what is constructed is pending or refuted; what is heard is pending while its
-    action is, else the action heard another record, or the one named without the member."""
-    match ref:
-        case InputRef():
-            located = at.located(ref.site)
-            path = at.within(ref.scope).at(ref.site)
-            return Unfilled(consumer, premise, ref, Absent(path, located and located[1]))
-        case ConstructedRef():
-            made = Occurrence(at.within(ref.scope), index[ref.scope, ref.cls])
-            if (refuted := made.refuted) is not None:
-                return Refutation(made, refuted)
-            return made
-        case HeardRef():
-            made = Occurrence(at.within(ref.scope), index[ref.scope, ref.action])
-            if made.constructed is None:
-                return made
-            heard_ = made.scope.owned.get((*made.site, HEARD))
-            return Unfilled(consumer, premise, ref, Heard(made, heard_))
-
-
-type Candidates = dict[Premise, list[Occurrence | Cause]]
-"""What could still fill each unfilled premise of an occurrence, or why nothing will."""
-
-
-def blocked_by(premises: Candidates, blocked: Mapping[Site, list[Cause]]) -> list[Cause]:
-    """The causes of every premise of an occurrence that nothing can fill any more: each pending
-    occurrence that could have is blocked, and their causes are its causes; empty while every
-    unfilled premise still has a pending occurrence that could fill it."""
+def waits_on(
+    occurrence: Occurrence, blocked: Mapping[Occurrence, tuple[Cause, ...]]
+) -> list[Occurrence]:
+    """The pending occurrences, not blocked, that an occurrence's unfilled premises dereference
+    to: what it still waits for."""
     return [
-        cause
-        for candidates in premises.values()
-        if all(c.path in blocked for c in candidates if isinstance(c, Occurrence))
-        for c in candidates
-        for cause in ([c] if isinstance(c, Unfilled | Refutation) else blocked[c.path])
+        pending.occurrence
+        for at, refs in bound(occurrence.construction, occurrence.scope).unfilled.values()
+        for ref in refs
+        if isinstance(pending := resolve(ref, at), Pending) and pending.occurrence not in blocked
     ]
-
-
-def waited_on(start: Site, pending: Mapping[Site, tuple[Occurrence, Candidates]]) -> list[Site]:
-    """An occurrence and every occurrence it waits on, transitively, in order of reach."""
-    found: list[Site] = []
-    todo = [start]
-    while todo:
-        path = todo.pop(0)
-        if path in found or path not in pending:
-            continue
-        found.append(path)
-        todo.extend(
-            c.path
-            for candidates in pending[path][1].values()
-            for c in candidates
-            if isinstance(c, Occurrence)
-        )
-    return found
 
 
 class Run[Q: Request, A: Reply[Fact]](NamedTuple):
     """One answered request with everything its construction knew: the route, the root scope,
-    whose tree holds every occurrence at its concrete path and the provenance of every
-    construction, and how many passes it took."""
+    whose tree holds every occurrence at its concrete path and what made it, and how many
+    passes it took."""
 
     route: Route[Q, A]
     root: Scope
@@ -2273,71 +2362,57 @@ class Run[Q: Request, A: Reply[Fact]](NamedTuple):
 
 
 class Blocked(NamedTuple):
-    """One request the route conclusively did not construct for: the route, the root scope with
-    everything the passes constructed, refuted and heard, how many passes they took, and each
-    cause the route is blocked by, at its own occurrence."""
+    """One request the route conclusively did not construct for: the route's occurrence, whose
+    root scope holds everything the passes constructed, refuted and heard, how many passes they
+    took, and each cause the route is blocked by, at its own occurrence."""
 
-    route: type[BaseModel]
-    root: Scope
+    occurrence: Occurrence
     passes: int
     causes: tuple[Cause, ...]
 
 
-def ended(
-    root: Scope, placements: tuple[Placement, ...], route: type[BaseModel], passes: int
-) -> Blocked:
-    """Why the route did not construct, from the binding of every occurrence the passes left
-    unconstructed, in its own scope, each unfilled reference dereferenced in the observed state.
-    An occurrence a premise of which no candidate can fill is blocked, by the refutations and
-    the dereferenced sources that are its causes, and so is every occurrence waiting on it,
-    until nothing moves. The route blocked is the structured refusal, as a value. The route not
-    blocked waits on occurrences that wait on one another, which no evidence explains: a
-    failure, raised, naming each and what it waits for."""
-    index: Index = {(p.scope, p.cls): p for p in placements}
-    pending: dict[Site, tuple[Occurrence, Candidates]] = {}
-    for scope in scopes(root):
-        for placed in placements:
-            occurrence = Occurrence(scope, placed)
-            if (
-                placed.scope != scope.site
-                or occurrence.constructed is not None
-                or occurrence.refuted is not None
-            ):
-                continue
-            premises: Candidates = {
-                premise: [candidate(ref, at, occurrence, premise, index) for at, ref in refs]
-                for premise, refs in bound(placed, scope).unfilled.items()
-            }
-            pending[occurrence.path] = (occurrence, premises)
-    blocked: dict[Site, list[Cause]] = {}
+def ended(goal: Occurrence, constructions: tuple[Construction, ...], passes: int) -> Blocked:
+    """Why the route did not construct, read from every occurrence the passes left unmade, its
+    own references dereferenced in the observed state: an occurrence a premise of which no
+    reference can fill is blocked, and so is every occurrence waiting on it, until nothing
+    moves. The route blocked is the structured refusal, as a value. The route not blocked waits
+    on occurrences that wait on one another, which no evidence explains: a failure, raised,
+    naming each in order of reach and what it waits for."""
+    root = goal.scope
+    pending = [
+        occurrence
+        for scope in scopes(root)
+        for c in constructions
+        if c.scope == scope.site and (occurrence := Occurrence(scope, c)).made is None
+    ]
+    blocked: dict[Occurrence, tuple[Cause, ...]] = {}
     moved = True
     while moved:
         moved = False
-        for path, (_, premises) in pending.items():
-            if path not in blocked and (causes := blocked_by(premises, blocked)):
-                blocked[path] = causes
+        for occurrence in pending:
+            if occurrence not in blocked and (found := causes(occurrence, blocked)):
+                blocked[occurrence] = found
                 moved = True
-    at = (route.__name__,)
-    if at in blocked:
-        return Blocked(route, root, passes, tuple(blocked[at]))
+    if goal in blocked:
+        return Blocked(goal, passes, blocked[goal])
+    reach = [goal]
+    for occurrence in reach:
+        reach.extend(o for o in waits_on(occurrence, blocked) if o not in reach)
     details = [
         fault(
             "deadlock",
             "{cls} at {path} waits for {on}, and nothing constructs",
-            (occurrence.placed.cls.__name__,),
-            cls=occurrence.placed.cls.__name__,
-            path=".".join(path),
+            (occurrence.construction.cls.__name__,),
+            cls=occurrence.construction.cls.__name__,
+            path=".".join(occurrence.path),
             on=", ".join(
-                f"{c.placed.cls.__name__} at {'.'.join(c.path)}"
-                for candidates in premises.values()
-                for c in candidates
-                if isinstance(c, Occurrence) and c.path not in blocked
+                f"{o.construction.cls.__name__} at {'.'.join(o.path)}"
+                for o in waits_on(occurrence, blocked)
             ),
         )
-        for path in waited_on(at, pending)
-        for occurrence, premises in (pending[path],)
+        for occurrence in reach
     ]
-    raise ValidationError.from_exception_data(route.__name__, details)
+    raise ValidationError.from_exception_data(goal.construction.cls.__name__, details)
 
 
 def rendered(refuted: Refuted) -> str:
@@ -2363,7 +2438,7 @@ def rendered(refuted: Refuted) -> str:
 def explained(cause: Cause) -> InitErrorDetails:
     """One cause as one error: ``relation`` at the refuted class, with what was observed;
     ``missing`` at the consumer's field, with what the reference dereferenced to."""
-    cls = cause.occurrence.placed.cls
+    cls = cause.occurrence.construction.cls
     path = ".".join(cause.occurrence.path)
     if isinstance(cause, Refutation):
         return fault(
@@ -2385,7 +2460,8 @@ def explained(cause: Cause) -> InitErrorDetails:
             without = ""
             if isinstance(cause.ref, HeardRef) and type(record) is cause.ref.record:
                 without = f" without {'.'.join(cause.ref.member)}"
-            why = f"{action.placed.cls.__name__} at {'.'.join(action.path)} heard {said}{without}"
+            heard_by = f"{action.construction.cls.__name__} at {'.'.join(action.path)}"
+            why = f"{heard_by} heard {said}{without}"
     return fault(
         "missing",
         "no instance fills {cls}.{name} at {path}, which holds {held}; {why}",
@@ -2404,13 +2480,13 @@ def refused(blocked: Blocked) -> ValidationError:
     keyed: dict[object, Cause] = {}
     for cause in blocked.causes:
         key = (
-            (cause.occurrence.path, cause.premise, cause.ref)
+            (cause.occurrence, cause.premise, cause.ref)
             if isinstance(cause, Unfilled)
-            else (cause.occurrence.path,)
+            else (cause.occurrence,)
         )
         keyed.setdefault(key, cause)
     return ValidationError.from_exception_data(
-        blocked.route.__name__, [explained(c) for c in keyed.values()]
+        blocked.occurrence.construction.cls.__name__, [explained(c) for c in keyed.values()]
     )
 
 
@@ -2474,11 +2550,11 @@ async def answer[Q: Request, A: Reply[Fact]](
 async def ran[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof
 ) -> Run[Q, A] | Blocked:
-    """Construct the route from the request, pass by pass, in every scope at each placement's
-    site, until the route itself constructs or a pass constructs nothing, inside the route's
-    span, whose ``tca.outcome`` is the outcome the run had, read from what the construction
-    returned or raised: ``answered``, a ``Run``, with ``tca.passes``; ``refused``, a
-    ``Blocked``, the business's no, as a value; ``failed``, anything raised, a construction
+    """Construct the route from the request, pass by pass, in every scope at each construction's
+    template, until the route itself constructs or a pass constructs nothing, inside the
+    route's span, whose ``tca.outcome`` is the outcome the run had, read from what the
+    construction returned or raised: ``answered``, a ``Run``, with ``tca.passes``; ``refused``,
+    a ``Blocked``, the business's no, as a value; ``failed``, anything raised, a construction
     that is not a refutation refusing, a party's exception in its pass's group, a deadlock or
     any other, the span's status set to error by the API; ``cancelled``, from outside, which
     is no error of the run and leaves the status unset. Each record that entered a scope after
@@ -2506,45 +2582,44 @@ async def ran[Q: Request, A: Reply[Fact]](
 async def constructed[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof, span: Span
 ) -> Run[Q, A] | Blocked:
-    """The passes of ``ran``. Each pass asks Pydantic for every placement not yet constructed
-    or refuted in a scope whose bound references are present; a kind whose declared condition
-    does not hold is refuted in that scope, once; any other refusal is a failure and
-    propagates. The pass's actions are performed together in one task group, across every
-    scope, each heard at the one boundary, and each record enters the scope its action was
-    built in once every action of the pass was heard, as one ``admitted`` event on the route's
-    span; a library kind's exception, or a refusal of what it returned, cancels the group's
-    other actions and propagates in an ``ExceptionGroup``, noted with the paths of the actions
-    cancelled with it. An action's effect may have happened whenever its task started: one
-    heard returned a validated record, one failed or cancelled may have had its effect and
-    returned none, and no record of the pass is admitted, which the group's note says. A pass
-    that constructs nothing ends the run as ``ended`` reads it from the bindings."""
-    placements = proof.placements(route)
+    """The passes of ``ran``. Each pass dereferences every construction of the route not yet
+    made in a scope at its template and, where every reference resolves, asks Pydantic for it;
+    a refutable kind whose declared condition does not hold is refuted in that scope, once; any
+    other refusal is a failure and propagates. The pass's actions are performed together in one
+    task group, across every scope, each heard at the one boundary, and each record enters the
+    scope its action was built in once every action of the pass was heard, as one ``admitted``
+    event on the route's span; a library kind's exception, or a refusal of what it returned,
+    cancels the group's other actions and propagates in an ``ExceptionGroup``, noted with the
+    paths of the actions cancelled with it. An action's effect may have happened whenever its
+    task started: one heard returned a validated record, one failed or cancelled may have had
+    its effect and returned none, and no record of the pass is admitted, which the group's note
+    says. A pass that constructs nothing ends the run as ``ended`` reads it."""
+    constructions = proof.constructs(route)
     root = Scope((), (), None)
-    arrived(request, REQUEST, root)
-    arrived(deployment, DEPLOYMENT, root)
+    arrived(request, None, REQUEST, root)
+    arrived(deployment, None, DEPLOYMENT, root)
     for c in proof.constants:
-        root.owned[(c.__name__,)] = c()
+        root.arrived[None, (c.__name__,)] = c()
+    goal = Occurrence(root, goal_of(route, constructions))
     passes = 0
-    while (route.__name__,) not in root.owned:
+    while goal.made is None:
         passes += 1
         performed: list[tuple[Occurrence, Action[Connection, Record]]] = []
         built = False
         for scope in list(scopes(root)):
-            for placed in placements:
-                occurrence = Occurrence(scope, placed)
-                site = occurrence.site
-                if placed.scope != scope.site or site in scope.owned or site in scope.refuted:
+            for construction in constructions:
+                occurrence = Occurrence(scope, construction)
+                if construction.scope != scope.site or occurrence.made is not None:
                     continue
-                found = supplied(placed, scope)
+                found = supplied(occurrence)
                 if found is None:
                     continue
-                instance = construct(placed, found.given, occurrence.path)
+                instance = construct(occurrence, found.given)
                 if isinstance(instance, ValidationError):
-                    scope.refuted[site] = Refuted(instance, found.provenance)
+                    scope.made[construction] = Refuted(instance, found.provenance)
                     continue
                 built = True
-                scope.owned[site] = instance
-                scope.provenance[site] = found.provenance
+                scope.made[construction] = Constructed(instance, found.provenance)
                 if is_performed(instance):
                     performed.append((occurrence, instance))
         tasks: list[Task[Record]] = []
@@ -2556,14 +2631,28 @@ async def constructed[Q: Request, A: Reply[Fact]](
             raise
         for (o, _), task in zip(performed, tasks, strict=True):
             record = task.result()
-            arrived(record, (*o.site, HEARD), o.scope)
+            arrived(record, o.construction, (), o.scope)
             span.add_event(
                 "admitted",
                 {"tca.record": type(record).__name__, "tca.heard": ".".join((*o.path, HEARD))},
             )
         if not built:
-            return ended(root, placements, route, passes)
-    return Run(route.model_validate(root.owned[(route.__name__,)]), root, passes)
+            return ended(goal, constructions, passes)
+    made = goal.made
+    if not isinstance(made, Constructed):
+        msg = f"{route.__name__} refuted"
+        raise TypeError(msg)
+    return Run(route.model_validate(made.instance), root, passes)
+
+
+def goal_of(route: type[BaseModel], constructions: tuple[Construction, ...]) -> Construction:
+    """The route's own construction among a proof's: what a run ends by constructing. A proof
+    without one is no proof of the route, a failure."""
+    own = [c for c in constructions if c.cls is route]
+    if not own:
+        unconstructed = f"{route.__name__} is constructed by none of the proof's constructions"
+        raise LookupError(unconstructed)
+    return own[0]
 
 
 def outcomes_of(performed: list[Occurrence], tasks: list[Task[Record]]) -> str:

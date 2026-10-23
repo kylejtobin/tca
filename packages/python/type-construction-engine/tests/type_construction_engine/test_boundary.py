@@ -13,7 +13,7 @@ from pydantic import BaseModel, RootModel
 import type_construction.cli
 import type_construction.engine
 import type_construction.world
-from type_construction.engine import Run, Scope, Site, config, is_elements, proven, ran
+from type_construction.engine import Constructed, Run, Scope, Site, config, is_elements, proven, ran
 from type_construction.world import Computation, Measure, Relation
 
 from . import occurrences as program
@@ -45,8 +45,17 @@ def scopes(scope: Scope) -> list[Scope]:
 
 
 def owned(root: Scope) -> list[tuple[Scope, Site, BaseModel]]:
-    """Every instance a run holds, with its scope and site."""
-    return [(s, site, instance) for s in scopes(root) for site, instance in s.owned.items()]
+    """Every instance a run holds, with its scope and declared site: what arrived or was heard,
+    and what each construction made."""
+    found: list[tuple[Scope, Site, BaseModel]] = []
+    for s in scopes(root):
+        for (origin, member), instance in s.arrived.items():
+            site = member if origin is None else (*origin.site, "heard", *member)
+            found.append((s, site, instance))
+        for construction, made in s.made.items():
+            if isinstance(made, Constructed):
+                found.append((s, construction.site, made.instance))
+    return found
 
 
 def root_of(operand: object) -> Decimal:
@@ -97,7 +106,7 @@ async def test_every_instance_in_a_run_arrived_at_an_edge_or_was_constructed_by_
         if site[0] in ("request", "deployment") or "heard" in site or site[0] in constants:
             arrived.append(site)
             continue
-        assert site in scope.provenance, f"{site} is neither arrived nor constructed"
+        assert any(c.site == site for c in scope.made), f"{site} is neither arrived nor constructed"
         assert type(instance).__name__ == site[-1]
         constructed.append(site)
     assert len(constructed) + len(arrived) == len(owned(run.root))
@@ -145,7 +154,7 @@ def test_no_production_source_skips_validation() -> None:
     ]
     assert found == []
     engine = Path(inspect.getfile(type_construction.engine)).read_text()
-    assert engine.count("placed.cls.model_validate(given)") == 1
+    assert engine.count("cls.model_validate(given)") == 1
     assert engine.count("adapter.validate_json(text, strict=True)") == 1
     assert engine.count("adapter.validate_python(data, strict=True)") == 1
     assert engine.count("await action.perform()") == 1

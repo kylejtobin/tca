@@ -293,7 +293,7 @@ PART = (*ELEMENT, "Asked", "heard", "parts", "[]")
 
 
 def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof) -> None:
-    placed = {(p.cls, p.scope): p for p in proof.placements(Operation)}
+    placed = {(c.cls, c.scope): c for c in proof.constructs(Operation)}
     assert set(placed) == {
         (Asked, ELEMENT),
         (Low, ELEMENT),
@@ -309,46 +309,64 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         (Answered, ()),
         (Operation, ()),
     }
-    heard_ = HeardRef(scope=ELEMENT, action=Asked, record=Heard, member=(), cls=Heard)
+    heard_ = HeardRef(placed[Asked, ELEMENT], Heard, (), Heard)
     amount = heard_.held(Amount, "amount")
     assert amount.site == (*ELEMENT, "Asked", "heard", "amount")
-    assert placed[Asked, ELEMENT].singles == {
-        "party": (InputRef(scope=(), member=("deployment", "party"), cls=Party),),
-        "element": (InputRef(scope=ELEMENT, member=(), cls=Element),),
+    assert placed[Asked, ELEMENT].premises == {
+        "party": (InputRef((), ("deployment", "party"), Party),),
+        "element": (InputRef(ELEMENT, (), Element),),
     }
-    assert placed[Low, ELEMENT].singles == {
+    assert placed[Low, ELEMENT].premises == {
         "value": (amount,),
-        "bound": (InputRef(scope=(), member=("Limit",), cls=Limit),),
+        "bound": (InputRef((), ("Limit",), Limit),),
     }
-    assert placed[Portion, PART].singles == {
-        "left": (heard_.held(Share, "parts", "[]", "share"),),
+    assert placed[Portion, PART].premises == {
+        "left": (heard_.element(Part, "parts", "[]").held(Share, "share"),),
         "right": (amount,),
     }
-    assert placed[Portion, PART].singles["left"][0].site == (*PART, "share")
+    assert placed[Portion, PART].premises["left"][0].site == (*PART, "share")
     portions = placed[Portions, ELEMENT].collections["of"]
-    assert portions.site == PART[:-1]
+    assert (portions.site, portions.name, portions.positions) == (PART[:-1], "parts", None)
     assert portions.holder == heard_
-    assert portions.elements == (ConstructedRef(scope=PART, cls=Portion),)
-    assert placed[Dear, ELEMENT].singles["noted"] == (
-        HeardRef(scope=ELEMENT, action=Notify, record=Noted, member=(), cls=Noted),
+    assert portions.elements == (ConstructedRef(placed[Portion, PART]),)
+    assert placed[Dear, ELEMENT].premises["noted"] == (
+        HeardRef(placed[Notify, ELEMENT], Noted, (), Noted),
     )
     total = placed[Total, ()].collections["of"]
     assert total.site == ("request", "each")
-    assert total.holder == InputRef(scope=(), member=("request",), cls=Elements)
+    assert total.holder == InputRef((), ("request",), Elements)
     assert total.elements == (amount,)
     concluded = placed[Concluded, ()]
-    assert concluded.singles == {"total": (ConstructedRef(scope=(), cls=Total),)}
+    assert concluded.premises == {"total": (ConstructedRef(placed[Total, ()]),)}
     assert concluded.freshly == {"at": Instant}
     assert concluded.collections["valued"].site == ("request", "each")
     assert concluded.collections["valued"].holder == total.holder
     assert concluded.collections["valued"].elements == (
-        ConstructedRef(scope=ELEMENT, cls=Cheap),
-        ConstructedRef(scope=ELEMENT, cls=Dear),
+        ConstructedRef(placed[Cheap, ELEMENT]),
+        ConstructedRef(placed[Dear, ELEMENT]),
     )
-    assert placed[Operation, ()].singles == {
-        "request": (InputRef(scope=(), member=("request",), cls=Elements),),
-        "reply": (ConstructedRef(scope=(), cls=Answered),),
+    assert placed[Operation, ()].premises == {
+        "request": (InputRef((), ("request",), Elements),),
+        "reply": (ConstructedRef(placed[Answered, ()]),),
     }
+    (cheap, _) = concluded.collections["valued"].elements
+    assert isinstance(cheap, ConstructedRef)
+    assert cheap.construction is placed[Cheap, ELEMENT]
+    refs = [
+        r
+        for c in placed.values()
+        for refs in (
+            *c.premises.values(),
+            *((col.holder, *col.elements) for col in c.collections.values()),
+        )
+        for r in refs
+    ]
+    producers = [r.construction for r in refs if isinstance(r, ConstructedRef)]
+    actions = [r.action for r in refs if isinstance(r, HeardRef)]
+    assert producers and actions
+    assert all(any(p is c for c in placed.values()) for p in producers)
+    assert all(any(a is c for c in placed.values()) for a in actions)
+    assert all(c in proof.constructions for c in placed.values())
     assert proof.sites(Operation, Portion) == ((*PART, "Portion"),)
     assert proof.waiting == ()
     assert proof.faulted == ()

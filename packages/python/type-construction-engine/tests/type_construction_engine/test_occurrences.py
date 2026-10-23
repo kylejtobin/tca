@@ -18,13 +18,16 @@ from pydantic import BaseModel, ValidationError
 
 from type_construction.engine import (
     Blocked,
+    Constructed,
     ConstructedRef,
+    Construction,
     Heard,
     HeardRef,
     InputRef,
-    Placement,
+    Occurrence,
     Proof,
     Run,
+    Scope,
     Unfilled,
     answer,
     config,
@@ -96,9 +99,39 @@ def exporting() -> InMemorySpanExporter:
     return exporter
 
 
-def placed() -> dict[tuple[type[object], tuple[str, ...]], Placement]:
-    """Every placement of the route, by class and scope."""
-    return {(p.cls, p.scope): p for p in proven(PROGRAM).placements(Checkout)}
+def placed() -> dict[tuple[type[object], tuple[str, ...]], Construction]:
+    """Every construction of the route, by class and scope template."""
+    return {(c.cls, c.scope): c for c in proven(PROGRAM).constructs(Checkout)}
+
+
+def made_of(scope: Scope, cls: type[BaseModel]) -> Constructed:
+    """What a scope made of the one construction of a class placed there."""
+    (found,) = (m for c, m in scope.made.items() if c.cls is cls)
+    assert isinstance(found, Constructed)
+    return found
+
+
+def described(construction: Construction) -> tuple[object, ...]:
+    """A construction by the shape of its binding: each reference by its kind, site and class,
+    which two analyses of one program agree on whatever the order of its classes."""
+    return (
+        construction.cls,
+        construction.scope,
+        {
+            name: tuple((type(r).__name__, r.site, r.cls) for r in refs)
+            for name, refs in construction.premises.items()
+        },
+        {
+            name: (
+                c.site,
+                tuple((type(r).__name__, r.site, r.cls) for r in c.elements),
+                c.positions,
+            )
+            for name, c in construction.collections.items()
+        },
+        construction.freshly,
+        construction.because,
+    )
 
 
 def test_one_class_constructs_at_every_site_its_premises_bind() -> None:
@@ -107,15 +140,11 @@ def test_one_class_constructs_at_every_site_its_premises_bind() -> None:
     assert {scope for cls, scope in found if cls is Quote} == {CART, GIFT, FIRST, SECOND, SOLO}
     assert {scope for cls, scope in found if cls is Share} == {CART, GIFT, FIRST, SECOND, SOLO}
     for scope in (CART, GIFT, FIRST, SECOND, SOLO):
-        assert found[LineTotal, scope].singles == {
-            "left": (
-                HeardRef(
-                    scope=scope, action=Quote, record=program.Price, member=("unit",), cls=UnitPrice
-                ),
-            ),
-            "right": (InputRef(scope=scope, member=("quantity",), cls=Quantity),),
+        assert found[LineTotal, scope].premises == {
+            "left": (HeardRef(found[Quote, scope], program.Price, ("unit",), UnitPrice),),
+            "right": (InputRef(scope, ("quantity",), Quantity),),
         }
-        assert [r.site for r in found[LineTotal, scope].singles["left"]] == [
+        assert [r.site for r in found[LineTotal, scope].premises["left"]] == [
             (*scope, "Quote", "heard", "unit")
         ]
 
@@ -123,42 +152,47 @@ def test_one_class_constructs_at_every_site_its_premises_bind() -> None:
 def test_separate_collections_of_one_element_class_stay_separate() -> None:
     found = placed()
     cart = found[CartTotal, ()].collections["of"]
-    assert cart.site == ("request", "cart", "lines")
-    assert cart.holder == InputRef(scope=(), member=("request", "cart"), cls=program.Cart)
-    assert cart.elements == (ConstructedRef(scope=CART, cls=LineTotal),)
+    assert (cart.site, cart.name, cart.positions) == (("request", "cart", "lines"), "lines", None)
+    assert cart.holder == InputRef((), ("request", "cart"), program.Cart)
+    assert cart.elements == (ConstructedRef(found[LineTotal, CART]),)
     gifts = found[GiftTotal, ()].collections["of"]
     assert gifts.site == ("request", "gifts", "lines")
-    assert gifts.holder == InputRef(scope=(), member=("request", "gifts"), cls=program.Gifts)
-    assert gifts.elements == (ConstructedRef(scope=GIFT, cls=LineTotal),)
+    assert gifts.holder == InputRef((), ("request", "gifts"), program.Gifts)
+    assert gifts.elements == (ConstructedRef(found[LineTotal, GIFT]),)
     pair = found[PairTotal, ()].collections["of"]
-    assert pair.site == ("request", "pair", "lines")
+    assert (pair.site, pair.positions) == (("request", "pair", "lines"), 2)
     assert pair.elements == (
-        ConstructedRef(scope=FIRST, cls=LineTotal),
-        ConstructedRef(scope=SECOND, cls=LineTotal),
+        ConstructedRef(found[LineTotal, FIRST]),
+        ConstructedRef(found[LineTotal, SECOND]),
     )
-    assert found[SoloTotal, ()].collections["of"].elements == (
-        ConstructedRef(scope=SOLO, cls=LineTotal),
-    )
+    solo = found[SoloTotal, ()].collections["of"]
+    assert (solo.elements, solo.positions) == ((ConstructedRef(found[LineTotal, SOLO]),), 1)
     shares = found[CartShares, ()].collections["shares"]
     assert shares.site == ("request", "cart", "lines")
     assert shares.holder == cart.holder
-    assert shares.elements == (ConstructedRef(scope=CART, cls=Share),)
+    assert shares.elements == (ConstructedRef(found[Share, CART]),)
+    (cart_line,), (gift_line,) = cart.elements, gifts.elements
+    assert isinstance(cart_line, ConstructedRef)
+    assert isinstance(gift_line, ConstructedRef)
+    assert cart_line.construction is not gift_line.construction
+    assert cart_line.construction is found[LineTotal, CART]
 
 
 def test_a_reference_to_an_existing_premise_is_not_a_new_producer() -> None:
     found = placed()
-    order = InputRef(scope=(), member=("request",), cls=PlaceOrder)
-    assert found[Screened, ()].singles["order"] == (order,)
-    assert found[Screen, ()].singles["order"] == (order,)
-    assert found[Share, CART].singles["cart"] == (ConstructedRef(scope=(), cls=CartTotal),)
-    assert found[Share, GIFT].singles["cart"] == (ConstructedRef(scope=(), cls=CartTotal),)
+    order = InputRef((), ("request",), PlaceOrder)
+    assert found[Screened, ()].premises["order"] == (order,)
+    assert found[Screen, ()].premises["order"] == (order,)
+    assert found[Share, CART].premises["cart"] == (ConstructedRef(found[CartTotal, ()]),)
+    assert found[Share, GIFT].premises["cart"] == (ConstructedRef(found[CartTotal, ()]),)
     assert [cls for cls, _ in found if cls is CartTotal] == [CartTotal]
     assert PlaceOrder not in {cls for cls, _ in found}
-    assert found[Screened, ()].singles["clear"] == (
-        HeardRef(scope=(), action=Screen, record=program.Clear, member=(), cls=program.Clear),
+    screen = found[Screen, ()]
+    assert found[Screened, ()].premises["clear"] == (
+        HeardRef(screen, program.Clear, (), program.Clear),
     )
-    assert found[program.Refused, ()].singles["flagged"] == (
-        HeardRef(scope=(), action=Screen, record=program.Flagged, member=(), cls=program.Flagged),
+    assert found[program.Refused, ()].premises["flagged"] == (
+        HeardRef(screen, program.Flagged, (), program.Flagged),
     )
 
 
@@ -166,14 +200,9 @@ def test_the_proof_does_not_depend_on_declaration_order() -> None:
     reversed_program = ModuleType(PROGRAM.__name__)
     for name, value in reversed(list(vars(PROGRAM).items())):
         setattr(reversed_program, name, value)
-    forward = {
-        (p.cls, p.scope, repr(p.singles), repr(p.collections)) for p in proven(PROGRAM).placed
-    }
-    backward = {
-        (p.cls, p.scope, repr(p.singles), repr(p.collections))
-        for p in proven(reversed_program).placed
-    }
-    assert forward == backward
+    forward = [described(c) for c in proven(PROGRAM).constructions]
+    backward = [described(c) for c in proven(reversed_program).constructions]
+    assert sorted(map(repr, forward)) == sorted(map(repr, backward))
 
 
 @pytest.mark.asyncio
@@ -294,21 +323,15 @@ def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions
         proven(optional)
     (error,) = refusal.value.errors()
     assert (error["type"], error["loc"]) == ("conditional", ("Checkout",))
-    placed = {p.cls: p for p in symbolic(optional.Checkout, models(optional)).placed}
-    assert placed[optional.Discount].singles["coupon"] == (
-        HeardRef(
-            scope=(),
-            action=optional.Quote,
-            record=optional.Quoted,
-            member=("coupon",),
-            cls=optional.Coupon,
-        ),
+    placed = {c.cls: c for c in symbolic(optional.Checkout, models(optional)).constructions}
+    assert placed[optional.Discount].premises["coupon"] == (
+        HeardRef(placed[optional.Quote], optional.Quoted, ("coupon",), optional.Coupon),
     )
-    assert placed[optional.Discounted].singles["discount"] == (
-        ConstructedRef(scope=(), cls=optional.Discount),
+    assert placed[optional.Discounted].premises["discount"] == (
+        ConstructedRef(placed[optional.Discount]),
     )
-    assert placed[optional.Checkout].singles["reply"] == (
-        ConstructedRef(scope=(), cls=optional.OrderDiscounted),
+    assert placed[optional.Checkout].premises["reply"] == (
+        ConstructedRef(placed[optional.OrderDiscounted]),
     )
 
 
@@ -321,34 +344,36 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
     unproven = Proof.model_construct(
         program=optional.__name__,
         classes=models(optional),
-        placed=tuple(found.placed),
+        constructions=tuple(found.constructions),
         waiting=(),
         faulted=(),
     )
+    placed = {c.cls: c for c in found.constructions}
     request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
     monkeypatch.setenv("PARTY__SAYS", '{"amount": "5", "coupon": "TEN"}')
     done = await ran(optional.Checkout, request, config(optional)(), unproven)
     assert isinstance(done, Run)
     assert done.route.reply.model_dump_json() == '{"coupon":"TEN"}'
-    assert done.root.provenance[("Discount",)] == {
+    assert made_of(done.root, optional.Discount).provenance == {
         "quoted": (("Quote", "heard"),),
         "coupon": (("Quote", "heard", "coupon"),),
     }
-    assert done.root.provenance[("Discounted",)] == {"discount": (("Discount",),)}
+    assert made_of(done.root, optional.Discounted).provenance == {"discount": (("Discount",),)}
     monkeypatch.setenv("PARTY__SAYS", '{"amount": "5"}')
     blocked = await ran(optional.Checkout, request, config(optional)(), unproven)
     assert isinstance(blocked, Blocked)
-    assert blocked.route is optional.Checkout
+    assert blocked.occurrence.construction is placed[optional.Checkout]
     assert blocked.passes == 2
     (cause,) = blocked.causes
     assert isinstance(cause, Unfilled)
     assert cause.occurrence.path == ("Discount",)
-    assert cause.occurrence.placed is next(p for p in found.placed if p.cls is optional.Discount)
+    assert cause.occurrence.construction is placed[optional.Discount]
     assert cause.premise == ("coupon", None)
-    assert cause.ref is cause.occurrence.placed.singles["coupon"][0]
+    assert cause.ref is placed[optional.Discount].premises["coupon"][0]
     assert isinstance(cause.state, Heard)
+    assert cause.state.action.construction is placed[optional.Quote]
     assert cause.state.action.path == ("Quote",)
-    assert cause.state.record is blocked.root.owned[("Quote", "heard")]
+    assert cause.state.record is blocked.occurrence.scope.arrived[placed[optional.Quote], ()]
     assert isinstance(cause.state.record, optional.Quoted)
     assert cause.state.record.coupon is None
     assert [(e["type"], e["loc"], e["msg"]) for e in refused(blocked).errors()] == [
@@ -371,42 +396,48 @@ async def test_every_construction_records_the_concrete_occurrences_that_supplied
     done = await ran(Checkout, request, config(PROGRAM)(), proven(PROGRAM))
     assert isinstance(done, Run)
     root = done.root
-    cart_lines = root.collections[("request", "cart", "lines")]
+    cart_lines = root.collections[None, ("request", "cart", "lines")]
     assert [s.path for s in cart_lines] == [
         ("request", "cart", "lines", "[0]"),
         ("request", "cart", "lines", "[1]"),
     ]
     assert [s.site for s in cart_lines] == [CART, CART]
     first, second = cart_lines
-    assert first.provenance[(*CART, "LineTotal")] == {
+    assert made_of(first, LineTotal).provenance == {
         "left": (("request", "cart", "lines", "[0]", "Quote", "heard", "unit"),),
         "right": (("request", "cart", "lines", "[0]", "quantity"),),
     }
-    assert second.provenance[(*CART, "LineTotal")] == {
+    assert made_of(second, LineTotal).provenance == {
         "left": (("request", "cart", "lines", "[1]", "Quote", "heard", "unit"),),
         "right": (("request", "cart", "lines", "[1]", "quantity"),),
     }
-    assert first.owned[(*CART, "LineTotal")] is not second.owned[(*CART, "LineTotal")]
-    assert first.owned[(*CART, "LineTotal")] == second.owned[(*CART, "LineTotal")]
-    assert root.provenance[("CartTotal",)] == {
+    assert made_of(first, LineTotal).instance is not made_of(second, LineTotal).instance
+    assert made_of(first, LineTotal).instance == made_of(second, LineTotal).instance
+    assert set(first.made) == set(second.made)
+    assert made_of(root, CartTotal).provenance == {
         "cart": (("request", "cart"),),
         "of": (
             ("request", "cart", "lines", "[0]", "LineTotal"),
             ("request", "cart", "lines", "[1]", "LineTotal"),
         ),
     }
-    gift = root.collections[("request", "gifts", "lines")][0]
-    assert first.provenance[(*CART, "Share")]["cart"] == (("CartTotal",),)
-    assert gift.provenance[(*GIFT, "Share")]["cart"] == (("CartTotal",),)
-    cart_share, gift_share = first.owned[(*CART, "Share")], gift.owned[(*GIFT, "Share")]
+    gift = root.collections[None, ("request", "gifts", "lines")][0]
+    assert made_of(first, Share).provenance["cart"] == (("CartTotal",),)
+    assert made_of(gift, Share).provenance["cart"] == (("CartTotal",),)
+    cart_share, gift_share = made_of(first, Share).instance, made_of(gift, Share).instance
     assert isinstance(cart_share, Share)
     assert isinstance(gift_share, Share)
     assert cart_share.cart is gift_share.cart
-    assert root.provenance[("Paid",)]["at"] == (("Paid", "at"),)
-    assert root.provenance[("Screened",)] == {
+    assert made_of(root, program.Paid).provenance["at"] == (("Paid", "at"),)
+    assert made_of(root, Screened).provenance == {
         "order": (("request",),),
         "clear": (("Screen", "heard"),),
     }
+    (screen,) = (c for c in root.made if c.cls is Screen)
+    screened = made_of(root, Screened).instance
+    assert isinstance(screened, Screened)
+    assert root.arrived[screen, ()] is screened.clear
+    assert root.arrived[None, ("request",)] is request
     assert done.passes == 4
 
 
@@ -525,20 +556,21 @@ async def test_a_stall_names_the_occurrence_that_did_not_hold(
 
 
 def test_a_refusal_that_is_not_a_refutation_is_noted_with_the_occurrence() -> None:
-    placed = Placement(
-        route=fixed.Checkout,
-        cls=fixed.Both,
-        scope=(),
-        singles={"cart": (InputRef(scope=(), member=("request", "cart"), cls=fixed.Cart),)},
-        freshly={},
-        collections={},
+    both = Occurrence(
+        Scope((), (), None),
+        Construction(
+            fixed.Checkout,
+            fixed.Both,
+            (),
+            premises={"cart": (InputRef((), ("request", "cart"), fixed.Cart),)},
+        ),
     )
     given: dict[str, BaseModel | tuple[BaseModel, ...]] = {
         "cart": fixed.Cart(lines=()),
         "totals": (),
     }
     with pytest.raises(ValidationError) as refusal:
-        construct(placed, given, ("Both",))
+        construct(both, given)
     assert refusal.value.title == "Both"
     assert refusal.value.__notes__ == ["at Both"]
     assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [

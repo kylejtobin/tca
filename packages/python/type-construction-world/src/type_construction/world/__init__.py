@@ -112,6 +112,7 @@ __all__ = [
     "Primitive",
     "Python",
     "Record",
+    "Refutable",
     "Relation",
     "Reply",
     "Request",
@@ -635,7 +636,21 @@ class Comparison(Computation):
             ) from None
 
 
-class Relation(Fact):
+class Refutable(Fact):
+    """A fact that exists to refuse: a relation or a selection, whose refusal, when every error
+    is ``REFUTED``, says only that its declared condition does not hold over these operands, so
+    the fact does not exist here. The kind owns that distinction; the engine reads it through
+    ``refuted`` and interprets no error itself. Any other refusal of a refutable kind, an operand
+    that did not construct or a value given for a computed field, is a failure."""
+
+    @classmethod
+    def refuted(cls, refusal: ValidationError) -> bool:
+        """Whether a refusal of this kind is its declared condition not holding, and nothing
+        else."""
+        return all(error["type"] == REFUTED for error in refusal.errors())
+
+
+class Relation(Refutable):
     """A rule over several values: a fact that constructs when the rule holds and refuses when
     it does not.
 
@@ -796,7 +811,7 @@ class Shape:
             ) from None
 
 
-class Selection[E: BaseModel](Fact):
+class Selection[E: BaseModel](Refutable):
     """A choice among elements: a fact over the elements the runs under this one produced,
     whose ``chosen`` is the one selected.
 
