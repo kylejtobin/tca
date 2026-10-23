@@ -9,54 +9,62 @@
 
 ---
 
-## What it is
+**Every layer of your service has something that checks it, except the one where your logic lives. TCA is an attempt to make that layer a set of types.**
 
-Type Construction Architecture (TCA) is a declarative, type-driven approach to backend applications in Python, on Pydantic. A developer declares what exists in a business: its values, the facts that follow from them, the rules that compare them, the questions asked of other systems and the conclusions reached. The framework is meant to derive execution from those declarations, so the business is not written a second time as a workflow.
+> **Status: mid-refactor.** The first runtime ran a business program inside one request. It has been removed. Its replacement runs a program across events, time and failure, and it is not built yet. The idea below is unchanged. [What exists today](#where-it-stands) is small and stated plainly.
 
-## Where it is going
+## The idea
 
-The target is execution across events, time and failure. An invocation pursues a declared outcome. It can wait days for external evidence, survive process loss, and recover without forgetting or repeating an external effect that already happened. Its lifetime does not depend on a request, a connection or a coroutine.
+You describe your business in Pydantic types: the values, the facts that follow from them, and the rules that must hold. A fact can only be constructed from the things that justify it, so the model says what the business is allowed to conclude. The framework's job is to carry that model out. It works out what can be built, asks the outside world for what is missing, and does only the work the declared outcome needs.
 
-The target architecture is in [`docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md). Its proposals are not yet verified. The behavior a replacement must show is in [`docs/REFACTOR_ACCEPTANCE.md`](docs/REFACTOR_ACCEPTANCE.md). Those are requirements, not implemented tests.
+## Why a request is the wrong container
 
-## Current status
+A real business process is rarely one request. A payment is captured hours after the order. An approval arrives tomorrow. The process restarts halfway. The usual answer is to write the business twice: once as types, and again as a workflow that sequences it. The workflow is where the bugs are, and nothing checks it.
 
-**The old request runtime has been removed, and its replacement is not built.** The previous engine, command line, HTTP package and demo are gone from the tree and remain in Git history. Today the repository cannot run a program. `TODO.md` lists what is not done, in order.
+TCA's target is that the declared types are the only account of the business. An invocation pursues an outcome and outlives any request, connection or process. While it waits for evidence it holds no open request. When the evidence arrives, it continues. After a crash it recovers without forgetting an external effect that already happened and without repeating it.
 
-## What exists: the world primitives
+## What a model looks like
 
-[`packages/python/type-construction-world`](packages/python/type-construction-world) holds declarative value and computation primitives. Every class is strict, frozen and refuses undeclared fields, except `Setting`, which accepts text.
-
-- **Values.** `Scalar`, `Setting`, `Value`, `Record`, `Fact` and `Duration`.
-- **Derivations.** `Times` and `Sum` compute a value from their operands at construction. A caller cannot supply the computed result.
-- **Relations.** `Under`, `AtMost`, `Equal`, `AtLeast`, `Beyond`, `Differs` and `Between` compare values, and refuse with a distinct error type when the condition does not hold.
-- **Selections.** `Least`, `Greatest`, `First` and `Only` choose among the elements of a finite tuple. They do not establish that an external source is complete.
+Shipping an order needs a payment that covers it. That is two facts and one rule, and no step order:
 
 ```python
-class Quantity(Scalar[int]):
-    """How many of a product a line asks for."""
-    root: int = Field(gt=0)
+class Order(Value):
+    id: OrderId
+    total: Total
 
-class LineTotal(Times[UnitPrice, Quantity]):
-    """What a line costs: its unit price times its quantity."""
+class PaymentCaptured(Record):
+    """What the provider says, under the provider's names."""
+    order: OrderId = Field(alias="order_id")
+    amount: Paid
 
-class Small(AtMost[LineTotal, Threshold]): ...
+class Covers(AtLeast[Paid, Total]):
+    """The payment is at least the total."""
+
+class ShippingAuthority(Fact):
+    """The grounds to ship: the order, the payment, and that the payment covers it."""
+    order: Order
+    payment: PaymentCaptured
+    covered: Covers
 ```
 
-`Quantity(0)` raises `ValidationError`. `Small` constructs when a line total is at most the threshold and refuses otherwise. Constructing these types validates values. It does not prove a whole business program correct, and it does not run one.
+A payment of 50 against a total of 50 constructs `ShippingAuthority`. A payment of 20 does not, and the refusal says which rule failed. Nothing downstream can hold an under-paid authorization, so nothing downstream has to check.
 
-The primitives are reusable components. They are not a commitment to the previous engine or its public API.
+That is the part that runs today. The target is what surrounds it. The payment record arrives later from a webhook. It is accepted only if it came from the right provider, for this tenant and this order. A duplicate delivery changes nothing. Shipping happens once, even if the process dies between the carrier saying yes and the system writing it down. None of that is written as a workflow.
 
-## Install and check
+## Where it stands
 
-```
-git clone https://github.com/kylejtobin/tca && cd tca
-uv sync --all-packages
-uv run just check
-uv run just audit
-```
+- **Exists:** the value layer, in [`packages/python/type-construction-world`](packages/python/type-construction-world). Strict, frozen values, constrained scalars, records under a party's names, facts, computed values that cannot be forged, relations that refuse, and selections over finite tuples. Its tests pass. It cannot run a program.
+- **Removed:** the request-based engine, command line, HTTP package and demo. They remain in Git history as reference only.
+- **Not built:** evidence admission, invocations, waiting and recovery, external effects, and interfaces. The order is in [`TODO.md`](TODO.md).
 
-`just check` runs ruff, the formatter check, strict basedpyright, bandit and pytest. `just audit` checks the lockfile, known vulnerabilities, code patterns and pinned images. `just build`, `just lock` and `just shell` use the development container.
+The target architecture is [`docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md). Its proposals are not verified. The behavior a replacement must show is in [`docs/REFACTOR_ACCEPTANCE.md`](docs/REFACTOR_ACCEPTANCE.md). Those are requirements, not tests that pass.
+
+## What it will not do
+
+- Constructing a type shows that the declared rules hold over the evidence admitted. It does not show that the evidence is true or that the business program is right.
+- It does not make an arbitrary external call exactly-once. It gives each intended operation one identity. The operation itself must be idempotent or reconcilable.
+- It is not a Python sandbox, a database, or a replacement for transactions where two invocations race for the same balance.
+- It is not for a service that is mostly CRUD with few decisions.
 
 ## License
 
