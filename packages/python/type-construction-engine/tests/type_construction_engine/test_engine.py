@@ -32,7 +32,6 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
-    RootModel,
     ValidationError,
     WrapValidator,
     computed_field,
@@ -43,8 +42,10 @@ from pydantic_core import PydanticSerializationError
 from type_construction.engine import (
     Constructed,
     ConstructedRef,
+    Construction,
     HeardRef,
     InputRef,
+    Inputs,
     Known,
     Proof,
     Run,
@@ -59,14 +60,17 @@ from type_construction.engine import (
     hear,
     heard,
     interval,
+    interval_at,
     models,
     never,
     opened,
+    operand,
     outcomes,
     produces,
     proven,
     ran,
     scopes,
+    supplied_by,
 )
 from type_construction.world import (
     COMPUTED,
@@ -601,7 +605,10 @@ def test_a_relation_that_cannot_hold_or_cannot_refuse_is_read_from_the_intervals
 def test_an_interval_is_read_from_the_bounds_the_default_or_the_operation() -> None:
     assert interval(Amount) == Interval(low=Decimal(0), low_strict=True)
     assert interval(Share) == Interval(low=Decimal(0), low_strict=True, high=Decimal(1))
-    assert interval(Limit) == Interval(low=Decimal(10), high=Decimal(10))
+    assert interval(Limit) == Interval()
+    assert supplied_by(InputRef((), ("Limit",), Limit)) == Interval(
+        low=Decimal(10), high=Decimal(10)
+    )
     assert interval(Portion) == Interval(low=Decimal(0))
     assert interval(Total) == Interval(low=Decimal(0))
     assert outcomes(known(interval(Amount)), known(interval(Limit))) == {-1, 0, 1}
@@ -1195,10 +1202,19 @@ def test_an_unknown_interval_proves_nothing_exclusive_and_omits_the_never_diagno
     assert AboveShifted(value=Count(1), bound=Shifted(50)).ordering == 1
 
 
-def test_a_kinds_own_validator_keeps_its_types_bound_and_every_output_lies_in_it() -> None:
+def test_a_kinds_own_validator_keeps_its_types_bound_and_every_output_lies_in_it(
+    proof: Proof,
+) -> None:
     assert declared(Low, "ordering").output == Known(
         numbers=Interval(low=Decimal(-1), high=Decimal(0))
     )
+    (low,) = (c for c in proof.constructs(Operation) if c.cls is Low)
+    (portions,) = (c for c in proof.constructs(Operation) if c.cls is Portions)
+    assert operand(Low, "bound") == Interval()
+    assert operand(Low, "bound", low) == Interval(low=Decimal(10), high=Decimal(10))
+    assert operand(Low, "value", low) == Interval(low=Decimal(0), low_strict=True)
+    assert interval_at(portions) == interval(Portions) == Interval(low=Decimal(0))
+    assert never(Low, low) is None
     assert declared(Largest, "of").output == Known(lengths=(1, None))
     assert declared(Only[Element], "of").output == Known(lengths=(1, 1))
     assert declared(Portion, "root").output == Known(numbers=Interval(low=Decimal(0)))
@@ -1285,33 +1301,98 @@ def test_a_validator_around_the_model_leaves_its_fields_unknown_and_a_before_one
     assert declared(Fed, "amount").output == Known(numbers=Interval(low=Decimal(1)))
 
 
-def test_a_constant_is_what_its_whole_compiled_schema_outputs_not_the_default_written() -> None:
+def test_a_default_is_the_outcome_only_where_the_site_omits_the_input() -> None:
     class Doubled(Scalar[Decimal]):
-        """A constant whose validated default is doubled on the way in."""
+        """A scalar whose validated input or default is doubled on the way in."""
 
         root: Annotated[Decimal, AfterValidator(lambda v: v * 2)] = Decimal(5)
 
     class Lifted(Scalar[Decimal]):
-        """A constant whose default is lifted before its bound admits it."""
+        """A scalar whose input or default is lifted before its bound admits it."""
 
         root: Annotated[Decimal, Gt(0), BeforeValidator(lambda v: Decimal(str(v)) + 1)] = Decimal(5)
 
-    class Loose(RootModel[int]):
-        """A root whose default is not validated: what is written is what is held."""
+    class Loose(Scalar[int]):
+        """A scalar whose default is not validated: what is written is what is held."""
 
         model_config = ConfigDict(validate_default=False)
         root: int = Field(default=-5, ge=1)
 
-    assert Doubled().root == 10
-    assert interval(Doubled) == Unknown("function-after", ("model", "default", "function-after"))
-    assert Lifted().root == 6
-    assert interval(Lifted) == Interval(low=Decimal(0), low_strict=True)
-    assert Loose().root == -5
-    assert interval(Loose) == Interval(low=Decimal(-5))
-    assert Limit().root == 10
-    assert interval(Limit) == Interval(low=Decimal(10), high=Decimal(10))
-    for cls in (Lifted, Loose, Limit):
+    def at_site(cls: type[Scalar[Decimal]] | type[Scalar[int]]) -> Interval | Unknown:
+        """What the engine's own occurrence of a constant can be: its root omitted."""
+        return supplied_by(InputRef((), (cls.__name__,), cls))
+
+    unknown = Unknown("function-after", ("model", "default", "function-after"))
+    assert (Limit(Decimal(20)).root, interval(Limit)) == (20, Interval())
+    assert (Lifted(Decimal(1)).root, interval(Lifted)) == (
+        2,
+        Interval(low=Decimal(0), low_strict=True),
+    )
+    assert (Loose(7).root, interval(Loose)) == (7, Interval(low=Decimal(-5)))
+    assert (Doubled(Decimal(1)).root, interval(Doubled)) == (2, unknown)
+    assert (Limit().root, at_site(Limit)) == (10, Interval(low=Decimal(10), high=Decimal(10)))
+    assert (Lifted().root, at_site(Lifted)) == (6, Interval(low=Decimal(0), low_strict=True))
+    assert (Loose().root, at_site(Loose)) == (-5, Interval(low=Decimal(-5), high=Decimal(-5)))
+    assert (Doubled().root, at_site(Doubled)) == (10, unknown)
+    assert supplied_by(InputRef((), ("request", "limit"), Limit)) == Interval()
+    for cls in (Limit, Lifted, Loose):
+        assert within(known(at_site(cls)), cls().root)
         assert within(known(interval(cls)), cls().root)
+
+
+def test_a_before_validator_around_the_model_may_supply_what_a_site_omitted() -> None:
+    class Fed(BaseModel):
+        amount: int = Field(default=3, ge=1)
+
+        @model_validator(mode="before")
+        @classmethod
+        def feed(cls, data: object) -> object:
+            return {"amount": 50} if data == {} else data
+
+    class Plain(BaseModel):
+        amount: int = Field(default=3, ge=1)
+
+    omitted = Inputs(omitted=True)
+    nothing = frozenset[type[BaseModel]]()
+    assert Fed.model_validate({}).amount == 50
+    assert declared(Fed, "amount").output == Known(numbers=Interval(low=Decimal(1)))
+    assert declared(Fed, "amount").outputs(nothing, omitted) == Known(
+        numbers=Interval(low=Decimal(1))
+    )
+    assert (Plain().amount, Plain(amount=9).amount) == (3, 9)
+    assert declared(Plain, "amount").output == Known(numbers=Interval(low=Decimal(1)))
+    assert declared(Plain, "amount").outputs(nothing, omitted) == Known(
+        numbers=Interval(low=Decimal(3), high=Decimal(3))
+    )
+
+
+def test_a_relations_impossibility_is_the_sites_claim_where_a_constant_is_bound() -> None:
+    class Fee(Scalar[Decimal]):
+        """A fee of 5 unless another is given."""
+
+        root: Decimal = Decimal(5)
+
+    class Floor(Scalar[Decimal]):
+        """At least 6."""
+
+        root: Decimal = Field(ge=6)
+
+    class Over(Beyond[Fee, Floor]):
+        """A fee over a floor."""
+
+    floor = (InputRef((), ("request", "floor"), Floor),)
+    from_constant = Construction(
+        Operation, Over, (), {"value": (InputRef((), ("Fee",), Fee),), "bound": floor}
+    )
+    from_request = Construction(
+        Operation, Over, (), {"value": (InputRef((), ("request", "fee"), Fee),), "bound": floor}
+    )
+    assert never(Over) is None
+    assert never(Over, from_constant) == "holds"
+    assert never(Over, from_request) is None
+    assert Over(value=Fee(Decimal(50)), bound=Floor(Decimal(6))).ordering == 1
+    with pytest.raises(ValidationError):
+        Over(value=Fee(), bound=Floor(Decimal(6)))
 
 
 def test_a_derived_bound_holds_only_through_the_declared_type_admitting_the_computed_value() -> (
@@ -1340,6 +1421,9 @@ def test_a_derived_bound_holds_only_through_the_declared_type_admitting_the_comp
     amounts = (Amount(Decimal(2)), Amount(Decimal(3)))
     assert interval(Plain) == Interval(low=Decimal(0))
     assert Plain(of=amounts).root == 5
+    with pytest.raises(ValidationError) as given:
+        Plain(of=amounts, root=Decimal(99))
+    assert [e["type"] for e in given.value.errors()] == ["computed"]
     assert interval(Negated) == Unknown("function-after", (*at, "function-after"))
     assert Negated(of=amounts).root == -5
     assert interval(Turned) == Interval()
@@ -1391,6 +1475,9 @@ async def test_every_value_constructed_in_nested_and_repeated_occurrences_lies_i
                 continue
             assert within(known(interval(cls)), root), (cls, root)
             checked.append((cls, root))
+    constant = done.root.arrived[None, ("Limit",)]
+    assert isinstance(constant, Limit)
+    assert within(known(supplied_by(InputRef((), ("Limit",), Limit))), constant.root)
     assert [c for c, _ in checked].count(Portion) == 6
     assert [c for c, _ in checked].count(Portions) == 3
     assert {c for c, _ in checked} >= {Portion, Portions, Total, Limit, Amount, Share}

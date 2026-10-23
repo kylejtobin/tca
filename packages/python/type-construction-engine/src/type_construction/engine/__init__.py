@@ -633,24 +633,27 @@ class Declared:
 
     @property
     def output(self) -> Output:
-        """What the field's compiled schema can output when it validates: ``Known``, every
-        successful output described conservatively, or ``Unknown``, naming the node of the
-        compiled schema the description cannot pass. The one static knowledge of a value:
-        a constant's, a derivation's, a scalar's and a selection's alike, since each is what
-        Pydantic constructs through this schema and nothing else."""
+        """What the field's declared type can output when it validates any input it admits:
+        ``Known``, every successful output described conservatively, or ``Unknown``, naming
+        the node of the compiled schema the description cannot pass. The type's own claim,
+        true of every occurrence: a default among the outputs narrows nothing, since another
+        admitted value may be given instead."""
         return self.outputs(PLACED)
 
-    def outputs(self, seen: frozenset[type[BaseModel]]) -> Output:
-        """``output``, with the classes already being analyzed, so a derivation reached again
-        through its own operands refines nothing. The field's complete schema is located in
-        the class's as Pydantic compiled it, definitions resolved and the model's own before
-        validators passed, since every output still passes the fields' schemas; any other
-        validator around the model or its fields leaves every field's output unknown. The one
-        source of the constraints Pydantic applies, since a repeated constraint keeps the last
-        declared and distinct constraints all apply."""
+    def outputs(self, seen: frozenset[type[BaseModel]], inputs: Inputs | None = None) -> Output:
+        """``output`` under an input contract a construction site establishes, with the classes
+        already being analyzed, so a derivation reached again through its own operands refines
+        nothing. The field's complete schema is located in the class's as Pydantic compiled
+        it, definitions resolved and the model's own before validators passed, since every
+        output still passes the fields' schemas, though a before validator may supply a field,
+        so beneath one no input is omitted; any other validator around the model or its fields
+        leaves every field's output unknown. The one source of the constraints Pydantic
+        applies, since a repeated constraint keeps the last declared and distinct constraints
+        all apply."""
         top: Mapping[str, object] = self.cls.__pydantic_core_schema__
         definitions: dict[object, Mapping[str, object]] = {}
         at: tuple[str, ...] = ()
+        inputs = ADMITTED if inputs is None else inputs
         if top.get("type") == "definitions":
             definitions = {d.get("ref"): d for d in listed(top.get("definitions"))}
             top, at = mapped(top.get("schema")), ("definitions",)
@@ -659,21 +662,22 @@ class Declared:
             return model
         node, at = model
         config_ = mapped(node.get("config"))
+        if not node.get("root_model"):
+            fields_ = beneath(mapped(node.get("schema")), "model-fields", definitions, at)
+            if isinstance(fields_, Unknown):
+                return fields_
+            node, at = fields_
+            node = mapped(mapped(node.get("fields")).get(self.name))
+            at = (*at, "model-field")
         compiled = Compiled(
             self.cls,
             seen | {self.cls},
             definitions,
             bool(config_.get("validate_default")),
             tuple(self.info.metadata),
+            inputs.fed() if "function-before" in at else inputs,
         )
-        if node.get("root_model"):
-            return compiled.outputs(mapped(node.get("schema")), at)
-        fields_ = beneath(mapped(node.get("schema")), "model-fields", definitions, at)
-        if isinstance(fields_, Unknown):
-            return fields_
-        node, at = fields_
-        own = mapped(mapped(node.get("fields")).get(self.name))
-        return compiled.outputs(mapped(own.get("schema")), (*at, "model-field"))
+        return compiled.outputs(mapped(node.get("schema")), at)
 
     @property
     def computation(self) -> Computation | None:
@@ -854,18 +858,49 @@ def beneath(
     return node, (*at, kind)
 
 
+UNSUPPLIED: Mapping[str, Interval | Unknown] = MappingProxyType({})
+"""No operand supplied by a site: each is anything its declared classes admit."""
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """What a construction site establishes about a field's inputs, carried into the output
+    analysis: whether the field's own input is provably omitted, so only the default's path
+    runs, and what the site supplies for each operand field a computation reads, so the
+    operation runs over that and not over everything the operand's classes admit. The empty
+    contract is the type's own: any admitted input may arrive, and an operand is anything its
+    classes admit. A site establishes a contract from its bindings and nowhere else: the
+    engine constructs a constant with no input, and binds a derivation's operands to
+    references."""
+
+    omitted: bool = False
+    """Whether the field's input is provably absent."""
+    operands: Mapping[str, Interval | Unknown] = UNSUPPLIED
+    """What the site supplies for each operand field it binds."""
+
+    def fed(self) -> Inputs:
+        """The contract beneath a before validator, which may supply what was omitted."""
+        return replace(self, omitted=False)
+
+
+ADMITTED = Inputs()
+"""The type's own contract: any input the type admits may arrive."""
+
+
 @dataclass(frozen=True)
 class Compiled:
     """One field's place in its class's compiled schema, for the analysis of its outputs: the
     class and those already being analyzed above it, the definitions the schema may
-    reference, whether the class validates defaults, and the objects the field's metadata
-    declares, which own the only validators whose output the analysis follows."""
+    reference, whether the class validates defaults, the objects the field's metadata
+    declares, which own the only validators whose output the analysis follows, and the input
+    contract the analysis runs under."""
 
     cls: type[BaseModel]
     seen: frozenset[type[BaseModel]]
     definitions: Mapping[object, Mapping[str, object]]
     validate_default: bool
     owners: tuple[object, ...]
+    inputs: Inputs = ADMITTED
 
     def outputs(
         self, node: Mapping[str, object], at: tuple[str, ...], seen: frozenset[object] = frozenset()
@@ -902,13 +937,15 @@ class Compiled:
     ) -> Output:
         """A wrapper's output: unknown for a validator that is not a kind's own, since it
         returns what it will; else the inner schema's, with ``None`` for ``nullable``, the
-        default for a ``default`` that is not validated, and a derivation's own mathematics
-        for a ``Derived`` admitting what it computed through the declared type itself."""
+        default's outcomes for a ``default``, and a derivation's own mathematics for a
+        ``Derived`` admitting what it computed through the declared type itself. A before
+        validator may supply what the site omitted, so beneath one nothing is omitted."""
         kind = here[-1]
         owner = self.owner(node) if kind in EXECUTED else None
         if kind in EXECUTED and owner is None:
             return Unknown(kind, here)
-        found = self.outputs(mapped(node.get("schema")), here, seen)
+        inner = replace(self, inputs=self.inputs.fed()) if kind == "function-before" else self
+        found = inner.outputs(mapped(node.get("schema")), here, seen)
         if isinstance(found, Unknown):
             return found
         if kind == "nullable":
@@ -922,11 +959,14 @@ class Compiled:
     def derived(self, owner: Derived, found: Known) -> Known:
         """A derivation's output: what its operation makes of what its operands can be, and
         within what the declared type admits, since the type admits the computed value as it
-        is; the type's alone when an operand's interval is unknown, which the operation can
-        make nothing of."""
+        is and refuses any value given for it, so this is the type's own claim; an operand is
+        what the site supplies for it, else anything its classes admit; the type's bound alone
+        when an operand's interval is unknown, which the operation can make nothing of."""
         operands: list[Interval] = []
         for name in owner.operands:
-            span = spanned(declared(self.cls, name).classes, self.seen)
+            span = self.inputs.operands.get(name) or spanned(
+                declared(self.cls, name).classes, self.seen
+            )
             if isinstance(span, Unknown):
                 return found
             operands.append(span)
@@ -947,19 +987,18 @@ class Compiled:
         return None
 
     def defaulted(self, node: Mapping[str, object], here: tuple[str, ...], found: Known) -> Output:
-        """A ``default`` node's output: the inner schema's when the default is validated, by
-        the node or by the class, and the default's own number when the declared type admits
-        it as it is, which is what a constant constructs; else that with the default among the
-        outputs, or unknown for a factory, whose value nothing bounds."""
+        """A ``default`` node's output. The type's own claim admits any input, so the output
+        is the inner schema's, with the default among the outputs when it is not validated,
+        and unknown for a factory, whose value nothing bounds. Where the site omits the input,
+        only the default's path runs: the default itself when it is not validated or the
+        declared type admits it as it is, else the inner schema's bound it validates within."""
         validate = node.get("validate_default")
-        if self.validate_default if validate is None else bool(validate):
-            value = decimal(node.get("default")) if direct(node) else None
-            return (
-                found if value is None else replace(found, numbers=Interval(low=value, high=value))
-            )
+        validated = self.validate_default if validate is None else bool(validate)
         if "default_factory" in node:
             return Unknown("default_factory", here)
-        return widened(found, node.get("default"), here)
+        if not self.inputs.omitted:
+            return found if validated else combined([found, only(node.get("default"), here)])
+        return found if validated and not direct(node) else only(node.get("default"), here)
 
 
 def direct(node: Mapping[str, object]) -> bool:
@@ -1090,21 +1129,19 @@ def lengths(node: Mapping[str, object]) -> tuple[int, int | None]:
     )
 
 
-def widened(known: Known, default: object, here: tuple[str, ...]) -> Output:
-    """A known output with an unvalidated default among the outputs: ``None``, a number the
-    interval widens to, or a tuple whose length the lengths widen to; anything else is none
-    of these. A ``nan`` default lies in no interval and is unknown."""
+def only(default: object, here: tuple[str, ...]) -> Output:
+    """A default as the one output: ``None``, a number, a tuple of its length, or something
+    that is none of these; a ``nan`` lies in no interval and is unknown."""
     if default is None:
-        return replace(known, none=True)
+        return Known(none=True)
     if isinstance(default, float) and isnan(default):
         return Unknown("nan", here)
     if (number := decimal(default)) is not None:
-        return replace(known, numbers=hull([known.numbers, Interval(low=number, high=number)]))
+        return Known(numbers=Interval(low=number, high=number))
     if isinstance(default, tuple):
-        low, high = known.lengths
         count = len(cast("tuple[object, ...]", default))
-        return replace(known, lengths=(min(low, count), None if high is None else max(high, count)))
-    return known
+        return Known(lengths=(count, count))
+    return Known()
 
 
 def decimal(bound: object) -> Decimal | None:
@@ -2146,11 +2183,12 @@ def hull(intervals: Iterable[Interval]) -> Interval:
 
 
 def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) -> Interval | Unknown:
-    """What a class's value can be: every number its ``root`` field's compiled schema can
-    output, as ``Declared.output`` reads it, a constant's default, a derivation's computation
-    and a scalar's bounds among the nodes it passes; unbounded for a class without a root. A
-    derivation reached again through its own operands is unknown, not a bound invented for
-    the recursion."""
+    """What a class's value can be, whatever is given for it: every number its ``root`` field's
+    declared type can output, as ``Declared.output`` reads it, a derivation's computation and
+    a scalar's bounds among the nodes it passes; unbounded for a class without a root. The
+    type's own claim, which a default narrows nowhere, since an occurrence may be given another
+    admitted value. A derivation reached again through its own operands is unknown, not a
+    bound invented for the recursion."""
     root = root_of(cls)
     if root is None:
         return Interval()
@@ -2158,6 +2196,58 @@ def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) ->
         return Unknown("recursion", (cls.__name__,))
     found = root.outputs(seen)
     return found.numbers if isinstance(found, Known) else found
+
+
+def interval_at(
+    construction: Construction, seen: frozenset[type[BaseModel]] = PLACED
+) -> Interval | Unknown:
+    """What an occurrence of a construction can be: its class's root under the contract its
+    bindings establish, each operand what the references bound to it supply, a collection
+    what its element references supply. Narrower than the class's own interval only where
+    the bindings say so."""
+    cls = construction.cls
+    root = root_of(cls)
+    if root is None:
+        return Interval()
+    if cls in seen:
+        return Unknown("recursion", (cls.__name__,))
+    operands = {
+        **{n: gathered(refs, seen | {cls}) for n, refs in construction.premises.items()},
+        **{n: gathered(c.elements, seen | {cls}) for n, c in construction.collections.items()},
+    }
+    found = root.outputs(seen, Inputs(operands=operands))
+    return found.numbers if isinstance(found, Known) else found
+
+
+def supplied_by(ref: Ref, seen: frozenset[type[BaseModel]] = PLACED) -> Interval | Unknown:
+    """What the occurrence a reference dereferences to can be: a constant at its own site is
+    constructed by the engine with its root omitted, so its default's path alone; an
+    occurrence the run constructs is what its own bindings make of it; what arrives or is
+    heard is anything its class admits."""
+    if isinstance(ref, ConstructedRef):
+        return interval_at(ref.construction, seen)
+    root = root_of(ref.cls)
+    if (
+        isinstance(ref, InputRef)
+        and ref.site == (ref.cls.__name__,)
+        and constant(ref.cls)
+        and root is not None
+    ):
+        found = root.outputs(seen, Inputs(omitted=True))
+        return found.numbers if isinstance(found, Known) else found
+    return interval(ref.cls, seen)
+
+
+def gathered(refs: Iterable[Ref], seen: frozenset[type[BaseModel]] = PLACED) -> Interval | Unknown:
+    """What any of several references can supply: the hull; unknown when any is, and when
+    none is bound."""
+    found: list[Interval] = []
+    for ref in refs:
+        own = supplied_by(ref, seen)
+        if isinstance(own, Unknown):
+            return own
+        found.append(own)
+    return hull(found) if found else Unknown("unbound", ())
 
 
 def spanned(
@@ -2195,30 +2285,38 @@ def outcomes(left: Interval, right: Interval) -> frozenset[int]:
     return frozenset(found)
 
 
-def comparisons(cls: type[BaseModel]) -> list[tuple[Options, Options, frozenset[int]]]:
-    """Each comparison a relation makes: the classes of its two operands and the orderings it
+def comparisons(cls: type[BaseModel]) -> list[tuple[Comparison, frozenset[int]]]:
+    """Each comparison a relation makes, naming its two operand fields, and the orderings it
     admits, read from the ordering fields' metadata and annotations."""
     return [
-        (
-            declared(cls, compared.left).classes,
-            declared(cls, compared.right).classes,
-            frozenset(int(o) for o in f.admits if isinstance(o, int)),
-        )
+        (compared, frozenset(int(o) for o in f.admits if isinstance(o, int)))
         for f in fields(cls)
         if isinstance(compared := f.computation, Comparison)
     ]
 
 
-def never(cls: type[BaseModel]) -> Literal["holds", "refuses"] | None:
+def operand(cls: type[BaseModel], name: str, at: Construction | None = None) -> Interval | Unknown:
+    """What a relation's operand can be: what the references a construction binds to it
+    supply, when a construction is given; else anything the classes the field names admit."""
+    if at is None:
+        return spanned(declared(cls, name).classes)
+    return gathered(at.premises.get(name, ()))
+
+
+def never(
+    cls: type[BaseModel], at: Construction | None = None
+) -> Literal["holds", "refuses"] | None:
     """``"holds"`` when some comparison a relation makes admits no ordering its operands'
     intervals allow, ``"refuses"`` when every comparison admits every ordering they allow, and
     ``None`` otherwise, for a comparison over an operand whose interval is unknown, and for
-    any class that is not a relation."""
+    any class that is not a relation. The class's claim holds of every occurrence, from what
+    the operands' types admit; a construction's claim holds of its occurrences, from what its
+    bindings supply, a constant's default among them."""
     if not is_relation(cls):
         return None
     decided = True
-    for left, right, admitted in comparisons(cls):
-        lefts, rights = spanned(left), spanned(right)
+    for compared, admitted in comparisons(cls):
+        lefts, rights = operand(cls, compared.left, at), operand(cls, compared.right, at)
         if isinstance(lefts, Unknown) or isinstance(rights, Unknown):
             decided = False
             continue
@@ -2230,17 +2328,24 @@ def never(cls: type[BaseModel]) -> Literal["holds", "refuses"] | None:
 
 
 def certain(proof: Proof) -> list[InitErrorDetails]:
-    """One ``never`` error per relation its operands' intervals make certain or impossible."""
+    """One ``never`` error per relation its operands' types make certain or impossible, at the
+    class, which holds of every occurrence; else per construction whose bound operands make it
+    so, at its site."""
+    found: dict[Site, Literal["holds", "refuses"]] = {
+        (c.__name__,): what for c in proof.classes if (what := never(c)) is not None
+    }
+    for c in proof.constructions:
+        if (c.cls.__name__,) not in found and (what := never(c.cls, c)) is not None:
+            found.setdefault(c.site, what)
     return [
         fault(
             "never",
             "{cls} never {what}, by the intervals of its operands",
-            (c.__name__,),
-            cls=c.__name__,
+            loc,
+            cls=loc[-1],
             what=what,
         )
-        for c in proof.classes
-        if (what := never(c)) is not None
+        for loc, what in found.items()
     ]
 
 
@@ -2264,7 +2369,8 @@ def constrained(cls: type[BaseModel]) -> list[Edge]:
     admitted sets that are one: under is ``value - bound < 0``, at most ``<= 0``, equal both ways,
     at least ``bound - value <= 0``, beyond ``< 0``; differs is none."""
     found: list[Edge] = []
-    for lefts, rights, admitted in comparisons(cls):
+    for compared, admitted in comparisons(cls):
+        lefts, rights = declared(cls, compared.left).classes, declared(cls, compared.right).classes
         for left, right in product(lefts, rights):
             if admitted <= {-1, 0}:
                 found.append((right, left, (Decimal(0), -1 if admitted == frozenset({-1}) else 0)))
@@ -2312,8 +2418,13 @@ def choices(
 def contradicts(a: type[BaseModel], b: type[BaseModel]) -> bool:
     """Whether two relations make a comparison over the same two operands whose admitted
     orderings are disjoint, the second's negated when its operands are the first's reversed."""
-    for lefts, rights, admitted in comparisons(a):
-        for lefts_, rights_, admitted_ in comparisons(b):
+    for compared, admitted in comparisons(a):
+        lefts, rights = declared(a, compared.left).classes, declared(a, compared.right).classes
+        for compared_, admitted_ in comparisons(b):
+            lefts_, rights_ = (
+                declared(b, compared_.left).classes,
+                declared(b, compared_.right).classes,
+            )
             if (lefts, rights) == (lefts_, rights_) and not admitted & admitted_:
                 return True
             if (lefts, rights) == (rights_, lefts_) and not admitted & {-o for o in admitted_}:
