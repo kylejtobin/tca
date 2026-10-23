@@ -9,11 +9,12 @@ from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequen
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, TypeIs
+from typing import Annotated, Any, TypeIs
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, ValidatorFunctionWrapHandler, WrapValidator
+from pydantic_core import PydanticCustomError
 
 from type_construction import engine
 from type_construction.engine import (
@@ -38,7 +39,7 @@ from type_construction.engine import (
     scopes,
     symbolic,
 )
-from type_construction.world import Connection, Json, Python, Record
+from type_construction.world import REFUTED, AtMost, Connection, Json, Python, Record, Scalar
 
 from . import blockers, deadlock, fixed, stalls
 from . import occurrences as program
@@ -804,6 +805,58 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
         assert failure.value.__notes__ == ["at SoloTotal"]
 
 
+def forged(value: object, handler: ValidatorFunctionWrapHandler) -> object:
+    """A validator that is not a declared condition yet raises the condition's error type."""
+    raise PydanticCustomError(REFUTED, "forged")
+
+
+def test_a_refutation_is_only_what_the_kinds_own_conditions_refuse() -> None:
+    class Tagged(Scalar[str]):
+        """A tag a forged validator refuses."""
+
+        root: str = Field(min_length=1)
+
+    class Forging(AtMost[stalls.Amount, stalls.Limit]):
+        """A relation with a field that forges the condition's error outside any condition."""
+
+        tag: Annotated[Tagged, WrapValidator(forged)]
+
+    assert Forging.conditions() == {"ordering"}
+    with pytest.raises(ValidationError) as refusal:
+        Forging.model_validate(
+            {"value": stalls.Amount(Decimal(1)), "bound": stalls.Limit(), "tag": Tagged("t")}
+        )
+    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("refuted", ("tag",))]
+    assert not Forging.refuted(refusal.value)
+    with pytest.raises(ValidationError) as refusal:
+        Forging.model_validate(
+            {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit(), "tag": Tagged("t")}
+        )
+    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
+        ("refuted", ("ordering",)),
+        ("refuted", ("tag",)),
+    ]
+    assert not Forging.refuted(refusal.value)
+    forging = Occurrence(Scope((), (), None), Construction(stalls.Operation, Forging, ()))
+    with pytest.raises(ValidationError) as failure:
+        construct(
+            forging,
+            {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit(), "tag": Tagged("t")},
+        )
+    assert failure.value.__notes__ == ["at Forging"]
+    cheap = Occurrence(Scope((), (), None), Construction(stalls.Operation, stalls.Cheap, ()))
+    nested: dict[str, object] = {
+        "element": stalls.Element(name=stalls.Name("a")),
+        "low": {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit()},
+    }
+    with pytest.raises(ValidationError) as failure:
+        construct(cheap, nested)  # type: ignore[arg-type]
+    assert [(e["type"], e["loc"]) for e in failure.value.errors()] == [
+        ("refuted", ("low", "ordering"))
+    ]
+    assert failure.value.__notes__ == ["at Cheap"]
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
 async def test_one_resolver_serves_construction_and_explanation_and_only_a_blocked_run_explains(
@@ -819,11 +872,13 @@ async def test_one_resolver_serves_construction_and_explanation_and_only_a_block
         return resolving(ref, scope)
 
     def noting(
-        occurrence: engine.Occurrence, blocked: Mapping[engine.Occurrence, tuple[engine.Cause, ...]]
+        occurrence: engine.Occurrence,
+        unresolved: engine.Unresolved,
+        blocked: Mapping[engine.Occurrence, tuple[engine.Cause, ...]],
     ) -> tuple[engine.Cause, ...]:
         """``causes`` that records each occurrence explained."""
         explained.append(occurrence)
-        return explaining(occurrence, blocked)
+        return explaining(occurrence, unresolved, blocked)
 
     monkeypatch.setattr(engine, "resolve", counting)
     monkeypatch.setattr(engine, "causes", noting)

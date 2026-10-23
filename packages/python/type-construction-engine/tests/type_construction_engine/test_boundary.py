@@ -26,8 +26,10 @@ PRODUCTION = [
 ]
 """The source directories the engine's path runs through."""
 
-BYPASSES = ("model_construct(", "model_copy(", "__setattr__(", "__pydantic_validator__")
-"""Pydantic's ways around validation, as they are written."""
+BYPASSES = ("model_construct(", "model_copy(", "object.__setattr__(", "__pydantic_validator__")
+"""Pydantic's ways around validation, as they are written: constructing without validating,
+copying with an update, writing a frozen instance's field past ``BaseModel.__setattr__``, and
+the validator itself."""
 
 
 @pytest.fixture
@@ -159,3 +161,30 @@ def test_no_production_source_skips_validation() -> None:
     assert engine.count("adapter.validate_python(data, strict=True)") == 1
     assert engine.count("await action.perform()") == 1
     assert "hear(action, await action.perform())" in engine
+
+
+READS = (
+    "model_fields",
+    "model_computed_fields",
+    "__pydantic_generic_metadata__",
+    "get_origin(",
+    "get_args(",
+)
+"""How a Pydantic declaration is read, as it is written."""
+
+
+def test_the_engine_reads_declarations_through_one_boundary_only() -> None:
+    source = Path(inspect.getfile(type_construction.engine)).read_text().splitlines()
+    start = next(i for i, line in enumerate(source) if line.startswith("def is_model("))
+    stop = next(i for i, line in enumerate(source) if line.startswith("def fault("))
+    outside = [
+        (i + 1, line.strip())
+        for i, line in enumerate(source)
+        if not (start <= i < stop)
+        and any(read in line for read in READS)
+        and not line.strip().startswith(("#", '"""', "``"))
+        and "``" not in line
+    ]
+    assert outside == []
+    inside = [line for line in source[start:stop] if any(read in line for read in READS)]
+    assert inside

@@ -33,6 +33,8 @@ from type_construction.engine import (
     classes,
     coexist,
     config,
+    declared,
+    fields,
     hear,
     heard,
     interval,
@@ -47,6 +49,7 @@ from type_construction.world import (
     Action,
     AtMost,
     Beyond,
+    Comparison,
     Config,
     Connection,
     Equal,
@@ -338,7 +341,8 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
     assert total.elements == (amount,)
     concluded = placed[Concluded, ()]
     assert concluded.premises == {"total": (ConstructedRef(placed[Total, ()]),)}
-    assert concluded.freshly == {"at": Instant}
+    assert [f.name for f in fields(Concluded) if f.fresh] == ["at"]
+    assert declared(Concluded, "at").classes == (Instant,)
     assert concluded.collections["valued"].site == ("request", "each")
     assert concluded.collections["valued"].holder == total.holder
     assert concluded.collections["valued"].elements == (
@@ -367,6 +371,51 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
     assert all(any(p is c for c in placed.values()) for p in producers)
     assert all(any(a is c for c in placed.values()) for a in actions)
     assert all(c in proof.constructions for c in placed.values())
+
+
+def test_the_published_graph_is_sealed_and_its_identities_are_shared(proof: Proof) -> None:
+    constructions = proof.constructs(Operation)
+    assert all(c.sealed for c in constructions)
+    (low,) = (c for c in constructions if c.cls is Low)
+    with pytest.raises(AttributeError, match="sealed"):
+        low.rebound(low)
+    with pytest.raises(AttributeError, match="sealed"):
+        low.premises = {}
+    with pytest.raises(TypeError):
+        low.premises["value"] = ()  # type: ignore[index]
+    (portions,) = (c for c in constructions if c.cls is Portions)
+    with pytest.raises(TypeError):
+        portions.collections["of"] = portions.collections["of"]  # type: ignore[index]
+    again = proven(PROGRAM).constructs(Operation)
+    assert [c.cls for c in again] == [c.cls for c in constructions]
+    assert all(a is not b for a, b in zip(again, constructions, strict=True))
+
+
+def test_a_declaration_is_read_through_one_view(proof: Proof) -> None:
+    valued = declared(Concluded, "valued")
+    assert (valued.is_tuple, valued.fixed, valued.positions) == (True, False, None)
+    assert valued.classes == (Cheap, Dear)
+    assert valued.item_classes == ((Cheap, Dear),)
+    assert (valued.step(0), valued.step(3)) == ("[]", "[]")
+    assert valued.shape == "tuple[Cheap | Dear, ...]"
+    assert not valued.premise and not valued.fresh and valued.required
+    ordering = declared(Low, "ordering")
+    assert ordering.condition is ordering.computation
+    assert isinstance(ordering.condition, Comparison)
+    assert not ordering.required and not ordering.premise
+    assert declared(Largest, "of").length == (1, None)
+    assert declared(Only[Element], "of").length == (1, 1)
+    assert declared(Only[Element], "of").positions == 1
+    assert declared(Low, "value").premise
+    assert declared(Low, "bound").classes == (Limit,)
+    assert declared(Heard, "parts").is_tuple
+    assert [f.name for f in fields(Low)] == ["value", "bound", "ordering"]
+    assert declared(Amount, "root").bounds == Interval(low=Decimal(0), low_strict=True)
+    assert declared(Low, "ordering").condition is not None
+    assert Low.conditions() == {"ordering"}
+    assert Largest.conditions() == {"of"}
+    assert Cheap.model_fields.keys() == {f.name for f in fields(Cheap)}
+    assert proof.constructs(Operation)
     assert proof.sites(Operation, Portion) == ((*PART, "Portion"),)
     assert proof.waiting == ()
     assert proof.faulted == ()

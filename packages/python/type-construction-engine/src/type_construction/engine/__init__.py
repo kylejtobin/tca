@@ -87,19 +87,21 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from itertools import combinations, product
-from types import ModuleType, NoneType, UnionType
+from types import MappingProxyType, ModuleType, NoneType, UnionType
 from typing import Literal, LiteralString, NamedTuple, Self, TypeIs, Union, get_args, get_origin
 
 from annotated_types import Ge, Gt, Le, Lt, MaxLen, MinLen
 from opentelemetry import trace
 from opentelemetry.trace import Span
 from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, ValidationError, model_validator
+from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError, PydanticUndefined
 
 from type_construction.world import (
     Action,
     Comparison,
     Computation,
+    Condition,
     Config,
     Connection,
     Derived,
@@ -189,24 +191,31 @@ With no SDK configured these are no-ops; the deployment supplies the SDK and the
 @dataclass(eq=False)
 class Construction:
     """One class a route constructs, in the scope at a site template: the one record of how it
-    constructs, which the proof, the run and the explanation of a run all read. Each required
-    single field binds to the references of its candidate sources, alternatives among them;
-    each tuple field to the collection it gathers; each fresh field to the class constructed
-    for the holder; ``because`` is the optional sites it exists only when they arrive. The
-    declaration analysis writes the binding when the class first binds and once more against
-    the whole tree at the fixed point; after the analysis nothing writes it. A construction is
-    its object: a reference to one is a reference to this, never to a name or a path."""
+    constructs, which the proof, the run and the explanation of a run all read. Each premise
+    field binds to the references of its candidate sources, alternatives among them; each
+    tuple field to the collection it gathers; ``because`` is the optional sites it exists only
+    when they arrive. Everything else about the class, its fresh fields, its computed fields,
+    its shape, is read from the class itself. The analysis assembles the graph with these
+    objects, binds each once more against the whole tree at its fixed point, and seals them
+    before the proof publishes them: a sealed construction refuses every assignment, and a
+    reference to one is a reference to this object, never to a name or a path."""
 
     route: type[BaseModel]
     cls: type[BaseModel]
     scope: Site
-    premises: dict[str, tuple[Ref, ...]] = field(default_factory=dict[str, tuple["Ref", ...]])
-    collections: dict[str, Collected] = field(default_factory=dict[str, "Collected"])
-    freshly: dict[str, type[BaseModel]] = field(default_factory=dict[str, type[BaseModel]])
+    premises: Mapping[str, tuple[Ref, ...]] = field(default_factory=dict[str, tuple["Ref", ...]])
+    collections: Mapping[str, Collected] = field(default_factory=dict[str, "Collected"])
     because: tuple[Site, ...] = ()
+    sealed: bool = field(default=False, init=False)
 
     def __repr__(self) -> str:
         return f"Construction({self.route.__name__}: {'.'.join(self.site)})"
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if self.__dict__.get("sealed"):
+            immutable = f"{self!r} is sealed"
+            raise AttributeError(immutable)
+        super().__setattr__(name, value)
 
     @property
     def site(self) -> Site:
@@ -215,8 +224,17 @@ class Construction:
 
     def rebound(self, found: Construction) -> None:
         """The binding against the whole tree, in place of the first."""
-        self.premises, self.collections = found.premises, found.collections
-        self.freshly, self.because = found.freshly, found.because
+        self.premises, self.collections, self.because = (
+            found.premises,
+            found.collections,
+            found.because,
+        )
+
+    def seal(self) -> None:
+        """Published: the binding becomes read-only mappings and nothing assigns here again."""
+        self.premises = MappingProxyType(dict(self.premises))
+        self.collections = MappingProxyType(dict(self.collections))
+        self.sealed = True
 
 
 @dataclass(frozen=True)
@@ -434,7 +452,7 @@ def refutable(cls: type[BaseModel]) -> bool:
     return issubclass(cls, Refutable)
 
 
-def declared(cls: type[object]) -> bool:
+def written(cls: type[object]) -> bool:
     """Whether a class is one the program wrote: not a parametrization Pydantic registered in
     the module, as ``Tell[Party, Heard]`` beside ``Asked``, and not a library kind whose
     parameters are still open, as ``Tell`` itself."""
@@ -455,7 +473,7 @@ def classes(program: ModuleType) -> list[type[object]]:
     found = [
         c
         for c in vars(program).values()
-        if isinstance(c, type) and c.__module__ == program.__name__ and declared(c)
+        if isinstance(c, type) and c.__module__ == program.__name__ and written(c)
     ]
     for c in found:
         if is_model(c) and not c.__pydantic_complete__:
@@ -480,57 +498,198 @@ def config(program: ModuleType) -> type[Config]:
     return found
 
 
-def members(annotation: object) -> tuple[object, ...]:
-    """A union's members, or the one annotation."""
+def union_members(annotation: object) -> tuple[object, ...]:
+    """A union's members, or the one annotation: the one read of a union the engine makes."""
     return get_args(annotation) if get_origin(annotation) in (UnionType, Union) else (annotation,)
 
 
-def options(annotation: object) -> Options:
-    """The classes an annotation may hold."""
-    return tuple(m for m in members(annotation) if is_model(m))
+def model_classes(annotation: object) -> Options:
+    """The Pydantic classes among an annotation's members."""
+    return tuple(m for m in union_members(annotation) if is_model(m))
 
 
-def elements(annotation: object) -> tuple[object, ...]:
-    """The element annotations of a tuple annotation: ``tuple[X, ...]`` and ``tuple[X]`` name
-    ``X``."""
-    return tuple(a for a in get_args(annotation) if a is not Ellipsis)
+@dataclass(frozen=True)
+class Declared:
+    """One field as Pydantic declares it: the engine's one view of a declaration, read from
+    ``model_fields`` when asked and kept nowhere. Each structural property the engine needs of
+    a field is derived here once, from the resolved annotation, the ``FieldInfo`` and its
+    metadata; nothing else in the engine reads them. The meaning stays in the declaration."""
+
+    cls: type[BaseModel]
+    name: str
+    info: FieldInfo
+
+    @property
+    def annotation(self) -> object:
+        """The resolved annotation."""
+        return self.info.annotation
+
+    @property
+    def is_tuple(self) -> bool:
+        """Whether the field collects elements: a ``tuple`` annotation."""
+        return get_origin(self.annotation) is tuple
+
+    @property
+    def items(self) -> tuple[object, ...]:
+        """The annotations a value is made of: each position of a fixed tuple, the one element
+        of ``tuple[X, ...]``, the annotation itself otherwise."""
+        if self.is_tuple:
+            return tuple(a for a in get_args(self.annotation) if a is not Ellipsis)
+        return (self.annotation,)
+
+    @property
+    def fixed(self) -> bool:
+        """Whether a tuple fixes its positions: ``tuple[X, X]`` and ``tuple[X]`` do."""
+        return self.is_tuple and Ellipsis not in get_args(self.annotation)
+
+    @property
+    def positions(self) -> int | None:
+        """The positions a tuple declares: their number for a fixed tuple, ``None`` otherwise."""
+        return len(self.items) if self.fixed else None
+
+    def step(self, index: int) -> str:
+        """The site step of one element: its index for a fixed tuple, ``"[]"`` for every
+        element of a variable one."""
+        return f"[{index}]" if self.fixed else "[]"
+
+    @property
+    def members(self) -> tuple[object, ...]:
+        """Every member of every item's union, flattened."""
+        return tuple(m for item in self.items for m in union_members(item))
+
+    @property
+    def item_classes(self) -> tuple[Options, ...]:
+        """The classes each item may hold."""
+        return tuple(model_classes(item) for item in self.items)
+
+    @property
+    def classes(self) -> Options:
+        """The classes the field may hold, every item's in order."""
+        return tuple(c for classes_ in self.item_classes for c in classes_)
+
+    @property
+    def admits(self) -> frozenset[object]:
+        """The values a ``Literal`` annotation admits; empty for any other annotation."""
+        return frozenset(get_args(self.annotation)) if is_literal(self.annotation) else frozenset()
+
+    @property
+    def admits_none(self) -> bool:
+        """Whether the field admits ``None``: what it holds may not arrive."""
+        return NoneType in self.members
+
+    @property
+    def required(self) -> bool:
+        """Whether a value must be given."""
+        return self.info.is_required()
+
+    @property
+    def alias(self) -> str:
+        """The name the field validates by."""
+        return str(self.info.validation_alias or self.info.alias or self.name)
+
+    @property
+    def computation(self) -> Computation | None:
+        """The computation the field declares in its metadata, if it is computed."""
+        return next((m for m in self.info.metadata if isinstance(m, Computation)), None)
+
+    @property
+    def condition(self) -> Condition | None:
+        """The condition the field declares in its metadata, if it is one a kind refuses by."""
+        return next((m for m in self.info.metadata if isinstance(m, Condition)), None)
+
+    @property
+    def fresh(self) -> bool:
+        """Whether the field is constructed anew for its holder: required, single, and every
+        class it may hold a fresh scalar."""
+        classes_ = self.classes
+        return not self.is_tuple and self.required and bool(classes_) and all(map(fresh, classes_))
+
+    @property
+    def premise(self) -> bool:
+        """Whether the field is a premise the scope must hold before the class is asked for: a
+        required single field naming classes, not fresh."""
+        return not self.is_tuple and self.required and bool(self.classes) and not self.fresh
+
+    @property
+    def shape(self) -> str:
+        """A tuple annotation in the developer's names: ``tuple[X, ...]`` or ``tuple[X, X]``."""
+        inner = ", ".join(names(classes_) for classes_ in self.item_classes)
+        return f"tuple[{inner}]" if self.fixed else f"tuple[{inner}, ...]"
+
+    @property
+    def length(self) -> tuple[int, int | None]:
+        """How many elements a tuple admits: a fixed tuple's positions twice, else its
+        ``min_length`` and ``max_length``."""
+        if self.fixed:
+            return len(self.items), len(self.items)
+        low, high = 0, None
+        for meta in self.info.metadata:
+            match meta:
+                case MinLen(min_length=n):
+                    low = n
+                case MaxLen(max_length=n):
+                    high = n
+                case _:
+                    pass
+        return low, high
+
+    @property
+    def bounds(self) -> Interval:
+        """The interval the ``gt``, ``ge``, ``lt`` and ``le`` metadata declare. A field over
+        ``int`` has no value between two integers, so its strict bounds are the next integer's
+        non-strict ones."""
+        whole = self.annotation is int
+        found = Interval()
+        for meta in self.info.metadata:
+            match meta:
+                case Gt(gt=int() | float() | Decimal() as v):
+                    low = Decimal(str(v))
+                    found = found._replace(low=low + 1 if whole else low, low_strict=not whole)
+                case Ge(ge=int() | float() | Decimal() as v):
+                    found = found._replace(low=Decimal(str(v)), low_strict=False)
+                case Lt(lt=int() | float() | Decimal() as v):
+                    high = Decimal(str(v))
+                    found = found._replace(high=high - 1 if whole else high, high_strict=not whole)
+                case Le(le=int() | float() | Decimal() as v):
+                    found = found._replace(high=Decimal(str(v)), high_strict=False)
+                case _:
+                    pass
+        return found
 
 
-def fixed(annotation: object) -> bool:
-    """Whether a tuple annotation fixes its positions: ``tuple[X, X]`` and ``tuple[X]`` do,
-    ``tuple[X, ...]`` does not."""
-    return Ellipsis not in get_args(annotation)
+def fields(cls: type[BaseModel]) -> tuple[Declared, ...]:
+    """Every field of a class, as declared, in declaration order."""
+    return tuple(Declared(cls, name, info) for name, info in cls.model_fields.items())
 
 
-def position(annotation: object, index: int) -> str:
-    """The site step of one element of a tuple: its index for a fixed tuple, ``"[]"`` for
-    every element of a variable one."""
-    return f"[{index}]" if fixed(annotation) else "[]"
+def declared(cls: type[BaseModel], name: str) -> Declared:
+    """One field of a class, as declared."""
+    return Declared(cls, name, cls.model_fields[name])
+
+
+def root_of(cls: type[BaseModel]) -> Declared | None:
+    """The ``root`` field of a class that declares one, a scalar's value or a derivation's
+    result; ``None`` for a class of fields."""
+    info = cls.model_fields.get("root")
+    return Declared(cls, "root", info) if info is not None else None
 
 
 def holds(cls: type[BaseModel]) -> dict[str, Options]:
     """Each single field and the classes it may hold; empty for a field that names no class."""
-    return {
-        name: options(field.annotation)
-        for name, field in cls.model_fields.items()
-        if get_origin(field.annotation) is not tuple
-    }
+    return {f.name: f.classes for f in fields(cls) if not f.is_tuple}
 
 
 def collects(cls: type[BaseModel]) -> dict[str, Options]:
     """Each tuple field and the classes an element may be."""
-    return {
-        name: tuple(c for e in elements(field.annotation) for c in options(e))
-        for name, field in cls.model_fields.items()
-        if get_origin(field.annotation) is tuple
-    }
+    return {f.name: f.classes for f in fields(cls) if f.is_tuple}
 
 
 def produces(cls: type[BaseModel]) -> dict[str, Options]:
     """Each computed field whose return type names classes, and those classes: the words a
     reply says."""
     found = {
-        name: options(computed.return_type) for name, computed in cls.model_computed_fields.items()
+        name: model_classes(computed.return_type)
+        for name, computed in cls.model_computed_fields.items()
     }
     return {name: classes_ for name, classes_ in found.items() if classes_}
 
@@ -538,35 +697,21 @@ def produces(cls: type[BaseModel]) -> dict[str, Options]:
 def constant(cls: type[BaseModel]) -> bool:
     """Whether a class is a constant: a scalar whose root has a default, which exists in every
     run by being declared."""
-    root = cls.model_fields.get("root")
-    return is_scalar(cls) and root is not None and root.default is not PydanticUndefined
+    root = root_of(cls)
+    return is_scalar(cls) and root is not None and root.info.default is not PydanticUndefined
 
 
 def fresh(cls: type[BaseModel]) -> bool:
     """Whether a class is fresh: a scalar whose root has a default factory, constructed anew for
     each holder."""
-    root = cls.model_fields.get("root")
-    return is_scalar(cls) and root is not None and root.default_factory is not None
+    root = root_of(cls)
+    return is_scalar(cls) and root is not None and root.info.default_factory is not None
 
 
 def premises(cls: type[BaseModel]) -> dict[str, Options]:
-    """Each required single field that names classes the scope must hold before the class is
-    asked for: a fresh class is constructed for the holder instead."""
-    return {
-        name: classes_
-        for name, classes_ in holds(cls).items()
-        if classes_ and cls.model_fields[name].is_required() and not all(fresh(c) for c in classes_)
-    }
-
-
-def freshly(cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
-    """Each required single field whose class is fresh, and that class: constructed for the
-    holder when the holder is asked for."""
-    return {
-        name: classes_[0]
-        for name, classes_ in holds(cls).items()
-        if classes_ and cls.model_fields[name].is_required() and all(fresh(c) for c in classes_)
-    }
+    """Each premise field and the classes it may hold: what the scope must hold before the
+    class is asked for."""
+    return {f.name: f.classes for f in fields(cls) if f.premise}
 
 
 def brought(cls: type[BaseModel]) -> frozenset[type[BaseModel]]:
@@ -608,13 +753,13 @@ def built(cls: type[BaseModel]) -> bool:
 
 def asked[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]]) -> type[Request]:
     """The request class a route declares as ``Route[Q, A]``: the class of its ``request``."""
-    (request,) = (m for m in members(route.model_fields["request"].annotation) if is_request(m))
+    (request,) = (c for c in declared(route, "request").classes if is_request(c))
     return request
 
 
 def replied[Q: Request, A: Reply[Fact]](route: type[Route[Q, A]]) -> Options:
     """The reply classes a route declares as ``Route[Q, A]``: the classes of its ``reply``."""
-    return options(route.model_fields["reply"].annotation)
+    return declared(route, "reply").classes
 
 
 def parametrized(cls: type[BaseModel]) -> Iterator[tuple[type[BaseModel], tuple[object, ...]]]:
@@ -645,7 +790,7 @@ def said[P: Connection, T: Record](action: type[Action[P, T]]) -> object:
 
 def heard[P: Connection, T: Record](action: type[Action[P, T]]) -> tuple[type[Record], ...]:
     """The record classes an action may hear: the one it declares, or a union's members."""
-    return tuple(m for m in members(said(action)) if is_record(m))
+    return tuple(m for m in union_members(said(action)) if is_record(m))
 
 
 def hears[P: Connection, T: Record](record: Record, action: Action[P, T]) -> TypeIs[T]:
@@ -815,17 +960,6 @@ class Symbol:
         return self.ref.site
 
 
-def absent(cls: type[BaseModel], name: str) -> bool:
-    """Whether a field admits ``None``: what it holds may not arrive."""
-    return NoneType in members(cls.model_fields[name].annotation)
-
-
-def positions(annotation: object) -> int | None:
-    """The positions a tuple annotation declares: their number for a fixed tuple, ``None`` for
-    ``tuple[E, ...]``."""
-    return len(elements(annotation)) if fixed(annotation) else None
-
-
 def declared_symbol(
     ref: InputRef | HeardRef,
     context: Context,
@@ -843,23 +977,22 @@ def declared_symbol(
     if cls in lineage:
         return symbol
     lineage = lineage | {cls}
-    for name, classes_ in holds(cls).items():
-        held = (*because, (*site, name)) if absent(cls, name) else because
-        symbol.held[name] = tuple(
-            declared_symbol(ref.held(c, name), context, lineage, held) for c in classes_
-        )
-    for name, info in cls.model_fields.items():
-        if get_origin(info.annotation) is not tuple:
-            continue
-        found: list[Symbol] = []
-        for index, element in enumerate(elements(info.annotation)):
-            step = position(info.annotation, index)
-            child = context.opened((*site, name, step), many=not fixed(info.annotation))
-            found.extend(
-                declared_symbol(ref.element(c, name, step), child, lineage, because)
-                for c in options(element)
+    for f in fields(cls):
+        if f.is_tuple:
+            found: list[Symbol] = []
+            for index, classes_ in enumerate(f.item_classes):
+                step = f.step(index)
+                child = context.opened((*site, f.name, step), many=not f.fixed)
+                found.extend(
+                    declared_symbol(ref.element(c, f.name, step), child, lineage, because)
+                    for c in classes_
+                )
+            symbol.collected[f.name] = Gathered(symbol, f.name, tuple(found), f.positions)
+        else:
+            held = (*because, (*site, f.name)) if f.admits_none else because
+            symbol.held[f.name] = tuple(
+                declared_symbol(ref.held(c, f.name), context, lineage, held) for c in f.classes
             )
-        symbol.collected[name] = Gathered(symbol, name, tuple(found), positions(info.annotation))
     return symbol
 
 
@@ -920,7 +1053,7 @@ def compatible(cls: type[BaseModel], name: str, source: Gathered) -> bool:
     """Whether a tuple field may gather a collection of the source's declared shape:
     ``tuple[E, ...]`` gathers any; a fixed tuple gathers a fixed tuple of the same positions;
     a refutable kind gathers any, since refusing the count is what it declares."""
-    wanted = positions(cls.model_fields[name].annotation)
+    wanted = declared(cls, name).positions
     return wanted is None or refutable(cls) or wanted == source.positions
 
 
@@ -988,7 +1121,6 @@ def bound_in(
         context.site,
         {n: tuple(dict.fromkeys(s.ref for s in found)) for n, found in singles.items()},
         collections,
-        freshly(cls),
         tuple(dict.fromkeys(site for s in sources for site in s.because)),
     )
 
@@ -1153,6 +1285,8 @@ def symbolic[Q: Request, A: Reply[Fact]](
             faulted.append(conditional(cls, found.because))
     never_built = [c for c in asked_for if not any(c is b.cls for b, _ in constructed)]
     waiting, faults = unexplained(route, never_built, classes_, root)
+    for construction, _ in constructed:
+        construction.seal()
     return Symbolic([c for c, _ in constructed], waiting, [*faulted, *faults])
 
 
@@ -1283,15 +1417,9 @@ def unfilled_field(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
     )
 
 
-def shape(annotation: object) -> str:
-    """A tuple annotation in the developer's names: ``tuple[X, ...]`` or ``tuple[X, X]``."""
-    inner = ", ".join(names(options(e)) for e in elements(annotation))
-    return f"tuple[{inner}]" if fixed(annotation) else f"tuple[{inner}, ...]"
-
-
 def uncollected(cls: type[BaseModel], name: str, classes_: Options) -> Fault:
     """The fault of a tuple field no collection of its shape fills."""
-    declared_as = shape(cls.model_fields[name].annotation)
+    declared_as = declared(cls, name).shape
     held = names(dict.fromkeys(classes_))
     return Fault(
         code="collects",
@@ -1438,21 +1566,6 @@ def kind(annotation: object) -> str:
     return getattr(annotation, "__name__", str(annotation))
 
 
-def computation(cls: type[BaseModel], name: str) -> Computation | None:
-    """The computation a field declares in its annotation, if it is a computed one: a
-    relation's ordering or a derivation's root."""
-    return next(
-        (found for found in cls.model_fields[name].metadata if isinstance(found, Computation)),
-        None,
-    )
-
-
-def owned(cls: type[BaseModel], name: str) -> bool:
-    """Whether a field is the kind's own computed one: a relation's ordering or a derivation's
-    root."""
-    return computation(cls, name) is not None
-
-
 def modeled(cls: type[BaseModel], annotation: object) -> bool:
     """Whether one member of a field's annotation names a kind the class may hold: a model for
     any class; an enumeration on a carrier or a connection; a ``Literal`` or ``None`` on a
@@ -1479,14 +1592,10 @@ def unmodeled(proof: Proof) -> list[InitErrorDetails]:
         )
         for c in proof.classes
         if not is_scalar(c)
-        for name, info in c.model_fields.items()
-        if not owned(c, name)
-        for member in (
-            elements(info.annotation)
-            if get_origin(info.annotation) is tuple
-            else (info.annotation,)
-        )
-        for member in members(member)
+        for f in fields(c)
+        if f.computation is None and f.condition is None
+        for name in (f.name,)
+        for member in f.members
         if not modeled(c, member)
     ]
 
@@ -1545,32 +1654,6 @@ def deployment(proof: Proof) -> list[InitErrorDetails]:
     ]
 
 
-def bounds(cls: type[BaseModel]) -> Interval:
-    """A scalar's interval from the ``gt``, ``ge``, ``lt`` and ``le`` metadata on its root. A
-    scalar over ``int`` has no value between two integers, so its strict bounds are the next
-    integer's non-strict ones."""
-    info = cls.model_fields.get("root")
-    if info is None:
-        return Interval()
-    whole = info.annotation is int
-    found = Interval()
-    for meta in info.metadata:
-        match meta:
-            case Gt(gt=int() | float() | Decimal() as v):
-                low = Decimal(str(v))
-                found = found._replace(low=low + 1 if whole else low, low_strict=not whole)
-            case Ge(ge=int() | float() | Decimal() as v):
-                found = found._replace(low=Decimal(str(v)), low_strict=False)
-            case Lt(lt=int() | float() | Decimal() as v):
-                high = Decimal(str(v))
-                found = found._replace(high=high - 1 if whole else high, high_strict=not whole)
-            case Le(le=int() | float() | Decimal() as v):
-                found = found._replace(high=Decimal(str(v)), high_strict=False)
-            case _:
-                pass
-    return found
-
-
 def hull(intervals: Iterable[Interval]) -> Interval:
     """The interval that covers every interval given: the least low and the greatest high,
     unbounded where any is."""
@@ -1587,22 +1670,21 @@ def hull(intervals: Iterable[Interval]) -> Interval:
 
 
 def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) -> Interval:
-    """What a numeric class can be: a constant is its default; a scalar is its bounds; a
+    """What a numeric class can be: a constant is its default; a scalar is its root's bounds; a
     derivation is what its operation makes of its operands' intervals; anything else is
     unbounded."""
-    root = cls.model_fields.get("root")
+    root = root_of(cls)
     if cls in seen or root is None:
         return Interval()
     if constant(cls):
-        value = Decimal(str(root.default))
+        value = Decimal(str(root.info.default))
         return Interval(low=value, high=value)
     if is_scalar(cls):
-        return bounds(cls)
-    if isinstance(derived := computation(cls, "root"), Derived):
+        return root.bounds
+    if isinstance(derived := root.computation, Derived):
         operands = tuple(
-            hull(interval(c, seen | {cls}) for c in classes_)
+            hull(interval(c, seen | {cls}) for c in declared(cls, name).classes)
             for name in derived.operands
-            for classes_ in ({**holds(cls), **collects(cls)}[name],)
         )
         return derived.interval(operands)
     return Interval()
@@ -1633,12 +1715,12 @@ def comparisons(cls: type[BaseModel]) -> list[tuple[Options, Options, frozenset[
     admits, read from the ordering fields' metadata and annotations."""
     return [
         (
-            holds(cls)[compared.left],
-            holds(cls)[compared.right],
-            frozenset(get_args(info.annotation)),
+            declared(cls, compared.left).classes,
+            declared(cls, compared.right).classes,
+            frozenset(int(o) for o in f.admits if isinstance(o, int)),
         )
-        for name, info in cls.model_fields.items()
-        if isinstance(compared := computation(cls, name), Comparison)
+        for f in fields(cls)
+        if isinstance(compared := f.computation, Comparison)
     ]
 
 
@@ -1746,29 +1828,11 @@ def contradicts(a: type[BaseModel], b: type[BaseModel]) -> bool:
     return False
 
 
-def counts(cls: type[BaseModel]) -> tuple[int, int | None]:
-    """How many elements a selection admits: a fixed tuple's length twice, else its
-    ``min_length`` and ``max_length``."""
-    info = cls.model_fields["of"]
-    if fixed(info.annotation):
-        return len(get_args(info.annotation)), len(get_args(info.annotation))
-    low, high = 0, None
-    for meta in info.metadata:
-        match meta:
-            case MinLen(min_length=n):
-                low = n
-            case MaxLen(max_length=n):
-                high = n
-            case _:
-                pass
-    return low, high
-
-
 def exclusive(a: type[BaseModel], b: type[BaseModel]) -> bool:
     """Whether two selections over the same elements admit disjoint counts."""
     if collects(a)["of"] != collects(b)["of"]:
         return False
-    (low, high), (low_, high_) = counts(a), counts(b)
+    (low, high), (low_, high_) = declared(a, "of").length, declared(b, "of").length
     return (high is not None and low_ > high) or (high_ is not None and low > high_)
 
 
@@ -1846,24 +1910,17 @@ def ambiguous(proof: Proof) -> list[InitErrorDetails]:
 
 def keys(cls: type[BaseModel], *, required: bool) -> frozenset[str]:
     """The names a record validates by: each field's alias, or its name."""
-    return frozenset(
-        str(info.validation_alias or info.alias or name)
-        for name, info in cls.model_fields.items()
-        if info.is_required() or not required
-    )
+    return frozenset(f.alias for f in fields(cls) if f.required or not required)
 
 
 def told_apart(a: type[BaseModel], b: type[BaseModel]) -> bool:
     """Whether two records cannot both construct from one payload: a field both declare as a
     ``Literal`` with no value in common, or a key one requires that the other does not
     declare."""
-    for name in a.model_fields.keys() & b.model_fields.keys():
-        first, second = a.model_fields[name].annotation, b.model_fields[name].annotation
-        if (
-            is_literal(first)
-            and is_literal(second)
-            and not (set(get_args(first)) & set(get_args(second)))
-        ):
+    shared = {f.name for f in fields(a)} & {f.name for f in fields(b)}
+    for name in shared:
+        first, second = declared(a, name), declared(b, name)
+        if first.admits and second.admits and not (first.admits & second.admits):
             return True
     return bool(keys(a, required=True) - keys(b, required=False)) or bool(
         keys(b, required=True) - keys(a, required=False)
@@ -1960,7 +2017,7 @@ def connections(deployment: Config) -> tuple[Connection, ...]:
     """Every connection a config holds, in field order."""
     return tuple(
         value
-        for value in (getattr(deployment, name) for name in type(deployment).model_fields)
+        for value in (getattr(deployment, f.name) for f in fields(type(deployment)))
         if isinstance(value, Connection)
     )
 
@@ -2061,24 +2118,26 @@ def arrived(instance: BaseModel, origin: Construction | None, member: Site, scop
     each model a single field holds under the member's key, and each tuple of models as a
     collection, one child scope per element at the element's declared site, holding the
     element and what it holds in turn."""
-    declared = member if origin is None else (*origin.site, HEARD, *member)
+    declared_ = member if origin is None else (*origin.site, HEARD, *member)
     scope.arrived[origin, member] = instance
-    for name, info in type(instance).model_fields.items():
-        value: object = getattr(instance, name)
+    for f in fields(type(instance)):
+        value: object = getattr(instance, f.name)
         if isinstance(value, BaseModel):
-            arrived(value, origin, (*member, name), scope)
+            arrived(value, origin, (*member, f.name), scope)
         elif is_elements(value):
             opened_: list[Scope] = []
             for index, element in enumerate(value):
                 if isinstance(element, BaseModel):
-                    step = position(info.annotation, index)
+                    step = f.step(index)
                     child = Scope(
-                        (*declared, name, step), (*scope.at(declared), name, f"[{index}]"), scope
+                        (*declared_, f.name, step),
+                        (*scope.at(declared_), f.name, f"[{index}]"),
+                        scope,
                     )
                     scope.children.append(child)
-                    arrived(element, origin, (*member, name, step), child)
+                    arrived(element, origin, (*member, f.name, step), child)
                     opened_.append(child)
-            scope.collections[origin, (*member, name)] = tuple(opened_)
+            scope.collections[origin, (*member, f.name)] = tuple(opened_)
 
 
 def scopes(root: Scope) -> Iterator[Scope]:
@@ -2194,12 +2253,11 @@ index."""
 class Bound(NamedTuple):
     """The transient result of dereferencing a construction's references in a scope: the
     instance at each premise that is filled, with the concrete path of what supplied it, and
-    for each premise not filled the scope it is dereferenced from, the element's for an
-    element, and its references."""
+    for each premise not filled each of its references with the state it dereferenced to."""
 
     given: Given
     provenance: Provenance
-    unfilled: dict[Premise, tuple[Scope, tuple[Ref, ...]]]
+    unfilled: dict[Premise, tuple[tuple[Ref, State], ...]]
 
 
 def present(found: list[Available], cls: type[BaseModel], name: str) -> Available | None:
@@ -2222,37 +2280,43 @@ def present(found: list[Available], cls: type[BaseModel], name: str) -> Availabl
     return found[0] if found else None
 
 
-def available(refs: Iterable[Ref], scope: Scope) -> list[Available]:
-    """The references among several that dereference to evidence from a scope."""
-    return [found for r in refs if isinstance(found := resolve(r, scope), Available)]
+def observed(refs: Iterable[Ref], scope: Scope) -> tuple[tuple[Ref, State], ...]:
+    """Each reference with what it dereferences to from a scope."""
+    return tuple((r, resolve(r, scope)) for r in refs)
+
+
+def available(states: Iterable[tuple[Ref, State]]) -> list[Available]:
+    """The evidence among what references dereferenced to."""
+    return [state for _, state in states if isinstance(state, Available)]
 
 
 def bound(construction: Construction, scope: Scope) -> Bound:
-    """A construction's references dereferenced in a scope: the instance at each single field's
-    reference, and for each tuple field every element scope's instance at the element
+    """A construction's references dereferenced in a scope: the instance at each premise
+    field's reference, and for each tuple field every element scope's instance at the element
     references placed in that element's scope, its position's for a fixed tuple, in element
-    order; the references of each premise nothing fills."""
+    order; for each premise nothing fills, what its references dereferenced to."""
     given: Given = {}
     provenance: Provenance = {}
-    unfilled: dict[Premise, tuple[Scope, tuple[Ref, ...]]] = {}
+    unfilled: dict[Premise, tuple[tuple[Ref, State], ...]] = {}
     cls = construction.cls
     for name, refs in construction.premises.items():
-        found = present(available(refs, scope), cls, name)
+        states = observed(refs, scope)
+        found = present(available(states), cls, name)
         if found is None:
-            unfilled[name, None] = (scope, refs)
+            unfilled[name, None] = states
         else:
             provenance[name], given[name] = (found.path,), found.instance
     for name, collected in construction.collections.items():
         elements = scope.collection(collected.key)
         if elements is None:
-            unfilled[name, None] = (scope, (collected.holder,))
+            unfilled[name, None] = observed((collected.holder,), scope)
             continue
         picked: list[Available] = []
         for index, element in enumerate(elements):
-            refs = tuple(r for r in collected.elements if r.scope == element.site)
-            found = present(available(refs, element), cls, name)
+            states = observed((r for r in collected.elements if r.scope == element.site), element)
+            found = present(available(states), cls, name)
             if found is None:
-                unfilled[name, index] = (element, refs)
+                unfilled[name, index] = states
             else:
                 picked.append(found)
         if len(picked) == len(elements):
@@ -2263,13 +2327,15 @@ def bound(construction: Construction, scope: Scope) -> Bound:
 
 def supplied(occurrence: Occurrence) -> Bound | None:
     """What a scope supplies for a construction when every premise is filled, with a fresh
-    instance for each fresh field; ``None`` while any is not, so the class is asked again next
-    pass."""
+    instance for each field the class declares fresh; ``None`` while any is not, so the class
+    is asked again next pass."""
     found = bound(occurrence.construction, occurrence.scope)
     if found.unfilled:
         return None
-    for name, cls in occurrence.construction.freshly.items():
-        found.provenance[name], found.given[name] = ((*occurrence.path, name),), cls()
+    for f in fields(occurrence.construction.cls):
+        if f.fresh:
+            found.provenance[f.name] = ((*occurrence.path, f.name),)
+            found.given[f.name] = f.classes[0]()
     return found
 
 
@@ -2310,26 +2376,30 @@ type Cause = Unfilled | Refutation
 rejected."""
 
 
+type Unresolved = Mapping[Premise, tuple[tuple[Ref, State], ...]]
+"""What an occurrence's unfilled premises dereferenced to when the run ended."""
+
+
 def causes(
-    occurrence: Occurrence, blocked: Mapping[Occurrence, tuple[Cause, ...]]
+    occurrence: Occurrence, unresolved: Unresolved, blocked: Mapping[Occurrence, tuple[Cause, ...]]
 ) -> tuple[Cause, ...]:
-    """Why an occurrence can never construct, from its own references dereferenced in the
-    observed state: for each premise nothing fills, every reference is a cause, a rejected
-    condition or an absent source, or a pending occurrence already blocked, whose causes it
-    inherits; a premise with a pending occurrence not blocked may still fill, and is no
-    cause. Empty while no premise is blocked."""
+    """Why an occurrence can never construct, from what its own references dereferenced to:
+    for each premise nothing fills, every reference is a cause, a rejected condition or an
+    absent source, or a pending occurrence already blocked, whose causes it inherits; a
+    premise with a pending occurrence not blocked may still fill, and is no cause. Empty while
+    no premise is blocked."""
     found: list[Cause] = []
-    for premise, (at, refs) in bound(occurrence.construction, occurrence.scope).unfilled.items():
+    for premise, states in unresolved.items():
         here: list[Cause] = []
-        for ref in refs:
-            match resolve(ref, at):
+        for ref, state in states:
+            match state:
                 case Pending(pending):
                     if pending not in blocked:
                         break
                     here.extend(blocked[pending])
                 case Rejected(rejected, refuted):
                     here.append(Refutation(rejected, refuted))
-                case Absent() | Heard() as state:
+                case Absent() | Heard():
                     here.append(Unfilled(occurrence, premise, ref, state))
                 case Available():
                     break
@@ -2339,15 +2409,15 @@ def causes(
 
 
 def waits_on(
-    occurrence: Occurrence, blocked: Mapping[Occurrence, tuple[Cause, ...]]
+    unresolved: Unresolved, blocked: Mapping[Occurrence, tuple[Cause, ...]]
 ) -> list[Occurrence]:
-    """The pending occurrences, not blocked, that an occurrence's unfilled premises dereference
+    """The pending occurrences, not blocked, that an occurrence's unfilled premises dereferenced
     to: what it still waits for."""
     return [
-        pending.occurrence
-        for at, refs in bound(occurrence.construction, occurrence.scope).unfilled.values()
-        for ref in refs
-        if isinstance(pending := resolve(ref, at), Pending) and pending.occurrence not in blocked
+        state.occurrence
+        for states in unresolved.values()
+        for _, state in states
+        if isinstance(state, Pending) and state.occurrence not in blocked
     ]
 
 
@@ -2373,31 +2443,30 @@ class Blocked(NamedTuple):
 
 def ended(goal: Occurrence, constructions: tuple[Construction, ...], passes: int) -> Blocked:
     """Why the route did not construct, read from every occurrence the passes left unmade, its
-    own references dereferenced in the observed state: an occurrence a premise of which no
+    own references dereferenced once in the observed state: an occurrence a premise of which no
     reference can fill is blocked, and so is every occurrence waiting on it, until nothing
     moves. The route blocked is the structured refusal, as a value. The route not blocked waits
     on occurrences that wait on one another, which no evidence explains: a failure, raised,
     naming each in order of reach and what it waits for."""
-    root = goal.scope
-    pending = [
-        occurrence
-        for scope in scopes(root)
+    unresolved: dict[Occurrence, Unresolved] = {
+        occurrence: bound(c, scope).unfilled
+        for scope in scopes(goal.scope)
         for c in constructions
         if c.scope == scope.site and (occurrence := Occurrence(scope, c)).made is None
-    ]
+    }
     blocked: dict[Occurrence, tuple[Cause, ...]] = {}
     moved = True
     while moved:
         moved = False
-        for occurrence in pending:
-            if occurrence not in blocked and (found := causes(occurrence, blocked)):
+        for occurrence, states in unresolved.items():
+            if occurrence not in blocked and (found := causes(occurrence, states, blocked)):
                 blocked[occurrence] = found
                 moved = True
     if goal in blocked:
         return Blocked(goal, passes, blocked[goal])
     reach = [goal]
     for occurrence in reach:
-        reach.extend(o for o in waits_on(occurrence, blocked) if o not in reach)
+        reach.extend(o for o in waits_on(unresolved[occurrence], blocked) if o not in reach)
     details = [
         fault(
             "deadlock",
@@ -2407,7 +2476,7 @@ def ended(goal: Occurrence, constructions: tuple[Construction, ...], passes: int
             path=".".join(occurrence.path),
             on=", ".join(
                 f"{o.construction.cls.__name__} at {'.'.join(o.path)}"
-                for o in waits_on(occurrence, blocked)
+                for o in waits_on(unresolved[occurrence], blocked)
             ),
         )
         for occurrence in reach

@@ -129,7 +129,6 @@ def described(construction: Construction) -> tuple[object, ...]:
             )
             for name, c in construction.collections.items()
         },
-        construction.freshly,
         construction.because,
     )
 

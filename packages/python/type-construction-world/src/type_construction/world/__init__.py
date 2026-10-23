@@ -91,6 +91,7 @@ __all__ = [
     "Compare",
     "Comparison",
     "Computation",
+    "Condition",
     "Config",
     "Connection",
     "Derived",
@@ -383,6 +384,19 @@ refusal whose every error is this type says only that the fact does not exist he
 error is a failure of the construction."""
 
 
+class Condition:
+    """The one place a refutable kind's declared condition refuses: a field's schema adapter
+    that lets Pydantic's own validation of the declared type, a ``Literal`` of orderings or a
+    tuple shape, admit or refuse what construction produced from validated operands, and names
+    that refusal ``REFUTED`` at the field. A kind that declares a condition field recognizes
+    its own refutation by that field, and by nothing raised anywhere else."""
+
+    @staticmethod
+    def refused(message: LiteralString, **context: str | int) -> PydanticCustomError:
+        """The refusal of a declared condition over validated operands."""
+        return PydanticCustomError(REFUTED, message, dict(context))
+
+
 class Computation(ABC):
     """A field whose value is a function of the operand fields declared before it: the one
     declaration construction and the proof read.
@@ -588,7 +602,7 @@ SIGN: Final[dict[int, str]] = {-1: "<", 0: "=", 1: ">"}
 
 
 @dataclass(frozen=True)
-class Comparison(Computation):
+class Comparison(Computation, Condition):
     """One comparison a relation kind makes between two of its operand fields: the ordering
     of the first against the second, which the field's ``Literal`` admits or refuses. The
     proof reads the same field: the two operands, and the admitted outcomes from the
@@ -622,32 +636,46 @@ class Comparison(Computation):
         try:
             return handler(result)
         except ValidationError:
-            raise PydanticCustomError(
-                REFUTED,
-                "{left} {sign} {right}",
-                {
-                    "left": self.left,
-                    "right": self.right,
-                    "left_class": type(info.data[self.left]).__name__,
-                    "right_class": type(info.data[self.right]).__name__,
-                    "sign": SIGN[int(result)],
-                    "ordering": int(result),
-                },
+            observed = "{left} {sign} {right}"
+            raise self.refused(
+                observed,
+                left=self.left,
+                right=self.right,
+                left_class=type(info.data[self.left]).__name__,
+                right_class=type(info.data[self.right]).__name__,
+                sign=SIGN[int(result)],
+                ordering=int(result),
             ) from None
 
 
 class Refutable(Fact):
     """A fact that exists to refuse: a relation or a selection, whose refusal, when every error
-    is ``REFUTED``, says only that its declared condition does not hold over these operands, so
-    the fact does not exist here. The kind owns that distinction; the engine reads it through
-    ``refuted`` and interprets no error itself. Any other refusal of a refutable kind, an operand
-    that did not construct or a value given for a computed field, is a failure."""
+    is its own declared condition refusing, says only that the condition does not hold over
+    these operands, so the fact does not exist here. The kind owns that distinction: a
+    condition is a field whose metadata declares a ``Condition``, and a refutation is a refusal
+    whose every error is ``REFUTED`` at one of those fields and nowhere deeper. An operand that
+    did not construct, a value given for a computed field, or ``REFUTED`` raised by anything
+    that is not this kind's condition is a failure. The engine reads this through ``refuted``
+    and interprets no error itself."""
+
+    @classmethod
+    def conditions(cls) -> frozenset[str]:
+        """The fields this kind refuses by: those whose metadata declares a ``Condition``."""
+        return frozenset(
+            name
+            for name, info in cls.model_fields.items()
+            if any(isinstance(meta, Condition) for meta in info.metadata)
+        )
 
     @classmethod
     def refuted(cls, refusal: ValidationError) -> bool:
-        """Whether a refusal of this kind is its declared condition not holding, and nothing
+        """Whether a refusal of this kind is its declared conditions not holding, and nothing
         else."""
-        return all(error["type"] == REFUTED for error in refusal.errors())
+        conditions = cls.conditions()
+        return all(
+            error["type"] == REFUTED and len(error["loc"]) == 1 and error["loc"][0] in conditions
+            for error in refusal.errors()
+        )
 
 
 class Relation(Refutable):
@@ -773,7 +801,7 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Relation):
     )
 
 
-class Shape:
+class Shape(Condition):
     """A selection's tuple shape as its condition: the one declaration construction and the
     proof read.
 
@@ -804,11 +832,8 @@ class Shape:
         try:
             return handler(elements)
         except ValidationError as refusal:
-            raise PydanticCustomError(
-                REFUTED,
-                "{why}",
-                {"why": "; ".join(e["msg"] for e in refusal.errors()), "count": len(elements)},
-            ) from None
+            why, said = "; ".join(e["msg"] for e in refusal.errors()), "{why}"
+            raise self.refused(said, why=why, count=len(elements)) from None
 
 
 class Selection[E: BaseModel](Refutable):
