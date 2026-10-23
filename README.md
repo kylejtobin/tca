@@ -47,9 +47,11 @@ class ShippingAuthority(Fact):
     covered: Covers
 ```
 
-A payment of 50 against a total of 50 constructs `ShippingAuthority`. A payment of 20 does not, and the refusal says which rule failed. Nothing downstream can hold an under-paid authorization, so nothing downstream has to check.
+`Covers` is the rule. Built from a payment of 50 and a total of 50 it constructs. Built from a payment of 20 and a total of 50 it is refused, and the refusal says which rule failed. A rule is a type that cannot be constructed with the wrong value.
 
-That is the part that runs today. The target is what surrounds it. The payment record arrives later from a webhook. It is accepted only if it came from the right provider, for this tenant and this order. A duplicate delivery changes nothing. Shipping happens once, even if the process dies between the carrier saying yes and the system writing it down. None of that is written as a workflow.
+That is all the retained primitives establish. They do not yet bind that `Covers` to this order and this payment. As written, `ShippingAuthority` accepts a `Covers` that was built from any two amounts, and nothing checks that the payment names this order. Binding a conclusion's rule to the exact evidence it is made from is a requirement of the future engine, not something that runs today.
+
+The rest is target. The payment record arrives later from a webhook. It is accepted only if it came from the right provider, for this tenant and this order. A duplicate delivery changes nothing. The shipment is requested under one identity, so a retry or a recovery after a crash does not issue it twice. Whether the carrier ends up shipping once still depends on the carrier's idempotency or on reconciling its status afterward. None of that is written as a workflow.
 
 ## Where it stands
 
