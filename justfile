@@ -36,10 +36,10 @@ check:
     uv run pytest -q
 
 # The supply chain: the lockfile, known vulnerabilities, code patterns, pinned images.
-# CVE-2026-59951 is in mcp 1.29.0, which semgrep pins; semgrep is a check of ours, never
-# shipped. Drop the ignore when its pin moves.
+# semgrep runs from its own locked group in an isolated environment, since its exact
+# OpenTelemetry pin must not hold the engine's dependency back.
 audit:
     uv lock --check
-    uv run pip-audit --ignore-vuln CVE-2026-59951
-    uv run semgrep scan --config p/python --config p/secrets --error --quiet -j 1 {{packages}}
+    uv run pip-audit
+    uv run --isolated --only-group audit semgrep scan --config p/python --config p/secrets --error --quiet -j 1 {{packages}}
     ! grep -hE "^FROM |^COPY --from=|image: " Dockerfile compose.yaml | grep -vE "@sha256:[0-9a-f]{64}"

@@ -18,12 +18,16 @@ from pydantic import BaseModel, ValidationError
 from type_construction import engine
 from type_construction.engine import (
     Collected,
+    ConstructedRef,
+    HeardRef,
+    InputRef,
     Placement,
     Proof,
+    Ref,
+    Run,
     answer,
     config,
     construct,
-    hear,
     models,
     opened,
     proven,
@@ -31,7 +35,7 @@ from type_construction.engine import (
     scopes,
     symbolic,
 )
-from type_construction.world import Connection, Record
+from type_construction.world import Connection, Json, Python, Record
 
 from . import blockers, deadlock, fixed, stalls
 from . import occurrences as program
@@ -88,12 +92,13 @@ type Perform[A, T] = Callable[[A], Coroutine[Any, Any, T]]
 """A ``perform`` the test puts on an action class."""
 
 
-def quoting(flight: Flight, *, breaking: str | None = None) -> Perform[Quote, program.Price]:
+def quoting(flight: Flight, *, breaking: str | None = None) -> Perform[Quote, Json | Python]:
     """A catalog's ``perform``: each quote waits at the flight's gate; the one for the
     breaking product instead yields once, so its siblings are waiting, and then fails, with
-    the party down for ``boom`` and answering text that is no price for ``junk``."""
+    the party down for ``boom``, answering text that is no price for ``junk``, and returning
+    a record of another class, already validated, for ``alien``."""
 
-    async def perform(self: Quote) -> program.Price:
+    async def perform(self: Quote) -> Json | Python:
         sku = self.line.sku.root
         HELD.append(id(self.party))
         if sku == breaking == "boom":
@@ -102,20 +107,23 @@ def quoting(flight: Flight, *, breaking: str | None = None) -> Perform[Quote, pr
             raise down
         if sku == breaking == "junk":
             await asyncio.sleep(0)
-            return hear(self, '{"price": "a lot"}')
+            return Json('{"price": "a lot"}')
+        if sku == breaking == "alien":
+            await asyncio.sleep(0)
+            return Python(program.Clear(status="clear"))
         await flight.held(sku)
-        return hear(self, json.dumps({"price": PRICES[sku]}))
+        return Json(json.dumps({"price": PRICES[sku]}))
 
     return perform
 
 
-def screening(flight: Flight) -> Perform[Screen, program.Clear | program.Flagged]:
+def screening(flight: Flight) -> Perform[Screen, Json]:
     """A screening's ``perform`` that waits at the flight's gate."""
 
-    async def perform(self: Screen) -> program.Clear | program.Flagged:
+    async def perform(self: Screen) -> Json:
         HELD.append(id(self.party))
         await flight.held("screen")
-        return hear(self, self.party.says.root)
+        return Json(self.party.says.root)
 
     return perform
 
@@ -171,8 +179,8 @@ def grouped(failure: BaseException | None) -> TypeIs[ExceptionGroup[Exception]]:
 
 
 def admitted(route: ReadableSpan) -> list[str]:
-    """The paths of the records admitted on a route's span, in order; a failed or refused run's
-    span also carries the API's ``exception`` event."""
+    """The paths of the records admitted on a route's span, in order; a failed run's span also
+    carries the API's ``exception`` event."""
     return [str((e.attributes or {})["tca.heard"]) for e in route.events if e.name == "admitted"]
 
 
@@ -279,6 +287,7 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
         flight.gate.set()
         HELD.clear()
         done = await ran(Checkout, request, deployment, proof)
+    assert isinstance(done, Run)
     assert LOG == ["open:Catalog", "open:Fraud", "close:Fraud", "close:Catalog"]
     assert done.route.reply.model_dump_json() == (
         '{"cart":"10.00","gifts":"4","pair":"14.50","solo":"10"}'
@@ -311,10 +320,18 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
 @pytest.mark.parametrize(
-    ("breaking", "failure"), [("boom", ConnectionError), ("junk", ValidationError)]
+    ("breaking", "failure", "errors"),
+    [
+        ("boom", ConnectionError, []),
+        ("junk", ValidationError, [("decimal_parsing", ("price",))]),
+        ("alien", ValidationError, [("model_type", ())]),
+    ],
 )
 async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_holds_it_alone(
-    monkeypatch: pytest.MonkeyPatch, breaking: str, failure: type[Exception]
+    monkeypatch: pytest.MonkeyPatch,
+    breaking: str,
+    failure: type[Exception],
+    errors: list[tuple[str, tuple[str, ...]]],
 ) -> None:
     exporter = exporting()
     flight = Flight(5)
@@ -327,7 +344,8 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     assert failed.__notes__ == ["at request.solo.lines.[0].Quote"]
     assert group.value.__notes__ == [f"heard Screen; cancelled {QUOTES}; admitted none"]
     if isinstance(failed, ValidationError):
-        assert [(e["type"], e["loc"]) for e in failed.errors()] == [("decimal_parsing", ("price",))]
+        assert [(e["type"], e["loc"]) for e in failed.errors()] == errors
+        assert failed.title == "Price"
     assert sorted(flight.cancelled) == ["mug", "mug", "tea", "tea", "tea"]
     assert flight.waiting == 0
     assert PERFORMED == ["screen"]
@@ -359,14 +377,14 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
     asked = Flight(3)
     notified = asyncio.Event()
 
-    async def telling(self: valued.Tell[valued.Party, Record]) -> Record:
+    async def telling(self: valued.Tell[valued.Party, Record]) -> Json:
         """A party that values an element at what its name says, and a teller that waits."""
         if isinstance(self, valued.Asked):
             name = self.element.name.root
             await asked.held(name)
-            return hear(self, json.dumps({"amount": name, "parts": [{"share": "1"}]}))
+            return Json(json.dumps({"amount": name, "parts": [{"share": "1"}]}))
         await notified.wait()
-        return hear(self, '{"word": "dear"}')
+        return Json('{"word": "dear"}')
 
     monkeypatch.setattr(valued.Tell, "perform", telling)
     deployment = config(valued.PROGRAM)()
@@ -381,6 +399,8 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
     assert not second.done()
     notified.set()
     later = await second
+    assert isinstance(done, Run)
+    assert isinstance(later, Run)
     assert done.route.reply.model_dump_json() == '{"total":"5"}'
     assert later.route.reply.model_dump_json() == '{"total":"25"}'
     assert done.route.request is cheap
@@ -429,6 +449,8 @@ async def test_a_refused_run_is_the_businesss_no_on_the_route_span_not_a_failure
     spans = exporter.get_finished_spans()
     (route,) = by_name(spans, "Operation")
     assert attributes(route) == {"tca.request": "Elements", "tca.outcome": "refused"}
+    assert route.status.status_code.name == "UNSET"
+    assert [e.name for e in route.events] == ["admitted"]
     assert admitted(route) == ["request.each.[0].Asked.heard"]
     (asked,) = by_name(spans, "Asked")
     assert attributes(asked)["tca.outcome"] == "heard"
@@ -465,13 +487,20 @@ async def test_a_construction_that_is_not_refutable_refusing_is_a_failure_not_th
     monkeypatch.chdir(tmp_path)
     exporter = exporting()
     lines = ("request", "cart", "lines", "[]")
+    cart = InputRef(scope=(), member=("request", "cart"), cls=fixed.Cart)
     both = Placement(
         route=fixed.Checkout,
         cls=fixed.Both,
         scope=(),
-        singles={"cart": (("request", "cart"),)},
+        singles={"cart": (cart,)},
         freshly={},
-        collections={"totals": Collected(site=lines[:-1], elements=((*lines, "LineTotal"),))},
+        collections={
+            "totals": Collected(
+                site=lines[:-1],
+                holder=cart,
+                elements=(ConstructedRef(scope=lines, cls=fixed.LineTotal),),
+            )
+        },
     )
     unproven = Proof.model_construct(
         program=fixed.__name__,
@@ -501,10 +530,10 @@ async def test_a_premise_refuted_in_one_scope_is_reported_there_and_nowhere_else
 ) -> None:
     exporter = exporting()
 
-    async def valuing(self: stalls.Tell[stalls.Party, Record]) -> Record:
+    async def valuing(self: stalls.Tell[stalls.Party, Record]) -> Json:
         """A party that values an element at what its name says."""
         assert isinstance(self, stalls.Asked)
-        return hear(self, json.dumps({"amount": self.element.name.root}))
+        return Json(json.dumps({"amount": self.element.name.root}))
 
     monkeypatch.setattr(stalls.Tell, "perform", valuing)
     request = stalls.Elements.model_validate_json(
@@ -593,16 +622,21 @@ async def test_each_premise_blocking_the_route_is_named_whatever_the_others_are(
     assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == expected
 
 
-def placing(cls: type[BaseModel], scope: tuple[str, ...], **singles: tuple[str, ...]) -> Placement:
-    """A placement of a class in a scope, its single fields bound to one site each."""
+def placing(cls: type[BaseModel], scope: tuple[str, ...], **singles: Ref) -> Placement:
+    """A placement of a class in a scope, its single fields bound to one reference each."""
     return Placement(
         route=deadlock.Hatch,
         cls=cls,
         scope=scope,
-        singles={name: (site,) for name, site in singles.items()},
+        singles={name: (ref,) for name, ref in singles.items()},
         freshly={},
         collections={},
     )
+
+
+def made(cls: type[BaseModel]) -> ConstructedRef:
+    """A reference to a class constructed at the root."""
+    return ConstructedRef(scope=(), cls=cls)
 
 
 @pytest.mark.asyncio
@@ -621,11 +655,21 @@ async def test_occurrences_waiting_on_one_another_are_a_failure_not_the_business
         program=deadlock.__name__,
         classes=models(deadlock),
         placed=(
-            placing(deadlock.Egg, (), chicken=("Chicken",), ask=("request",)),
-            placing(deadlock.Chicken, (), egg=("Egg",)),
-            placing(deadlock.Hatched, (), egg=("Egg",)),
-            placing(deadlock.Told, (), of=("Hatched",)),
-            placing(deadlock.Hatch, (), request=("request",), reply=("Told",)),
+            placing(
+                deadlock.Egg,
+                (),
+                chicken=made(deadlock.Chicken),
+                ask=InputRef(scope=(), member=("request",), cls=deadlock.Ask),
+            ),
+            placing(deadlock.Chicken, (), egg=made(deadlock.Egg)),
+            placing(deadlock.Hatched, (), egg=made(deadlock.Egg)),
+            placing(deadlock.Told, (), of=made(deadlock.Hatched)),
+            placing(
+                deadlock.Hatch,
+                (),
+                request=InputRef(scope=(), member=("request",), cls=deadlock.Ask),
+                reply=made(deadlock.Told),
+            ),
         ),
         waiting=(),
         faulted=(),
@@ -661,18 +705,38 @@ ELEMENT = ("request", "each", "[]")
 
 
 def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
+    heard = HeardRef(
+        scope=ELEMENT, action=stalls.Asked, record=stalls.Heard, member=(), cls=stalls.Heard
+    )
     low = Placement(
         route=stalls.Operation,
         cls=stalls.Low,
         scope=ELEMENT,
-        singles={"value": ((*ELEMENT, "Asked", "heard", "amount"),), "bound": (("Limit",),)},
+        singles={
+            "value": (heard.held(stalls.Amount, "amount"),),
+            "bound": (InputRef(scope=(), member=("Limit",), cls=stalls.Limit),),
+        },
         freshly={},
         collections={},
     )
     path = ("request", "each", "[0]", "Low")
     refuted = construct(low, {"value": stalls.Amount(Decimal(11)), "bound": stalls.Limit()}, path)
     assert isinstance(refuted, ValidationError)
-    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("literal_error", ("ordering",))]
+    assert [(e["type"], e["loc"], e["msg"], e.get("ctx")) for e in refuted.errors()] == [
+        (
+            "refuted",
+            ("ordering",),
+            "value > bound",
+            {
+                "left": "value",
+                "right": "bound",
+                "left_class": "Amount",
+                "right_class": "Limit",
+                "sign": ">",
+                "ordering": 1,
+            },
+        )
+    ]
     malformed: list[dict[str, BaseModel]] = [
         {"value": stalls.Amount(Decimal(11))},
         {"value": stalls.Amount(Decimal(5)), "bound": stalls.Limit(), "ordering": -1},  # type: ignore[dict-item]
@@ -683,6 +747,9 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             construct(low, given, path)  # type: ignore[arg-type]
         assert failure.value.title == "Low"
         assert failure.value.__notes__ == ["at request.each.[0].Low"]
+    parts = HeardRef(
+        scope=ELEMENT, action=valued.Asked, record=valued.Heard, member=("parts",), cls=valued.Heard
+    )
     largest = Placement(
         route=valued.Operation,
         cls=valued.Largest,
@@ -692,30 +759,43 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
         collections={
             "of": Collected(
                 site=(*ELEMENT, "Asked", "heard", "parts"),
-                elements=((*ELEMENT, "Asked", "heard", "parts", "[]", "Portion"),),
+                holder=parts,
+                elements=(ConstructedRef(scope=(*parts.site, "[]"), cls=valued.Portion),),
             )
         },
     )
     path = ("request", "each", "[0]", "Largest")
     refuted = construct(largest, {"of": ()}, path)
     assert isinstance(refuted, ValidationError)
-    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("too_short", ("of",))]
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refuted.errors()] == [
+        (
+            "refuted",
+            ("of",),
+            {"why": "Tuple should have at least 1 item after validation, not 0", "count": 0},
+        )
+    ]
     for malformed_of in ({}, {"of": (valued.Limit(),)}):
         with pytest.raises(ValidationError) as failure:
             construct(largest, malformed_of, path)  # type: ignore[arg-type]
         assert failure.value.title == "Largest"
         assert failure.value.__notes__ == ["at request.each.[0].Largest"]
-    assert [e["type"] for e in failure.value.errors()] == ["model_type", "too_short"]
+    assert [e["type"] for e in failure.value.errors()] == ["model_type"]
+    solo_ = InputRef(scope=(), member=("request", "solo"), cls=program.Solo)
     only = Placement(
         route=program.Checkout,
         cls=program.SoloTotal,
         scope=(),
-        singles={"solo": (("request", "solo"),)},
+        singles={"solo": (solo_,)},
         freshly={},
         collections={
             "of": Collected(
                 site=("request", "solo", "lines"),
-                elements=(("request", "solo", "lines", "[0]", "LineTotal"),),
+                holder=solo_,
+                elements=(
+                    ConstructedRef(
+                        scope=("request", "solo", "lines", "[0]"), cls=program.LineTotal
+                    ),
+                ),
             )
         },
     )
@@ -723,10 +803,18 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
     total = program.LineTotal(left=program.UnitPrice(Decimal(1)), right=program.Quantity(1))
     refuted = construct(only, {"solo": solo, "of": ()}, ("SoloTotal",))
     assert isinstance(refuted, ValidationError)
-    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("missing", ("of", 0))]
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refuted.errors()] == [
+        ("refuted", ("of",), {"why": "Field required", "count": 0})
+    ]
     refuted = construct(only, {"solo": solo, "of": (total, total)}, ("SoloTotal",))
     assert isinstance(refuted, ValidationError)
-    assert [(e["type"], e["loc"]) for e in refuted.errors()] == [("too_long", ("of",))]
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refuted.errors()] == [
+        (
+            "refuted",
+            ("of",),
+            {"why": "Tuple should have at most 1 item after validation, not 2", "count": 2},
+        )
+    ]
     assert isinstance(
         construct(only, {"solo": solo, "of": (total,)}, ("SoloTotal",)), program.SoloTotal
     )
@@ -738,26 +826,46 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
-async def test_ordinary_construction_resolves_no_producer_and_a_refused_run_does(
+async def test_ordinary_construction_dereferences_no_cause_and_a_blocked_run_does(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resolved: list[tuple[str, ...]] = []
-    producing = engine.producer
+    resolved: list[Ref] = []
+    dereferencing = engine.candidate
 
     def counting(
-        site: tuple[str, ...], scope: engine.Scope, placements: tuple[Placement, ...]
-    ) -> tuple[engine.Occurrence, tuple[str, ...]] | None:
-        """``producer`` that records each site it is asked to resolve."""
-        resolved.append(site)
-        return producing(site, scope, placements)
+        ref: Ref,
+        at: engine.Scope,
+        consumer: engine.Occurrence,
+        premise: engine.Premise,
+        index: engine.Index,
+    ) -> engine.Occurrence | engine.Cause:
+        """``candidate`` that records each reference it dereferences."""
+        resolved.append(ref)
+        return dereferencing(ref, at, consumer, premise, index)
 
-    monkeypatch.setattr(engine, "producer", counting)
+    monkeypatch.setattr(engine, "candidate", counting)
     request = PlaceOrder.model_validate_json(ORDER)
-    done = await ran(Checkout, request, config(program)(), proven(program))
+    proof = proven(program)
+    done = await ran(Checkout, request, config(program)(), proof)
+    assert isinstance(done, Run)
     assert done.passes == 4
     assert resolved == []
     monkeypatch.setenv("FRAUD__SAYS", '{"status": "flagged", "reason": "velocity"}')
-    with pytest.raises(ValidationError):
-        await answer(program.Cleared, request, config(program)(), proven(program))
+    blocked = await ran(program.Cleared, request, config(program)(), proof)
+    assert isinstance(blocked, engine.Blocked)
+    (screened,) = (p for p in proof.placements(program.Cleared) if p.cls is program.Screened)
+    retained = [
+        r
+        for p in proof.placements(program.Cleared)
+        for refs in (*p.singles.values(), *(c.elements for c in p.collections.values()))
+        for r in refs
+    ]
     assert resolved
-    assert ("Screen", "heard") in resolved
+    assert all(r in retained for r in resolved)
+    assert screened.singles["clear"][0] in resolved
+    (cause,) = blocked.causes
+    assert isinstance(cause, engine.Unfilled)
+    assert cause.ref is screened.singles["clear"][0]
+    assert cause.occurrence.placed is screened
+    assert isinstance(cause.state, engine.Heard)
+    assert cause.state.record is blocked.root.owned[("Screen", "heard")]

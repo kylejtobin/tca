@@ -9,13 +9,13 @@ from typing import Literal, override
 
 from pydantic import Field
 
-from type_construction.engine import hear
 from type_construction.world import (
     Action,
     AtMost,
     Config,
     Connection,
     Fact,
+    Json,
     Record,
     Reply,
     Request,
@@ -77,8 +77,8 @@ class Screen(Action[Fraud, Clear | Flagged]):
     ask: Ask
 
     @override
-    async def perform(self) -> Clear | Flagged:
-        return hear(self, self.party.says.root)
+    async def perform(self) -> Json:
+        return Json(self.party.says.root)
 
 
 class Screened(Fact):

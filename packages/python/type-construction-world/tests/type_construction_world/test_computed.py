@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from type_construction.world import (
     COMPUTED,
+    REFUTED,
     Comparison,
     Computation,
     Derived,
@@ -97,17 +98,27 @@ def test_the_computed_result_is_admitted_or_refused_by_the_fields_type() -> None
     )
     with pytest.raises(ValidationError) as refusal:
         Large(value=TOTAL, bound=Threshold())
-    assert refusals(refusal.value) == [("literal_error", ("ordering",), -1)]
-    assert refusal.value.errors()[0]["msg"] == "Input should be 1"
+    assert refusals(refusal.value) == [(REFUTED, ("ordering",), COMPUTED)]
+    assert refusal.value.errors()[0]["msg"] == "value < bound"
+    assert refusal.value.errors()[0].get("ctx") == {
+        "left": "value",
+        "right": "bound",
+        "left_class": "LineTotal",
+        "right_class": "Threshold",
+        "sign": "<",
+        "ordering": -1,
+    }
     with pytest.raises(ValidationError) as refusal:
         Exact(value=TOTAL, bound=Threshold())
-    assert refusals(refusal.value) == [("literal_error", ("ordering",), -1)]
+    assert refusals(refusal.value) == [(REFUTED, ("ordering",), COMPUTED)]
     with pytest.raises(ValidationError) as refusal:
         Allowed(value=Quantity(11), lower=Quantity(1), upper=Quantity(10))
-    assert refusals(refusal.value) == [("literal_error", ("above",), 1)]
+    assert refusals(refusal.value) == [(REFUTED, ("above",), COMPUTED)]
+    assert refusal.value.errors()[0]["msg"] == "value > upper"
     with pytest.raises(ValidationError) as refusal:
         Allowed.model_validate_json('{"value": 1, "lower": 2, "upper": 10}')
-    assert refusals(refusal.value) == [("literal_error", ("below",), 1)]
+    assert refusals(refusal.value) == [(REFUTED, ("below",), COMPUTED)]
+    assert refusal.value.errors()[0]["msg"] == "lower > value"
 
 
 def test_a_nested_root_cannot_be_given_at_any_depth_or_in_any_element() -> None:

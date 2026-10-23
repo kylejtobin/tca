@@ -14,12 +14,13 @@ import pytest
 from pydantic import Field, computed_field
 
 from type_construction.cli import Given, commands, exits, ran, tree, usage
-from type_construction.engine import asked, config, hear, proven
+from type_construction.engine import asked, config, proven
 from type_construction.world import (
     Action,
     Config,
     Connection,
     Fact,
+    Json,
     Record,
     Reply,
     Request,
@@ -149,8 +150,8 @@ class Tell[P: Party, T: Record](Action[P, T]):
     """An action toward a stand-in party."""
 
     @override
-    async def perform(self) -> T:
-        return hear(self, self.party.says.root)
+    async def perform(self) -> Json:
+        return Json(self.party.says.root)
 
 
 class Asked(Tell[Party, Heard]):

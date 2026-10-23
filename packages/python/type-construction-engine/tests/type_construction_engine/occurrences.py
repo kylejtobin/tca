@@ -13,13 +13,13 @@ from typing import Literal, override
 
 from pydantic import Field, computed_field
 
-from type_construction.engine import hear
 from type_construction.world import (
     Action,
     Config,
     Connection,
     Fact,
     Instant,
+    Json,
     Only,
     Record,
     Reply,
@@ -133,10 +133,10 @@ class Quote(Action[Catalog, Price]):
     line: Line
 
     @override
-    async def perform(self) -> Price:
+    async def perform(self) -> Json:
         PERFORMED.append(self.line.sku.root)
         prices: dict[str, str] = json.loads(self.party.prices.root)
-        return hear(self, json.dumps({"price": prices[self.line.sku.root]}))
+        return Json(json.dumps({"price": prices[self.line.sku.root]}))
 
 
 class LineTotal(Times[UnitPrice, Quantity]):
@@ -206,9 +206,9 @@ class Screen(Action[Fraud, Clear | Flagged]):
     order: PlaceOrder
 
     @override
-    async def perform(self) -> Clear | Flagged:
+    async def perform(self) -> Json:
         PERFORMED.append("screen")
-        return hear(self, self.party.says.root)
+        return Json(self.party.says.root)
 
 
 class Screened(Fact):

@@ -24,6 +24,9 @@ from pydantic import Field, PrivateAttr, ValidationError, computed_field
 from pydantic_core import PydanticSerializationError
 
 from type_construction.engine import (
+    ConstructedRef,
+    HeardRef,
+    InputRef,
     Proof,
     answer,
     asked,
@@ -51,8 +54,10 @@ from type_construction.world import (
     Greatest,
     Instant,
     Interval,
+    Json,
     Least,
     Only,
+    Python,
     Record,
     Reply,
     Request,
@@ -135,8 +140,8 @@ class Tell[P: Party, T: Record](Action[P, T]):
     """An action toward a stand-in party: hears the line the party was given."""
 
     @override
-    async def perform(self) -> T:
-        return hear(self, self.party.says.root)
+    async def perform(self) -> Json:
+        return Json(self.party.says.root)
 
 
 class Asked(Tell[Party, Heard]):
@@ -304,29 +309,46 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         (Answered, ()),
         (Operation, ()),
     }
+    heard_ = HeardRef(scope=ELEMENT, action=Asked, record=Heard, member=(), cls=Heard)
+    amount = heard_.held(Amount, "amount")
+    assert amount.site == (*ELEMENT, "Asked", "heard", "amount")
     assert placed[Asked, ELEMENT].singles == {
-        "party": (("deployment", "party"),),
-        "element": (ELEMENT,),
+        "party": (InputRef(scope=(), member=("deployment", "party"), cls=Party),),
+        "element": (InputRef(scope=ELEMENT, member=(), cls=Element),),
     }
     assert placed[Low, ELEMENT].singles == {
-        "value": ((*ELEMENT, "Asked", "heard", "amount"),),
-        "bound": (("Limit",),),
+        "value": (amount,),
+        "bound": (InputRef(scope=(), member=("Limit",), cls=Limit),),
     }
     assert placed[Portion, PART].singles == {
-        "left": ((*PART, "share"),),
-        "right": ((*ELEMENT, "Asked", "heard", "amount"),),
+        "left": (heard_.held(Share, "parts", "[]", "share"),),
+        "right": (amount,),
     }
-    assert placed[Portions, ELEMENT].collections["of"].site == PART[:-1]
-    assert placed[Portions, ELEMENT].collections["of"].elements == ((*PART, "Portion"),)
-    assert placed[Dear, ELEMENT].singles["noted"] == ((*ELEMENT, "Notify", "heard"),)
-    assert placed[Total, ()].collections["of"].site == ("request", "each")
-    assert placed[Total, ()].collections["of"].elements == ((*ELEMENT, "Asked", "heard", "amount"),)
+    assert placed[Portion, PART].singles["left"][0].site == (*PART, "share")
+    portions = placed[Portions, ELEMENT].collections["of"]
+    assert portions.site == PART[:-1]
+    assert portions.holder == heard_
+    assert portions.elements == (ConstructedRef(scope=PART, cls=Portion),)
+    assert placed[Dear, ELEMENT].singles["noted"] == (
+        HeardRef(scope=ELEMENT, action=Notify, record=Noted, member=(), cls=Noted),
+    )
+    total = placed[Total, ()].collections["of"]
+    assert total.site == ("request", "each")
+    assert total.holder == InputRef(scope=(), member=("request",), cls=Elements)
+    assert total.elements == (amount,)
     concluded = placed[Concluded, ()]
-    assert concluded.singles == {"total": (("Total",),)}
+    assert concluded.singles == {"total": (ConstructedRef(scope=(), cls=Total),)}
     assert concluded.freshly == {"at": Instant}
     assert concluded.collections["valued"].site == ("request", "each")
-    assert concluded.collections["valued"].elements == ((*ELEMENT, "Cheap"), (*ELEMENT, "Dear"))
-    assert placed[Operation, ()].singles == {"request": (("request",),), "reply": (("Answered",),)}
+    assert concluded.collections["valued"].holder == total.holder
+    assert concluded.collections["valued"].elements == (
+        ConstructedRef(scope=ELEMENT, cls=Cheap),
+        ConstructedRef(scope=ELEMENT, cls=Dear),
+    )
+    assert placed[Operation, ()].singles == {
+        "request": (InputRef(scope=(), member=("request",), cls=Elements),),
+        "reply": (ConstructedRef(scope=(), cls=Answered),),
+    }
     assert proof.sites(Operation, Portion) == ((*PART, "Portion"),)
     assert proof.waiting == ()
     assert proof.faulted == ()
@@ -376,8 +398,20 @@ def test_a_record_union_is_heard_as_the_member_the_text_constructs() -> None:
         element: Element
 
     screen = Screen(party=Party(says=Said("{}")), element=Element(name=Name("a")))
-    assert type(hear(screen, '{"status": "clear"}')) is Clear
-    assert type(hear(screen, '{"status": "flagged", "word": "no"}')) is Flagged
+    assert type(hear(screen, Json('{"status": "clear"}'))) is Clear
+    assert type(hear(screen, Json('{"status": "flagged", "word": "no"}'))) is Flagged
+    assert type(hear(screen, Python({"status": "clear"}))) is Clear
+    flagged = Flagged(status="flagged", word=Word("no"))
+    assert hear(screen, Python(flagged)) is flagged
+    with pytest.raises(ValidationError) as refusal:
+        hear(screen, Python(Heard(amount=Amount(Decimal(1)), parts=())))
+    assert {e["type"] for e in refusal.value.errors()} == {"model_type"}
+    with pytest.raises(ValidationError) as refusal:
+        hear(screen, Json('{"status": "clear", "word": "no"}'))
+    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [
+        ("extra_forbidden", ("Clear", "word")),
+        ("literal_error", ("Flagged", "status")),
+    ]
 
 
 def test_a_computed_field_names_the_classes_it_constructs() -> None:
@@ -605,13 +639,29 @@ async def test_a_stalled_run_names_the_selection_with_nothing_to_choose(
 def test_a_selections_shape_is_its_tuple_annotation() -> None:
     with pytest.raises(ValidationError) as refusal:
         Least[Amount](of=())
-    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("too_short", ("of",))]
+    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == [
+        ("refuted", ("of",), "Tuple should have at least 1 item after validation, not 0")
+    ]
     with pytest.raises(ValidationError) as refusal:
         Only[Element].model_validate({"of": ()})
-    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("missing", ("of", 0))]
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refusal.value.errors()] == [
+        ("refuted", ("of",), {"why": "Field required", "count": 0})
+    ]
     with pytest.raises(ValidationError) as refusal:
         Only[Element].model_validate({"of": (Element(name=Name("a")), Element(name=Name("b")))})
-    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("too_long", ("of",))]
+    assert [(e["type"], e["loc"], e.get("ctx")) for e in refusal.value.errors()] == [
+        (
+            "refuted",
+            ("of",),
+            {"why": "Tuple should have at most 1 item after validation, not 2", "count": 2},
+        )
+    ]
+    with pytest.raises(ValidationError) as refusal:
+        Only[Element].model_validate({})
+    assert [(e["type"], e["loc"]) for e in refusal.value.errors()] == [("missing", ("of",))]
+    with pytest.raises(ValidationError) as refusal:
+        Only[Element].model_validate({"of": (Name("a"),)})
+    assert [e["type"] for e in refusal.value.errors()] == ["model_type"]
 
 
 def test_a_relations_ordering_is_computed_admitted_by_its_literal_and_never_given() -> None:

@@ -13,7 +13,7 @@ from pydantic import BaseModel, RootModel
 import type_construction.cli
 import type_construction.engine
 import type_construction.world
-from type_construction.engine import Scope, Site, config, is_elements, proven, ran
+from type_construction.engine import Run, Scope, Site, config, is_elements, proven, ran
 from type_construction.world import Computation, Measure, Relation
 
 from . import occurrences as program
@@ -89,6 +89,7 @@ async def test_every_instance_in_a_run_arrived_at_an_edge_or_was_constructed_by_
     request = PlaceOrder.model_validate_json(ORDER)
     proof = proven(program)
     run = await ran(Checkout, request, config(program)(), proof)
+    assert isinstance(run, Run)
     constants = {c.__name__ for c in proof.constants}
     arrived: list[Site] = []
     constructed: list[Site] = []
@@ -112,6 +113,7 @@ async def test_every_instance_in_a_run_arrived_at_an_edge_or_was_constructed_by_
 async def test_every_computed_value_in_a_run_is_what_its_bound_operands_compute() -> None:
     request = PlaceOrder.model_validate_json(ORDER)
     run = await ran(Checkout, request, config(program)(), proven(program))
+    assert isinstance(run, Run)
     computed = [
         (site, instance)
         for _, site, instance in owned(run.root)
@@ -144,4 +146,7 @@ def test_no_production_source_skips_validation() -> None:
     assert found == []
     engine = Path(inspect.getfile(type_construction.engine)).read_text()
     assert engine.count("placed.cls.model_validate(given)") == 1
-    assert "validate_json(text, strict=True)" in engine
+    assert engine.count("adapter.validate_json(text, strict=True)") == 1
+    assert engine.count("adapter.validate_python(data, strict=True)") == 1
+    assert engine.count("await action.perform()") == 1
+    assert "hear(action, await action.perform())" in engine

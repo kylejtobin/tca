@@ -10,12 +10,12 @@ from typing import override
 
 from pydantic import Field, computed_field
 
-from type_construction.engine import hear
 from type_construction.world import (
     Action,
     Config,
     Connection,
     Fact,
+    Json,
     Record,
     Reply,
     Request,
@@ -77,8 +77,8 @@ class Quote(Action[Party, Quoted]):
     order: PlaceOrder
 
     @override
-    async def perform(self) -> Quoted:
-        return hear(self, self.party.says.root)
+    async def perform(self) -> Json:
+        return Json(self.party.says.root)
 
 
 class Discount(Fact):

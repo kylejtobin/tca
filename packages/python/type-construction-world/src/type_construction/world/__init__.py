@@ -53,7 +53,18 @@ from decimal import Decimal
 from enum import Enum
 from functools import partial, reduce
 from operator import mul
-from typing import TYPE_CHECKING, Annotated, Any, Final, Generic, Literal, NamedTuple, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Final,
+    Generic,
+    Literal,
+    LiteralString,
+    NamedTuple,
+    TypeVar,
+    get_args,
+)
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -63,6 +74,7 @@ from pydantic import (
     Field,
     GetCoreSchemaHandler,
     RootModel,
+    ValidationError,
     ValidationInfo,
     ValidatorFunctionWrapHandler,
 )
@@ -70,6 +82,7 @@ from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
+    "REFUTED",
     "Action",
     "AtLeast",
     "AtMost",
@@ -90,12 +103,14 @@ __all__ = [
     "Identity",
     "Instant",
     "Interval",
+    "Json",
     "Least",
     "Measure",
     "Numeric",
     "Only",
     "Ordering",
     "Primitive",
+    "Python",
     "Record",
     "Relation",
     "Reply",
@@ -104,6 +119,7 @@ __all__ = [
     "Scalar",
     "Selection",
     "Setting",
+    "Shape",
     "Sum",
     "Times",
     "Under",
@@ -358,6 +374,14 @@ COMPUTED: Final[Any] = Uncomputed()
 the checker it is no value at all, so the field keeps the type its annotation declares."""
 
 
+REFUTED: Final[LiteralString] = "refuted"
+"""The error type of a declared condition that did not hold over validated operands: a
+relation's ordering outside its ``Literal``, or a selection's elements outside its tuple's
+shape. The kind raises it at the one boundary where only the condition can refuse, so a
+refusal whose every error is this type says only that the fact does not exist here; any other
+error is a failure of the construction."""
+
+
 class Computation(ABC):
     """A field whose value is a function of the operand fields declared before it: the one
     declaration construction and the proof read.
@@ -366,7 +390,7 @@ class Computation(ABC):
     validates the operands first, in declaration order, then reaches the field with the
     default and calls this computation on the validated operands, and the result passes
     through the field's own type: a ``Decimal`` root, or a ``Literal`` of the orderings a
-    relation admits, which refuses what it does not admit with ``literal_error``. Any other
+    relation admits, which refuses what it does not admit as ``REFUTED``. Any other
     input, in Python or in JSON, equal to the result or not, is refused with ``computed``: the
     field is a consequence of its operands and never given. An operand that did not construct
     leaves the field refused with ``uncomputed`` beside the operand's own error.
@@ -412,7 +436,18 @@ class Computation(ABC):
                 code, message, {"field": name, "operand": " and ".join(absent)}
             )
         operands: tuple[Operand, ...] = tuple(info.data[operand] for operand in self.operands)
-        return handler(self.computed(tuple(r for operand in operands for r in roots(operand))))
+        result = self.computed(tuple(r for operand in operands for r in roots(operand)))
+        return self.admitted(result, handler, info)
+
+    def admitted(
+        self,
+        result: Decimal | int,
+        handler: ValidatorFunctionWrapHandler,
+        info: ValidationInfo,  # noqa: ARG002
+    ) -> object:
+        """The result validated by the field's type; a kind whose type can refuse only its
+        declared condition names the refusal ``REFUTED``."""
+        return handler(result)
 
 
 @dataclass(frozen=True)
@@ -547,6 +582,9 @@ class Sum[E: Numeric](Measure):
 type Ordering = Literal[-1, 0, 1]
 """The outcome of comparing two values: the first is under, equal to, or beyond the second."""
 
+SIGN: Final[dict[int, str]] = {-1: "<", 0: "=", 1: ">"}
+"""How an ordering reads: the first operand under, equal to, or beyond the second."""
+
 
 @dataclass(frozen=True)
 class Comparison(Computation):
@@ -573,6 +611,29 @@ class Comparison(Computation):
         left, right = roots
         return (left > right) - (left < right)
 
+    def admitted(
+        self, result: Decimal | int, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
+    ) -> object:
+        """The ordering admitted by the field's ``Literal``, or ``REFUTED``: the field's type is
+        the admitted orderings and the input is the computed one, so what it refuses here is the
+        condition not holding, named with the two operand fields, the classes of their
+        validated values and the ordering observed."""
+        try:
+            return handler(result)
+        except ValidationError:
+            raise PydanticCustomError(
+                REFUTED,
+                "{left} {sign} {right}",
+                {
+                    "left": self.left,
+                    "right": self.right,
+                    "left_class": type(info.data[self.left]).__name__,
+                    "right_class": type(info.data[self.right]).__name__,
+                    "sign": SIGN[int(result)],
+                    "ordering": int(result),
+                },
+            ) from None
+
 
 class Relation(Fact):
     """A rule over several values: a fact that constructs when the rule holds and refuses when
@@ -581,7 +642,7 @@ class Relation(Fact):
     Every relation kind subclasses this and declares its meaning as ordering fields: each is
     typed by a ``Literal`` of the outcomes it admits and carries a ``Comparison`` of two
     operand fields as its metadata, with ``COMPUTED`` as its default. Pydantic computes the
-    ordering from the validated operands and admits it or refuses it with ``literal_error``;
+    ordering from the validated operands and admits it or refuses it as ``REFUTED``;
     the engine reads a refusal of a relation as the fact not existing, so a union of the facts
     that hold each outcome is the choice. The proof reads the same fields: it tells two
     relation kinds apart by the outcomes they admit, decides from the operands' intervals
@@ -697,6 +758,44 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Relation):
     )
 
 
+class Shape:
+    """A selection's tuple shape as its condition: the one declaration construction and the
+    proof read.
+
+    It is the ``Annotated`` metadata of a selection's ``of``. Pydantic validates the elements
+    first, as a tuple of any number of the element class, and reports an omitted field or an
+    invalid element as it does for any field; then the validated elements pass through the
+    field's own declared shape, ``tuple[E, ...]`` with ``min_length=1`` or ``tuple[E]``, which
+    can refuse nothing but their number, so what it refuses there is the condition not holding,
+    raised as ``REFUTED`` with Pydantic's own words and the count.
+    """
+
+    def __get_pydantic_core_schema__(
+        self, source: object, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """The field's schema: the elements validated as any number of the element class, then
+        the declared shape over the validated elements."""
+        (element,) = (a for a in get_args(source) if a is not Ellipsis)
+        elements = handler.generate_schema(tuple[element, ...])
+        declared = handler(source)
+        return core_schema.chain_schema(
+            [elements, core_schema.no_info_wrap_validator_function(self.admitted, declared)]
+        )
+
+    def admitted(
+        self, elements: tuple[object, ...], handler: ValidatorFunctionWrapHandler
+    ) -> object:
+        """The validated elements admitted by the declared shape, or ``REFUTED``."""
+        try:
+            return handler(elements)
+        except ValidationError as refusal:
+            raise PydanticCustomError(
+                REFUTED,
+                "{why}",
+                {"why": "; ".join(e["msg"] for e in refusal.errors()), "count": len(elements)},
+            ) from None
+
+
 class Selection[E: BaseModel](Fact):
     """A choice among elements: a fact over the elements the runs under this one produced,
     whose ``chosen`` is the one selected.
@@ -704,11 +803,11 @@ class Selection[E: BaseModel](Fact):
     Every selection kind subclasses this, and its shape is its tuple annotation, which Pydantic
     constructs and the proof reads: ``tuple[E, ...]`` with ``min_length=1`` is at least one
     element, ``tuple[E]`` is exactly one. With no element there is nothing to choose, and the
-    selection refuses: a choice among nothing does not exist, and a fact that holds it does not
-    either.
+    selection refuses with ``REFUTED``: a choice among nothing does not exist, and a fact that
+    holds it does not either. The shape is the field's ``Shape`` metadata.
     """
 
-    of: tuple[E, ...] = Field(min_length=1)
+    of: Annotated[tuple[E, ...], Shape()] = Field(min_length=1)
     """The elements chosen among, in element order; at least one."""
 
 
@@ -758,7 +857,7 @@ class Only[E: BaseModel](Selection[E]):
         class Sole(Only[Quote]): ...
     """
 
-    of: tuple[E]
+    of: Annotated[tuple[E], Shape()]
     """The one element."""
 
     @property
@@ -801,6 +900,26 @@ class Connection(BaseModel):
         """What reaching the party needs, acquired on entry and released on exit."""
 
 
+@dataclass(frozen=True)
+class Json:
+    """What a party said, as JSON text: heard by validating the text as the action's record in
+    JSON mode, strictly. What a library kind's ``perform`` returns from an HTTP body."""
+
+    text: str | bytes
+    """The party's JSON."""
+
+
+@dataclass(frozen=True)
+class Python:
+    """What a party said, as Python data: a mapping under the record's aliases, or a record
+    already validated, which stays the same instance; heard by validating it as the action's
+    record in Python mode, strictly. What a library kind's ``perform`` returns from a client
+    that decoded the response, or from rows."""
+
+    data: object
+    """The party's data."""
+
+
 class Action[P: Connection, T: Record](BaseModel):
     """What the business asks party ``P``, hearing ``T``.
 
@@ -822,10 +941,12 @@ class Action[P: Connection, T: Record](BaseModel):
     The action holds its party as ``party``, the connection the deployment configured for
     ``P``; the engine fills it like any other field, from the config, so the action exists once
     the fact that intends it and the party both exist. Then the engine awaits ``perform``, and
-    the library kind's ``perform`` sends through ``self.party`` and returns the record validated
-    as ``T``, or raises. ``perform`` is abstract: an action with no library kind cannot be
-    constructed. An action performed on one branch of a choice and not the other holds a
-    premise that decides the choice; the proof refuses one that does not.
+    the library kind's ``perform`` sends through ``self.party`` and returns what the party said
+    as ``Json`` or ``Python``, or raises; the engine validates it as ``T`` at its one boundary,
+    a union choosing its member, and only a record that validates is heard. ``perform`` is
+    abstract: an action with no library kind cannot be constructed. An action performed on one
+    branch of a choice and not the other holds a premise that decides the choice; the proof
+    refuses one that does not.
     """
 
     model_config = PRODUCT
@@ -833,8 +954,9 @@ class Action[P: Connection, T: Record](BaseModel):
     """The connection this action goes through: the deployment's ``P``."""
 
     @abstractmethod
-    async def perform(self) -> T:
-        """Ask ``self.party`` and return what it said as ``T``; the library kind's verb."""
+    async def perform(self) -> Json | Python:
+        """Ask ``self.party`` and return what it said, as JSON text or Python data; the library
+        kind's verb."""
 
 
 F_co = TypeVar("F_co", bound=Fact, covariant=True)

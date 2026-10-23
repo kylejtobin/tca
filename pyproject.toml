@@ -9,6 +9,10 @@ dependencies = []
 
 [tool.uv]
 package = false
+# semgrep pins opentelemetry-api ~= 1.37.0 exactly; the engine ships on opentelemetry-api and
+# must be free to take its fixes, so semgrep resolves in a group of its own that never shares
+# an environment with dev.
+conflicts = [[{ group = "dev" }, { group = "audit" }]]
 
 [tool.uv.workspace]
 members = ["packages/python/*"]
@@ -27,8 +31,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "rust-just>=1.59.0",
-    "semgrep>=1.179.0",
 ]
+audit = ["semgrep>=1.179.0"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

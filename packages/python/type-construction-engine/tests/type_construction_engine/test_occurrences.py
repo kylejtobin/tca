@@ -17,16 +17,25 @@ from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ValidationError
 
 from type_construction.engine import (
+    Blocked,
+    ConstructedRef,
+    Heard,
+    HeardRef,
+    InputRef,
     Placement,
     Proof,
+    Run,
+    Unfilled,
     answer,
     config,
     construct,
     models,
     proven,
     ran,
+    refused,
     symbolic,
 )
+from type_construction.world import Python
 
 from . import fixed, optional, stalls
 from . import occurrences as program
@@ -39,11 +48,13 @@ from .occurrences import (
     LineTotal,
     PairTotal,
     PlaceOrder,
+    Quantity,
     Quote,
     Screen,
     Screened,
     Share,
     SoloTotal,
+    UnitPrice,
 )
 
 PROGRAM: ModuleType = sys.modules[program.__name__]
@@ -97,36 +108,58 @@ def test_one_class_constructs_at_every_site_its_premises_bind() -> None:
     assert {scope for cls, scope in found if cls is Share} == {CART, GIFT, FIRST, SECOND, SOLO}
     for scope in (CART, GIFT, FIRST, SECOND, SOLO):
         assert found[LineTotal, scope].singles == {
-            "left": ((*scope, "Quote", "heard", "unit"),),
-            "right": ((*scope, "quantity"),),
+            "left": (
+                HeardRef(
+                    scope=scope, action=Quote, record=program.Price, member=("unit",), cls=UnitPrice
+                ),
+            ),
+            "right": (InputRef(scope=scope, member=("quantity",), cls=Quantity),),
         }
+        assert [r.site for r in found[LineTotal, scope].singles["left"]] == [
+            (*scope, "Quote", "heard", "unit")
+        ]
 
 
 def test_separate_collections_of_one_element_class_stay_separate() -> None:
     found = placed()
-    assert found[CartTotal, ()].collections["of"].site == ("request", "cart", "lines")
-    assert found[CartTotal, ()].collections["of"].elements == ((*CART, "LineTotal"),)
-    assert found[GiftTotal, ()].collections["of"].site == ("request", "gifts", "lines")
-    assert found[GiftTotal, ()].collections["of"].elements == ((*GIFT, "LineTotal"),)
-    assert found[PairTotal, ()].collections["of"].site == ("request", "pair", "lines")
-    assert found[PairTotal, ()].collections["of"].elements == (
-        (*FIRST, "LineTotal"),
-        (*SECOND, "LineTotal"),
+    cart = found[CartTotal, ()].collections["of"]
+    assert cart.site == ("request", "cart", "lines")
+    assert cart.holder == InputRef(scope=(), member=("request", "cart"), cls=program.Cart)
+    assert cart.elements == (ConstructedRef(scope=CART, cls=LineTotal),)
+    gifts = found[GiftTotal, ()].collections["of"]
+    assert gifts.site == ("request", "gifts", "lines")
+    assert gifts.holder == InputRef(scope=(), member=("request", "gifts"), cls=program.Gifts)
+    assert gifts.elements == (ConstructedRef(scope=GIFT, cls=LineTotal),)
+    pair = found[PairTotal, ()].collections["of"]
+    assert pair.site == ("request", "pair", "lines")
+    assert pair.elements == (
+        ConstructedRef(scope=FIRST, cls=LineTotal),
+        ConstructedRef(scope=SECOND, cls=LineTotal),
     )
-    assert found[SoloTotal, ()].collections["of"].elements == ((*SOLO, "LineTotal"),)
-    assert found[CartShares, ()].collections["shares"].site == ("request", "cart", "lines")
-    assert found[CartShares, ()].collections["shares"].elements == ((*CART, "Share"),)
+    assert found[SoloTotal, ()].collections["of"].elements == (
+        ConstructedRef(scope=SOLO, cls=LineTotal),
+    )
+    shares = found[CartShares, ()].collections["shares"]
+    assert shares.site == ("request", "cart", "lines")
+    assert shares.holder == cart.holder
+    assert shares.elements == (ConstructedRef(scope=CART, cls=Share),)
 
 
 def test_a_reference_to_an_existing_premise_is_not_a_new_producer() -> None:
     found = placed()
-    assert found[Screened, ()].singles["order"] == (("request",),)
-    assert found[Screen, ()].singles["order"] == (("request",),)
-    assert found[Share, CART].singles["cart"] == (("CartTotal",),)
-    assert found[Share, GIFT].singles["cart"] == (("CartTotal",),)
+    order = InputRef(scope=(), member=("request",), cls=PlaceOrder)
+    assert found[Screened, ()].singles["order"] == (order,)
+    assert found[Screen, ()].singles["order"] == (order,)
+    assert found[Share, CART].singles["cart"] == (ConstructedRef(scope=(), cls=CartTotal),)
+    assert found[Share, GIFT].singles["cart"] == (ConstructedRef(scope=(), cls=CartTotal),)
     assert [cls for cls, _ in found if cls is CartTotal] == [CartTotal]
     assert PlaceOrder not in {cls for cls, _ in found}
-    assert found[Screened, ()].singles["clear"] == (("Screen", "heard"),)
+    assert found[Screened, ()].singles["clear"] == (
+        HeardRef(scope=(), action=Screen, record=program.Clear, member=(), cls=program.Clear),
+    )
+    assert found[program.Refused, ()].singles["flagged"] == (
+        HeardRef(scope=(), action=Screen, record=program.Flagged, member=(), cls=program.Flagged),
+    )
 
 
 def test_the_proof_does_not_depend_on_declaration_order() -> None:
@@ -262,9 +295,21 @@ def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions
     (error,) = refusal.value.errors()
     assert (error["type"], error["loc"]) == ("conditional", ("Checkout",))
     placed = {p.cls: p for p in symbolic(optional.Checkout, models(optional)).placed}
-    assert placed[optional.Discount].singles["coupon"] == (("Quote", "heard", "coupon"),)
-    assert placed[optional.Discounted].singles["discount"] == (("Discount",),)
-    assert placed[optional.Checkout].singles["reply"] == (("OrderDiscounted",),)
+    assert placed[optional.Discount].singles["coupon"] == (
+        HeardRef(
+            scope=(),
+            action=optional.Quote,
+            record=optional.Quoted,
+            member=("coupon",),
+            cls=optional.Coupon,
+        ),
+    )
+    assert placed[optional.Discounted].singles["discount"] == (
+        ConstructedRef(scope=(), cls=optional.Discount),
+    )
+    assert placed[optional.Checkout].singles["reply"] == (
+        ConstructedRef(scope=(), cls=optional.OrderDiscounted),
+    )
 
 
 @pytest.mark.asyncio
@@ -283,6 +328,7 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
     request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
     monkeypatch.setenv("PARTY__SAYS", '{"amount": "5", "coupon": "TEN"}')
     done = await ran(optional.Checkout, request, config(optional)(), unproven)
+    assert isinstance(done, Run)
     assert done.route.reply.model_dump_json() == '{"coupon":"TEN"}'
     assert done.root.provenance[("Discount",)] == {
         "quoted": (("Quote", "heard"),),
@@ -290,9 +336,22 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
     }
     assert done.root.provenance[("Discounted",)] == {"discount": (("Discount",),)}
     monkeypatch.setenv("PARTY__SAYS", '{"amount": "5"}')
-    with pytest.raises(ValidationError) as refusal:
-        await ran(optional.Checkout, request, config(optional)(), unproven)
-    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == [
+    blocked = await ran(optional.Checkout, request, config(optional)(), unproven)
+    assert isinstance(blocked, Blocked)
+    assert blocked.route is optional.Checkout
+    assert blocked.passes == 2
+    (cause,) = blocked.causes
+    assert isinstance(cause, Unfilled)
+    assert cause.occurrence.path == ("Discount",)
+    assert cause.occurrence.placed is next(p for p in found.placed if p.cls is optional.Discount)
+    assert cause.premise == ("coupon", None)
+    assert cause.ref is cause.occurrence.placed.singles["coupon"][0]
+    assert isinstance(cause.state, Heard)
+    assert cause.state.action.path == ("Quote",)
+    assert cause.state.record is blocked.root.owned[("Quote", "heard")]
+    assert isinstance(cause.state.record, optional.Quoted)
+    assert cause.state.record.coupon is None
+    assert [(e["type"], e["loc"], e["msg"]) for e in refused(blocked).errors()] == [
         (
             "missing",
             ("Discount", "coupon"),
@@ -300,6 +359,9 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
             " heard Quoted without coupon",
         )
     ]
+    with pytest.raises(ValidationError) as refusal:
+        await answer(optional.Checkout, request, config(optional)(), unproven)
+    assert [e["type"] for e in refusal.value.errors()] == ["missing"]
 
 
 @pytest.mark.asyncio
@@ -307,6 +369,7 @@ async def test_the_run_constructs_a_conditional_chain_only_when_its_premise_arri
 async def test_every_construction_records_the_concrete_occurrences_that_supplied_it() -> None:
     request = PlaceOrder.model_validate_json(ORDER)
     done = await ran(Checkout, request, config(PROGRAM)(), proven(PROGRAM))
+    assert isinstance(done, Run)
     root = done.root
     cart_lines = root.collections[("request", "cart", "lines")]
     assert [s.path for s in cart_lines] == [
@@ -415,12 +478,12 @@ async def test_a_failing_action_is_noted_with_its_occurrence_and_its_span_record
 ) -> None:
     exporter = exporting()
 
-    async def failing(self: Quote) -> program.Price:
+    async def failing(self: Quote) -> Python:
         """A catalog that cannot price a mug."""
         if self.line.sku.root == "mug":
             down = ConnectionError("no mugs")
             raise down
-        return program.Price.model_validate({"price": Decimal("2.50")})
+        return Python(program.Price.model_validate({"price": Decimal("2.50")}))
 
     monkeypatch.setattr(Quote, "perform", failing)
     request = PlaceOrder.model_validate_json(ORDER)
@@ -466,7 +529,7 @@ def test_a_refusal_that_is_not_a_refutation_is_noted_with_the_occurrence() -> No
         route=fixed.Checkout,
         cls=fixed.Both,
         scope=(),
-        singles={"cart": (("request", "cart"),)},
+        singles={"cart": (InputRef(scope=(), member=("request", "cart"), cls=fixed.Cart),)},
         freshly={},
         collections={},
     )
