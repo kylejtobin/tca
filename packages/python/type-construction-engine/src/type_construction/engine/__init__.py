@@ -83,10 +83,11 @@ the proof is a value the server computes once and passes in.
 from asyncio import CancelledError, Task, TaskGroup
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import Enum
 from itertools import combinations, product
+from math import isnan
 from types import MappingProxyType, ModuleType, NoneType, UnionType
 from typing import (
     Literal,
@@ -101,7 +102,7 @@ from typing import (
 )
 
 from opentelemetry import trace
-from opentelemetry.trace import Span
+from opentelemetry.trace import Span, Status, StatusCode
 from pydantic import (
     AliasChoices,
     AliasPath,
@@ -147,11 +148,13 @@ __all__ = [
     "Fault",
     "HeardRef",
     "InputRef",
+    "Known",
     "Proof",
     "Ref",
     "Run",
     "Scope",
     "Site",
+    "Unknown",
     "Waiting",
     "answer",
     "asked",
@@ -629,23 +632,37 @@ class Declared:
         return next(iter(keys_)) if self.required and len(keys_) == 1 else None
 
     @property
-    def schema(self) -> Mapping[str, object]:
-        """The field's resolved core schema, as Pydantic built it for the class: what validates,
-        beneath any default, nullable, function or chain wrapper, a definition reference
-        resolved. The one source of the constraints Pydantic applies, since a repeated
-        constraint keeps the last declared and distinct constraints all apply."""
+    def output(self) -> Output:
+        """What the field's compiled schema can output when it validates: ``Known``, every
+        successful output described conservatively, or ``Unknown``, naming the node of the
+        compiled schema the description cannot pass. The field's complete schema is located
+        in the class's as Pydantic compiled it, definitions resolved and the model's own
+        before validators passed, since every output still passes the fields' schemas; any
+        other validator around the model or its fields leaves every field's output unknown.
+        The one source of the constraints Pydantic applies, since a repeated constraint keeps
+        the last declared and distinct constraints all apply."""
         top: Mapping[str, object] = self.cls.__pydantic_core_schema__
         definitions: dict[object, Mapping[str, object]] = {}
+        at: tuple[str, ...] = ()
         if top.get("type") == "definitions":
             definitions = {d.get("ref"): d for d in listed(top.get("definitions"))}
-            top = mapped(top.get("schema"))
-        model = unwrapped(top, definitions)
-        if model.get("root_model"):
-            found = mapped(model.get("schema"))
-        else:
-            fields_ = mapped(unwrapped(mapped(model.get("schema")), definitions).get("fields"))
-            found = mapped(mapped(fields_.get(self.name)).get("schema"))
-        return unwrapped(found, definitions)
+            top, at = mapped(top.get("schema")), ("definitions",)
+        model = beneath(top, "model", definitions, at)
+        if isinstance(model, Unknown):
+            return model
+        node, at = model
+        config_ = mapped(node.get("config"))
+        compiled = Compiled(
+            definitions, bool(config_.get("validate_default")), tuple(self.info.metadata)
+        )
+        if node.get("root_model"):
+            return compiled.outputs(mapped(node.get("schema")), at)
+        fields_ = beneath(mapped(node.get("schema")), "model-fields", definitions, at)
+        if isinstance(fields_, Unknown):
+            return fields_
+        node, at = fields_
+        own = mapped(mapped(node.get("fields")).get(self.name))
+        return compiled.outputs(mapped(own.get("schema")), (*at, "model-field"))
 
     @property
     def computation(self) -> Computation | None:
@@ -677,50 +694,19 @@ class Declared:
         return f"tuple[{inner}]" if self.fixed else f"tuple[{inner}, ...]"
 
     @property
-    def length(self) -> tuple[int, int | None]:
-        """How many elements the field's resolved tuple schema admits: a fixed tuple's
-        positions twice, else its ``min_length`` and ``max_length`` as Pydantic validates
-        them; unbounded for a schema that is no tuple."""
-        schema = self.schema
-        if schema.get("type") != "tuple":
-            return 0, None
-        if schema.get("variadic_item_index") is None:
-            positions = len(listed(schema.get("items_schema")))
-            return positions, positions
-        low, high = schema.get("min_length"), schema.get("max_length")
-        return (low if isinstance(low, int) else 0, high if isinstance(high, int) else None)
+    def length(self) -> tuple[int, int | None] | Unknown:
+        """How many elements a tuple the field outputs can have: a fixed tuple's positions
+        twice, else the ``min_length`` and ``max_length`` of its compiled schema; unbounded
+        for a schema that outputs no tuple; unknown as the output is."""
+        found = self.output
+        return found.lengths if isinstance(found, Known) else found
 
     @property
-    def bounds(self) -> Interval:
-        """The interval the field's resolved numeric schema admits: ``gt`` and ``ge`` both
-        apply, so the lower bound is the stronger, strict when the strict one is at least the
-        other; ``lt`` and ``le`` likewise above. An integer schema has no value between two
-        integers, so a strict bound is the next integer's non-strict one. Bounds that cross
-        are an empty interval. A schema that is not numeric, or a constraint the interval
-        cannot represent, leaves the interval wider, never narrower: ``multiple_of`` and the
-        decimal digit limits only remove values from within it."""
-        schema = self.schema
-        if schema.get("type") not in ("int", "float", "decimal"):
-            return Interval()
-        whole = schema.get("type") == "int"
-        low = strongest(
-            [(decimal(schema.get("gt")), True), (decimal(schema.get("ge")), False)], above=True
-        )
-        high = strongest(
-            [(decimal(schema.get("lt")), True), (decimal(schema.get("le")), False)], above=False
-        )
-        if whole:
-            low = low and (low[0].to_integral_value(ROUND_FLOOR) + 1 if low[1] else low[0], False)
-            high = high and (
-                high[0].to_integral_value(ROUND_CEILING) - 1 if high[1] else high[0],
-                False,
-            )
-        return Interval(
-            low=low and low[0],
-            low_strict=bool(low and low[1]),
-            high=high and high[0],
-            high_strict=bool(high and high[1]),
-        )
+    def bounds(self) -> Interval | Unknown:
+        """The interval every number the field outputs lies in; unbounded for a schema that
+        outputs no number; unknown as the output is."""
+        found = self.output
+        return found.numbers if isinstance(found, Known) else found
 
 
 def mapped(schema: object) -> Mapping[str, object]:
@@ -728,40 +714,348 @@ def mapped(schema: object) -> Mapping[str, object]:
     return cast("Mapping[str, object]", schema) if isinstance(schema, Mapping) else {}
 
 
+def items(values: object) -> list[object]:
+    """A core schema's list of values; an absent list is empty."""
+    return cast("list[object]", values) if isinstance(values, list) else []
+
+
 def listed(schemas: object) -> list[Mapping[str, object]]:
     """A core schema's list of nodes; an absent list is empty."""
-    return [mapped(s) for s in cast("list[object]", schemas)] if isinstance(schemas, list) else []
+    return [mapped(s) for s in items(schemas)]
 
 
-WRAPPERS = frozenset(
-    {"default", "nullable", "function-wrap", "function-after", "function-before", "model"}
+@dataclass(frozen=True)
+class Unknown:
+    """A property of a field's successful outputs that its compiled schema does not justify:
+    the node that stands in the way, by type, and where it is, as the node types from the top
+    of the class's schema down to it. What is unknown establishes nothing: no exclusivity, no
+    impossibility, no certainty, and no permission; a diagnostic that needs it is omitted and
+    an obligation that needs it stays unproven."""
+
+    operation: str
+    """The node type, or the operation within one, the analysis does not pass."""
+    at: tuple[str, ...]
+    """The node types from the class's compiled schema down to it."""
+
+
+UNBOUNDED = Interval()
+"""The interval that claims nothing of a number."""
+
+
+@dataclass(frozen=True)
+class Known:
+    """Every successful output of a compiled schema, conservatively: an interval that contains
+    every number among the outputs, the lengths a tuple among them can have, and whether
+    ``None`` is one. A facet the schema says nothing about is unbounded, which claims nothing;
+    an empty interval with no ``None`` is a schema no value satisfies. The description can be
+    wider than what validates, never narrower: ``multiple_of`` and the decimal digit limits
+    are left to remove values from within the interval, and nothing says every value within
+    it is attainable."""
+
+    numbers: Interval = UNBOUNDED
+    """The interval every number among the outputs lies in."""
+    lengths: tuple[int, int | None] = (0, None)
+    """The fewest and the most elements a tuple among the outputs has; ``None`` for no most."""
+    none: bool = False
+    """Whether ``None`` is among the outputs."""
+
+
+type Output = Known | Unknown
+"""What the analysis says of a compiled schema's successful outputs."""
+
+
+EXECUTED = frozenset({"function-after", "function-plain", "function-wrap"})
+"""Validator nodes whose output is their function's: passed only when a kind's own."""
+
+WRAPPED = EXECUTED | {"function-before", "nullable", "custom-error", "json", "default"}
+"""Nodes around one inner schema every successful output passes through, or is extended from:
+a before validator feeds the inner schema, which bounds the output and says nothing of what
+inputs it admits; ``nullable`` adds ``None``; ``default`` adds the default when it is not
+validated."""
+
+BRANCHES: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {
+        "union": ("choices",),
+        "tagged-union": ("choices",),
+        "json-or-python": ("json_schema", "python_schema"),
+        "lax-or-strict": ("lax_schema", "strict_schema"),
+    }
 )
-"""Core schema nodes that wrap the schema that validates the value: a default, ``None``
-admitted, a validator function around it, or the model around its fields."""
+"""Nodes whose output is one alternative's, with the keys the alternatives are under: every
+branch of a mode or a strictness is kept, since the analysis is not told which validates."""
+
+NUMBERS = frozenset({"int", "float", "decimal"})
+"""The numeric nodes, whose compiled bounds the interval is read from."""
+
+DATA = frozenset(
+    {
+        "str",
+        "bytes",
+        "bool",
+        "date",
+        "time",
+        "datetime",
+        "timedelta",
+        "uuid",
+        "url",
+        "multi-host-url",
+        "complex",
+        "enum",
+        "is-instance",
+        "is-subclass",
+        "callable",
+        "list",
+        "set",
+        "frozenset",
+        "dict",
+        "generator",
+        "typed-dict",
+        "dataclass",
+        "dataclass-args",
+        "model",
+        "model-fields",
+        "arguments",
+        "arguments-v3",
+    }
+)
+"""Nodes that output what they validate, none of it bounded as a number, a tuple or ``None``
+beyond what the unbounded description already claims."""
 
 
-def unwrapped(
-    schema: Mapping[str, object], definitions: Mapping[object, Mapping[str, object]]
-) -> Mapping[str, object]:
-    """The core schema beneath every wrapper: a definition reference resolved, a chain's last
-    step, a wrapper's inner schema; a model node is returned as is, since it is the root model
-    or the fields that are wanted of it."""
-    while True:
-        kind_ = schema.get("type")
-        if kind_ == "definition-ref":
-            schema = definitions.get(schema.get("schema_ref"), {})
-        elif kind_ == "chain":
-            steps = listed(schema.get("steps"))
-            schema = steps[-1] if steps else {}
-        elif kind_ in WRAPPERS and kind_ != "model":
-            schema = mapped(schema.get("schema"))
+def beneath(
+    node: Mapping[str, object],
+    kind: str,
+    definitions: Mapping[object, Mapping[str, object]],
+    at: tuple[str, ...],
+) -> tuple[Mapping[str, object], tuple[str, ...]] | Unknown:
+    """The node of a kind beneath the wrappers every output passes unchanged: a definition
+    reference resolved and a before validator passed; any other wrapper, a validator that
+    returns what it will, is unknown."""
+    while node.get("type") != kind:
+        found = str(node.get("type"))
+        at = (*at, found)
+        if found == "definition-ref":
+            node = definitions.get(node.get("schema_ref"), {})
+        elif found == "function-before":
+            node = mapped(node.get("schema"))
         else:
-            return schema
+            return Unknown(found, at)
+    return node, (*at, kind)
+
+
+@dataclass(frozen=True)
+class Compiled:
+    """One field's place in its class's compiled schema, for the analysis of its outputs: the
+    definitions the schema may reference, whether the class validates defaults, and the
+    objects the field's metadata declares, which own the only validators whose output the
+    analysis follows."""
+
+    definitions: Mapping[object, Mapping[str, object]]
+    validate_default: bool
+    owners: tuple[object, ...]
+
+    def outputs(
+        self, node: Mapping[str, object], at: tuple[str, ...], seen: frozenset[object] = frozenset()
+    ) -> Output:
+        """What a node outputs when it validates, from the compiled schema alone: an
+        alternative's, a referenced definition's, a chain's last stage's, a wrapper's inner
+        schema's extended by what the wrapper adds, or a native node's own."""
+        kind = str(node.get("type"))
+        here = (*at, kind)
+        if kind in BRANCHES:
+            return combined(self.outputs(a, here, seen) for a in alternatives(node))
+        if kind == "definition-ref":
+            return self.referenced(node, here, seen)
+        if kind == "chain":
+            steps = listed(node.get("steps"))
+            return self.outputs(steps[-1], here, seen) if steps else Unknown(kind, here)
+        if kind in WRAPPED:
+            return self.wrapped(node, here, seen)
+        return native(node, here)
+
+    def referenced(
+        self, node: Mapping[str, object], here: tuple[str, ...], seen: frozenset[object]
+    ) -> Output:
+        """A referenced definition's output; unknown for a definition the schema does not hold
+        or one already being followed, rather than a bound invented for the recursion."""
+        ref = node.get("schema_ref")
+        target = self.definitions.get(ref)
+        if target is None or ref in seen:
+            return Unknown(here[-1], here)
+        return self.outputs(target, here, seen | {ref})
+
+    def wrapped(
+        self, node: Mapping[str, object], here: tuple[str, ...], seen: frozenset[object]
+    ) -> Output:
+        """A wrapper's output: unknown for a validator that is not a kind's own, since it
+        returns what it will; else the inner schema's, with ``None`` for ``nullable`` and the
+        default for a ``default`` that is not validated."""
+        kind = here[-1]
+        if kind in EXECUTED and not self.owned(node, kind):
+            return Unknown(kind, here)
+        found = self.outputs(mapped(node.get("schema")), here, seen)
+        if isinstance(found, Unknown):
+            return found
+        if kind == "nullable":
+            return replace(found, none=True)
+        if kind == "default":
+            return self.defaulted(node, here, found)
+        return found
+
+    def owned(self, node: Mapping[str, object], kind: str) -> bool:
+        """Whether a validator node is a kind's own: a wrap validator that is the bound method
+        of a ``Computation`` or a ``Condition`` the field's metadata declares, whose output is
+        what the field's own type admitted of what it computed or was given."""
+        function = mapped(node.get("function")).get("function")
+        owner = getattr(function, "__self__", None)
+        return (
+            kind == "function-wrap"
+            and isinstance(owner, (Computation, Condition))
+            and any(owner is o for o in self.owners)
+        )
+
+    def defaulted(self, node: Mapping[str, object], here: tuple[str, ...], found: Known) -> Output:
+        """A ``default`` node's output: the inner schema's when the default is validated, by
+        the node or by the class; else that with the default among the outputs, or unknown
+        for a factory, whose value nothing bounds."""
+        validate = node.get("validate_default")
+        if self.validate_default if validate is None else bool(validate):
+            return found
+        if "default_factory" in node:
+            return Unknown("default_factory", here)
+        return widened(found, node.get("default"), here)
+
+
+def alternatives(node: Mapping[str, object]) -> list[Mapping[str, object]]:
+    """The schemas a branching node chooses among: a union's choices, each perhaps labelled, a
+    tagged union's by tag, or the two modes or strictnesses."""
+    kind = str(node.get("type"))
+    if kind == "union":
+        return [
+            mapped(cast("tuple[object, ...]", c)[0] if isinstance(c, tuple) else c)
+            for c in items(node.get("choices"))
+        ]
+    if kind == "tagged-union":
+        return [mapped(c) for c in mapped(node.get("choices")).values()]
+    return [mapped(node.get(k)) for k in BRANCHES[kind]]
+
+
+def combined(outputs: Iterable[Output]) -> Output:
+    """What alternatives output together: the hull of their intervals, the fewest and the most
+    elements among them, ``None`` if any outputs it; unknown when any alternative is, since
+    a bound for the whole needs every alternative accounted for."""
+    found = list(outputs)
+    knowns = [o for o in found if isinstance(o, Known)]
+    if len(knowns) < len(found):
+        return next(o for o in found if isinstance(o, Unknown))
+    if not knowns:
+        return Known()
+    highs = [k.lengths[1] for k in knowns]
+    return Known(
+        numbers=hull(k.numbers for k in knowns),
+        lengths=(
+            min(k.lengths[0] for k in knowns),
+            None if any(h is None for h in highs) else max(h for h in highs if h is not None),
+        ),
+        none=any(k.none for k in knowns),
+    )
+
+
+def native(node: Mapping[str, object], here: tuple[str, ...]) -> Output:
+    """A native node's output, from its compiled constraints: a number's bounds, a literal's
+    values, a tuple's lengths, ``None``, anything for ``any``, and the unbounded description
+    for data that is none of these; unknown for a node the analysis does not know, such as
+    ``call``, whose output is its function's."""
+    kind = here[-1]
+    if kind in NUMBERS:
+        return numeric(node, here)
+    if kind == "literal":
+        return literal(node)
+    if kind == "tuple":
+        return Known(lengths=lengths(node))
+    if kind in ("none", "any"):
+        return Known(none=True)
+    if kind in DATA:
+        return Known()
+    return Unknown(kind, here)
+
+
+def numeric(node: Mapping[str, object], here: tuple[str, ...]) -> Output:
+    """A number's bounds: ``gt`` and ``ge`` both apply, so the lower bound is the stronger,
+    strict when the strict one is at least the other; ``lt`` and ``le`` likewise above. An
+    integer schema has no value between two integers, so a strict bound is the next integer's
+    non-strict one. Bounds that cross are an empty interval. A float admits ``nan`` unless
+    the schema forbids it or a bound refuses it, and ``nan`` lies in no interval, so that
+    output is unknown; an infinity a bound admits lies beyond the unbounded end."""
+    kind = here[-1]
+    gt, ge, lt, le = (decimal(node.get(k)) for k in ("gt", "ge", "lt", "le"))
+    non_finite = node.get("allow_inf_nan", kind == "float")
+    if kind != "int" and non_finite and (gt, ge, lt, le) == (None, None, None, None):
+        return Unknown("allow_inf_nan", here)
+    low = strongest([(gt, True), (ge, False)], above=True)
+    high = strongest([(lt, True), (le, False)], above=False)
+    if kind == "int":
+        low = low and (low[0].to_integral_value(ROUND_FLOOR) + 1 if low[1] else low[0], False)
+        high = high and (
+            high[0].to_integral_value(ROUND_CEILING) - 1 if high[1] else high[0],
+            False,
+        )
+    return Known(
+        numbers=Interval(
+            low=low and low[0],
+            low_strict=bool(low and low[1]),
+            high=high and high[0],
+            high_strict=bool(high and high[1]),
+        )
+    )
+
+
+def literal(node: Mapping[str, object]) -> Known:
+    """A literal's outputs are its values: the numbers among them span the interval, and
+    ``None`` among them is an output."""
+    expected = items(node.get("expected"))
+    numbers = [d for v in expected if (d := decimal(v)) is not None]
+    return Known(
+        numbers=Interval(low=min(numbers), high=max(numbers)) if numbers else Interval(),
+        none=any(v is None for v in expected),
+    )
+
+
+def lengths(node: Mapping[str, object]) -> tuple[int, int | None]:
+    """A tuple's lengths: its positions twice when fixed, else its ``min_length`` and
+    ``max_length``, the fewest at least the positions before the variadic one."""
+    items = listed(node.get("items_schema"))
+    if node.get("variadic_item_index") is None:
+        return len(items), len(items)
+    low, high = node.get("min_length"), node.get("max_length")
+    return max(low if isinstance(low, int) else 0, len(items) - 1), (
+        high if isinstance(high, int) else None
+    )
+
+
+def widened(known: Known, default: object, here: tuple[str, ...]) -> Output:
+    """A known output with an unvalidated default among the outputs: ``None``, a number the
+    interval widens to, or a tuple whose length the lengths widen to; anything else is none
+    of these. A ``nan`` default lies in no interval and is unknown."""
+    if default is None:
+        return replace(known, none=True)
+    if isinstance(default, float) and isnan(default):
+        return Unknown("nan", here)
+    if (number := decimal(default)) is not None:
+        return replace(known, numbers=hull([known.numbers, Interval(low=number, high=number)]))
+    if isinstance(default, tuple):
+        low, high = known.lengths
+        count = len(cast("tuple[object, ...]", default))
+        return replace(known, lengths=(min(low, count), None if high is None else max(high, count)))
+    return known
 
 
 def decimal(bound: object) -> Decimal | None:
-    """A numeric constraint of a core schema as a ``Decimal``; ``None`` for none."""
-    return Decimal(str(bound)) if isinstance(bound, (int, float, Decimal)) else None
+    """A number of a core schema as a ``Decimal``; ``None`` for what is no number, a ``bool``
+    among them."""
+    if isinstance(bound, bool) or not isinstance(bound, (int, float, Decimal)):
+        return None
+    return Decimal(str(bound))
 
 
 type Endpoint = tuple[Decimal, bool]
@@ -1794,25 +2088,40 @@ def hull(intervals: Iterable[Interval]) -> Interval:
     return Interval(low=low, low_strict=low_strict, high=high, high_strict=high_strict)
 
 
-def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) -> Interval:
-    """What a numeric class can be: a constant is its default; a scalar is its root's bounds; a
-    derivation is what its operation makes of its operands' intervals; anything else is
-    unbounded."""
+def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) -> Interval | Unknown:
+    """What a numeric class can be: a constant is its default; a derivation is what its
+    operation makes of what its operands can be; any other class with a root is what the
+    root's compiled schema can output; a class without one is unbounded. A derivation reached
+    again through its own operands is unknown, not a bound invented for the recursion."""
     root = root_of(cls)
-    if cls in seen or root is None:
+    if root is None:
         return Interval()
-    if constant(cls):
-        value = Decimal(str(root.info.default))
+    if cls in seen:
+        return Unknown("recursion", (cls.__name__,))
+    if constant(cls) and (value := decimal(root.info.default)) is not None:
         return Interval(low=value, high=value)
-    if is_scalar(cls):
-        return root.bounds
     if isinstance(derived := root.computation, Derived):
-        operands = tuple(
-            hull(interval(c, seen | {cls}) for c in declared(cls, name).classes)
-            for name in derived.operands
-        )
-        return derived.interval(operands)
-    return Interval()
+        operands: list[Interval] = []
+        for name in derived.operands:
+            found = spanned(declared(cls, name).classes, seen | {cls})
+            if isinstance(found, Unknown):
+                return found
+            operands.append(found)
+        return derived.interval(tuple(operands))
+    return root.bounds
+
+
+def spanned(
+    classes_: Iterable[type[BaseModel]], seen: frozenset[type[BaseModel]] = PLACED
+) -> Interval | Unknown:
+    """What any of several classes can be: the hull of their intervals; unknown when any is."""
+    found: list[Interval] = []
+    for c in classes_:
+        own = interval(c, seen)
+        if isinstance(own, Unknown):
+            return own
+        found.append(own)
+    return hull(found)
 
 
 def outcomes(left: Interval, right: Interval) -> frozenset[int]:
@@ -1854,12 +2163,17 @@ def comparisons(cls: type[BaseModel]) -> list[tuple[Options, Options, frozenset[
 def never(cls: type[BaseModel]) -> Literal["holds", "refuses"] | None:
     """``"holds"`` when some comparison a relation makes admits no ordering its operands'
     intervals allow, ``"refuses"`` when every comparison admits every ordering they allow, and
-    ``None`` otherwise, and for any class that is not a relation."""
+    ``None`` otherwise, for a comparison over an operand whose interval is unknown, and for
+    any class that is not a relation."""
     if not is_relation(cls):
         return None
     decided = True
     for left, right, admitted in comparisons(cls):
-        possible = outcomes(hull(map(interval, left)), hull(map(interval, right)))
+        lefts, rights = spanned(left), spanned(right)
+        if isinstance(lefts, Unknown) or isinstance(rights, Unknown):
+            decided = False
+            continue
+        possible = outcomes(lefts, rights)
         if not possible & admitted:
             return "holds"
         decided = decided and possible <= admitted
@@ -1883,9 +2197,12 @@ def certain(proof: Proof) -> list[InitErrorDetails]:
 
 def edges(cls: type[BaseModel]) -> list[Edge]:
     """A numeric class's interval as difference constraints against zero: ``x >= low`` is
-    ``0 - x <= -low``, ``x <= high`` is ``x - 0 <= high``."""
+    ``0 - x <= -low``, ``x <= high`` is ``x - 0 <= high``; none for an unknown interval, which
+    constrains nothing and so proves nothing exclusive."""
     found = interval(cls)
     constraints: list[Edge] = []
+    if isinstance(found, Unknown):
+        return constraints
     if found.low is not None:
         constraints.append((cls, ZERO, (-found.low, -1 if found.low_strict else 0)))
     if found.high is not None:
@@ -1956,10 +2273,14 @@ def contradicts(a: type[BaseModel], b: type[BaseModel]) -> bool:
 
 
 def exclusive(a: type[BaseModel], b: type[BaseModel]) -> bool:
-    """Whether two selections over the same elements admit disjoint counts."""
+    """Whether two selections over the same elements admit disjoint counts; not when either
+    count is unknown."""
     if collects(a)["of"] != collects(b)["of"]:
         return False
-    (low, high), (low_, high_) = declared(a, "of").length, declared(b, "of").length
+    first, second = declared(a, "of").length, declared(b, "of").length
+    if isinstance(first, Unknown) or isinstance(second, Unknown):
+        return False
+    (low, high), (low_, high_) = first, second
     return (high is not None and low_ > high) or (high_ is not None and low > high_)
 
 
@@ -2712,28 +3033,45 @@ async def performed_in_span(
     class name, the occurrence's concrete path, the pass it was built in, and ``tca.outcome``,
     which is the outcome its task has: ``heard``, once what the party said validated as the
     action's record, with the record's class name and path; ``failed``, the client's exception
-    or the refusal of what it returned, noted with the path and propagating, the span's status
-    set to error by the API; ``cancelled``, which is not the action's error and leaves the
-    status unset."""
+    or the refusal of what it returned, noted with the path and propagating, the span marked
+    as ``failing`` does; ``cancelled``, which is not the action's error and leaves the status
+    unset."""
     attributes = {
         "tca.party": type(action.party).__name__,
         "tca.site": ".".join(occurrence.path),
         "tca.pass": pass_,
     }
-    with tracer.start_as_current_span(type(action).__name__, attributes=attributes) as span:
+    with tracer.start_as_current_span(
+        type(action).__name__,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
         try:
             record = hear(action, await action.perform())
         except CancelledError:
             span.set_attribute("tca.outcome", "cancelled")
             raise
         except Exception as failure:
-            span.set_attribute("tca.outcome", "failed")
+            failing(span, failure)
             failure.add_note(f"at {'.'.join(occurrence.path)}")
             raise
         span.set_attribute("tca.outcome", "heard")
         span.set_attribute("tca.record", type(record).__name__)
         span.set_attribute("tca.heard", ".".join((*occurrence.path, HEARD)))
         return record
+
+
+def failing(span: Span, failure: BaseException) -> None:
+    """A span's failure, read from the exception that left it: ``tca.outcome`` failed, the
+    status error named with the exception's class, and one ``exception`` event with the
+    class alone. The exception's message and traceback stay out of the span: what a party
+    said or a request holds is in a refusal's message, and a span is exported."""
+    span.set_attribute("tca.outcome", "failed")
+    span.set_status(Status(StatusCode.ERROR, type(failure).__name__))
+    span.add_event(
+        "exception", {"exception.type": f"{type(failure).__module__}.{type(failure).__qualname__}"}
+    )
 
 
 async def answer[Q: Request, A: Reply[Fact]](
@@ -2756,20 +3094,23 @@ async def ran[Q: Request, A: Reply[Fact]](
     construction returned or raised: ``answered``, a ``Run``, with ``tca.passes``; ``refused``,
     a ``Blocked``, the business's no, as a value; ``failed``, anything raised, a construction
     that is not a refutation refusing, a party's exception in its pass's group, a deadlock or
-    any other, the span's status set to error by the API; ``cancelled``, from outside, which
+    any other, the span marked as ``failing`` does; ``cancelled``, from outside, which
     is no error of the run and leaves the status unset. Each record that entered a scope after
     its pass is one ``admitted`` event on the span, with the record's class and path: an action
     heard in a pass another action failed leaves none."""
     with tracer.start_as_current_span(
-        route.__name__, attributes={"tca.request": type(request).__name__}
+        route.__name__,
+        attributes={"tca.request": type(request).__name__},
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         try:
             found = await constructed(route, request, deployment, proof, span)
         except CancelledError:
             span.set_attribute("tca.outcome", "cancelled")
             raise
-        except Exception:
-            span.set_attribute("tca.outcome", "failed")
+        except Exception as failure:
+            failing(span, failure)
             raise
         if isinstance(found, Blocked):
             span.set_attribute("tca.outcome", "refused")
@@ -2793,7 +3134,8 @@ async def constructed[Q: Request, A: Reply[Fact]](
     paths of the actions cancelled with it. An action's effect may have happened whenever its
     task started: one heard returned a validated record, one failed or cancelled may have had
     its effect and returned none, and no record of the pass is admitted, which the group's note
-    says. A pass that constructs nothing ends the run as ``ended`` reads it."""
+    says; an action that cancelled itself fails the pass the same way, once every other task
+    is done. A pass that constructs nothing ends the run as ``ended`` reads it."""
     constructions = proof.constructs(route)
     root = Scope((), (), None)
     arrived(request, None, REQUEST, root)
@@ -2829,8 +3171,8 @@ async def constructed[Q: Request, A: Reply[Fact]](
         except BaseExceptionGroup as failed:
             failed.add_note(outcomes_of([o for o, _ in performed], tasks))
             raise
-        for (o, _), task in zip(performed, tasks, strict=True):
-            record = task.result()
+        records = heard_in([o for o, _ in performed], tasks, passes)
+        for (o, _), record in zip(performed, records, strict=True):
             arrived(record, o.construction, (), o.scope)
             span.add_event(
                 "admitted",
@@ -2853,6 +3195,17 @@ def goal_of(route: type[BaseModel], constructions: tuple[Construction, ...]) -> 
         unconstructed = f"{route.__name__} is constructed by none of the proof's constructions"
         raise LookupError(unconstructed)
     return own[0]
+
+
+def heard_in(performed: list[Occurrence], tasks: list[Task[Record]], pass_: int) -> list[Record]:
+    """Every record a pass's actions heard, taken from every task before any is admitted. A
+    task that cancelled itself leaves its group's exit silent, by ``TaskGroup``'s contract,
+    and is the pass failing, with what the others did: its effect may have happened, the
+    others' records are heard, and none is admitted."""
+    if any(task.cancelled() for task in tasks):
+        quit_ = f"an action of pass {pass_} cancelled itself; {outcomes_of(performed, tasks)}"
+        raise RuntimeError(quit_)
+    return [task.result() for task in tasks]
 
 
 def outcomes_of(performed: list[Occurrence], tasks: list[Task[Record]]) -> str:

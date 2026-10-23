@@ -988,3 +988,95 @@ async def test_one_resolver_serves_construction_and_explanation_and_only_a_block
     assert cause.state.action.construction is screen
     assert cause.state.record is blocked.occurrence.scope.arrived[screen, ()]
     assert isinstance(cause.state.record, program.Flagged)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_an_action_that_cancels_itself_fails_the_pass_and_admits_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+    flight = Flight(6)
+    monkeypatch.setattr(Quote, "perform", quoting(flight))
+
+    async def quitting(self: Screen) -> Json:
+        """A screening that cancels its own task once its siblings are waiting."""
+        await flight.full.wait()
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel()
+        await asyncio.sleep(0)
+        return Json(self.party.says.root)
+
+    monkeypatch.setattr(Screen, "perform", quitting)
+    request = PlaceOrder.model_validate_json(ORDER)
+
+    async def releasing() -> None:
+        await flight.full.wait()
+        await asyncio.sleep(0)
+        flight.gate.set()
+
+    release = asyncio.ensure_future(releasing())
+    with pytest.raises(RuntimeError) as failure:
+        await answer(Checkout, request, config(program)(), proven(program))
+    await release
+    said = str(failure.value)
+    assert said.startswith("an action of pass 1 cancelled itself; heard ")
+    assert said.endswith("; cancelled Screen; admitted none")
+    assert all(path in said for path in (*QUOTES.split(", "), "request.solo.lines.[0].Quote"))
+    assert flight.cancelled == []
+    spans = exporter.get_finished_spans()
+    (route,) = by_name(spans, "Checkout")
+    assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
+    assert route.status.status_code.name == "ERROR"
+    assert route.status.description == "RuntimeError"
+    assert admitted(route) == []
+    assert [(e.name, dict(e.attributes or {})) for e in route.events] == [
+        ("exception", {"exception.type": "builtins.RuntimeError"})
+    ]
+    (screen,) = by_name(spans, "Screen")
+    assert attributes(screen)["tca.outcome"] == "cancelled"
+    assert screen.status.status_code.name == "UNSET"
+    assert {attributes(s)["tca.outcome"] for s in by_name(spans, "Quote")} == {"heard"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_failed_actions_span_names_the_failure_and_carries_nothing_the_party_said(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = exporting()
+    flight = Flight(5)
+    leaked = '{"price": "a lot", "token": "sk-live-123"}'
+
+    async def leaking(self: Quote) -> Json:
+        """A catalog whose answer for one product is no price and carries a token."""
+        sku = self.line.sku.root
+        if sku == "junk":
+            await asyncio.sleep(0)
+            return Json(leaked)
+        await flight.held(sku)
+        return Json(json.dumps({"price": PRICES[sku]}))
+
+    monkeypatch.setattr(Quote, "perform", leaking)
+    request = PlaceOrder.model_validate_json(ORDER.replace('"pot"', '"junk"'))
+    with pytest.raises(ExceptionGroup) as group:
+        await answer(Checkout, request, config(program)(), proven(program))
+    (failed,) = group.value.exceptions
+    assert isinstance(failed, ValidationError)
+    assert {e["input"] for e in failed.errors()} == {"a lot", "sk-live-123"}
+    spans = exporter.get_finished_spans()
+    (route,) = by_name(spans, "Checkout")
+    (broken,) = [s for s in spans if s.name == "Quote" and s.status.status_code.name == "ERROR"]
+    assert route.status.description == "ExceptionGroup"
+    assert broken.status.description == "ValidationError"
+    assert [(e.name, dict(e.attributes or {})) for e in broken.events] == [
+        ("exception", {"exception.type": "pydantic_core._pydantic_core.ValidationError"})
+    ]
+    assert [e.name for e in route.events] == ["exception"]
+    exported = [
+        *(str(v) for s in spans for v in attributes(s).values()),
+        *(str(v) for s in spans for e in s.events for v in (e.attributes or {}).values()),
+        *(str(s.status.description) for s in spans),
+    ]
+    assert not any("a lot" in found or "sk-live" in found for found in exported)

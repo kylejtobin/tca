@@ -11,24 +11,31 @@ import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from decimal import Decimal
+from math import inf, isnan, nan
 from pathlib import Path
 from types import ModuleType
-from typing import Annotated, Literal, override
+from typing import Annotated, Literal, Self, override
 
 import pytest
 from annotated_types import Ge, Gt, Le, Len, Lt, MinLen
+from annotated_types import Interval as Range
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import (
+    AfterValidator,
     AliasChoices,
     AliasPath,
+    BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     PrivateAttr,
     ValidationError,
+    WrapValidator,
     computed_field,
+    model_validator,
 )
 from pydantic_core import PydanticSerializationError
 
@@ -36,7 +43,9 @@ from type_construction.engine import (
     ConstructedRef,
     HeardRef,
     InputRef,
+    Known,
     Proof,
+    Unknown,
     answer,
     asked,
     classes,
@@ -78,6 +87,7 @@ from type_construction.world import (
     Setting,
     Sum,
     Times,
+    Under,
     Value,
 )
 
@@ -587,8 +597,10 @@ def test_an_interval_is_read_from_the_bounds_the_default_or_the_operation() -> N
     assert interval(Limit) == Interval(low=Decimal(10), high=Decimal(10))
     assert interval(Portion) == Interval(low=Decimal(0))
     assert interval(Total) == Interval(low=Decimal(0))
-    assert outcomes(interval(Amount), interval(Limit)) == {-1, 0, 1}
-    assert outcomes(interval(FAULTS.SmallAmount), interval(FAULTS.LargeAmount)) == {-1}
+    assert outcomes(known(interval(Amount)), known(interval(Limit))) == {-1, 0, 1}
+    assert outcomes(known(interval(FAULTS.SmallAmount)), known(interval(FAULTS.LargeAmount))) == {
+        -1
+    }
 
 
 def test_a_scalar_over_int_has_no_value_between_two_integers() -> None:
@@ -927,6 +939,12 @@ def accepted(cls: type[Scalar[int]], values: range) -> list[int]:
     return found
 
 
+def known(found: Interval | Unknown) -> Interval:
+    """An interval the analysis knows; a test that needs one fails on what is unknown."""
+    assert isinstance(found, Interval), found
+    return found
+
+
 def within(interval: Interval, v: int) -> bool:
     """Whether an integer lies in an interval."""
     low_ok = interval.low is None or (
@@ -964,7 +982,7 @@ def test_bounds_are_what_pydantic_validates_whatever_the_order_of_the_constraint
     assert interval(Forward) == interval(Backward) == expected
     for cls in (Forward, Backward):
         for v in range(-3, 15):
-            assert within(found, v) == (v in accepted(cls, range(-3, 15))), (cls, v)
+            assert within(known(found), v) == (v in accepted(cls, range(-3, 15))), (cls, v)
 
 
 def test_a_repeated_constraint_keeps_what_pydantic_keeps_and_never_narrows_past_it() -> None:
@@ -977,7 +995,7 @@ def test_a_repeated_constraint_keeps_what_pydantic_keeps_and_never_narrows_past_
     for cls in (LastWins, FirstGone):
         found = declared(cls, "root").bounds
         admitted = accepted(cls, range(-2, 8))
-        assert [v for v in range(-2, 8) if within(found, v)] == admitted
+        assert [v for v in range(-2, 8) if within(known(found), v)] == admitted
     assert declared(LastWins, "root").bounds == Interval(low=Decimal(1))
     assert declared(FirstGone, "root").bounds == Interval(low=Decimal(4))
 
@@ -992,10 +1010,10 @@ def test_a_contradictory_scalar_is_empty_and_a_relation_over_it_never_holds() ->
     class Over(Beyond[Nothing, Limit]):
         """A relation over a scalar no value satisfies."""
 
-    assert interval(Nothing).empty
-    assert interval(Strict).empty
-    assert not interval(Amount).empty
-    assert outcomes(interval(Nothing), interval(Limit)) == frozenset()
+    assert known(interval(Nothing)).empty
+    assert known(interval(Strict)).empty
+    assert not known(interval(Amount)).empty
+    assert outcomes(known(interval(Nothing)), known(interval(Limit))) == frozenset()
     assert never(Over) == "holds"
     with pytest.raises(ValidationError):
         Nothing(Decimal(4))
@@ -1060,3 +1078,201 @@ def test_a_records_keys_are_every_alias_pydantic_accepts() -> None:
     assert declared(Named, "amount").aliases == {"total", "amount"}
     assert declared(Named, "amount").required_key is None
     assert Chosen.model_validate({"amt": Decimal(1), "data": {"word": "w"}, "plain": "p"}).word
+
+
+def test_a_value_changing_after_validator_and_a_bypassing_wrap_validator_leave_no_bound() -> None:
+    class Shifted(Scalar[int]):
+        """An integer at least 1, then shifted down past its bound."""
+
+        root: Annotated[int, Ge(1), AfterValidator(lambda v: v - 5)]
+
+    class Bypassed(Scalar[int]):
+        """An integer whose wrap validator never reaches its bound."""
+
+        root: Annotated[int, Ge(1), WrapValidator(lambda v, _handler: v)]
+
+    class Over(Beyond[Shifted, Limit]):
+        """A relation over an operand whose interval is unknown."""
+
+    assert Shifted(1).root == -4
+    assert Bypassed(0).root == 0
+    for cls, operation in ((Shifted, "function-after"), (Bypassed, "function-wrap")):
+        found = declared(cls, "root").bounds
+        assert found == Unknown(operation, ("model", operation))
+        assert interval(cls) == found
+    assert never(Over) is None
+    assert declared(Over, "ordering").output == Known(
+        numbers=Interval(low=Decimal(1), high=Decimal(1))
+    )
+
+
+def test_a_before_validator_over_a_native_bound_keeps_the_output_bound_not_input_acceptance() -> (
+    None
+):
+    def refusing(given: object) -> object:
+        nothing = f"{given!r} refused before the bound"
+        raise ValueError(nothing)
+
+    class Lifted(Scalar[int]):
+        """An integer lifted by ten before the bound: inputs under 1 construct."""
+
+        root: Annotated[int, Ge(1), BeforeValidator(lambda v: int(str(v)) + 10)]
+
+    class Refused(Scalar[int]):
+        """An integer at least 1 whose before validator refuses every input."""
+
+        root: Annotated[int, Ge(1), BeforeValidator(refusing)]
+
+    assert declared(Lifted, "root").bounds == Interval(low=Decimal(1))
+    assert declared(Refused, "root").bounds == Interval(low=Decimal(1))
+    assert accepted(Lifted, range(-15, 5)) == list(range(-9, 5))
+    assert all(within(Interval(low=Decimal(1)), Lifted(v).root) for v in range(-9, 5))
+    assert accepted(Refused, range(-15, 5)) == []
+
+
+def test_equivalent_compiled_constraints_are_one_summary_whoever_wrote_them() -> None:
+    class ByField(Scalar[int]):
+        root: int = Field(ge=1, lt=10)
+
+    class ByMetadata(Scalar[int]):
+        root: Annotated[int, Lt(10), Ge(1)]
+
+    class ByRange(Scalar[int]):
+        root: Annotated[int, Range(ge=1, lt=10)]
+
+    assert {declared(c, "root").output for c in (ByField, ByMetadata, ByRange)} == {
+        Known(numbers=Interval(low=Decimal(1), high=Decimal(9)))
+    }
+    assert {tuple(accepted(c, range(-2, 13))) for c in (ByField, ByMetadata, ByRange)} == {
+        tuple(range(1, 10))
+    }
+
+
+def test_an_unknown_interval_proves_nothing_exclusive_and_omits_the_never_diagnostic() -> None:
+    class Floor(Scalar[int]):
+        root: int = Field(le=10)
+
+    class Ceiling(Scalar[int]):
+        root: int = Field(ge=20)
+
+    class Shifted(Scalar[int]):
+        root: Annotated[int, Ge(20), AfterValidator(lambda v: v - 100)]
+
+    class Count(Scalar[int]):
+        root: int
+
+    class BelowFloor(Under[Count, Floor]):
+        """A count under a floor of at most 10."""
+
+    class AboveCeiling(Beyond[Count, Ceiling]):
+        """A count over a ceiling of at least 20."""
+
+    class AboveShifted(Beyond[Count, Shifted]):
+        """A count over a bound the analysis cannot know."""
+
+    class Lesser(Fact):
+        under: BelowFloor
+
+    class Greater(Fact):
+        over: AboveCeiling
+
+    class Shifty(Fact):
+        over: AboveShifted
+
+    classes_ = (Floor, Ceiling, Shifted, Count, BelowFloor, AboveCeiling, AboveShifted)
+    assert not coexist(Lesser, Greater, (*classes_, Lesser, Greater))
+    assert coexist(Lesser, Shifty, (*classes_, Lesser, Shifty))
+    assert never(AboveCeiling) is None
+    assert never(AboveShifted) is None
+    assert interval(Shifted) == Unknown("function-after", ("model", "function-after"))
+    assert AboveShifted(value=Count(1), bound=Shifted(50)).ordering == 1
+
+
+def test_a_kinds_own_validator_keeps_its_types_bound_and_every_output_lies_in_it() -> None:
+    assert declared(Low, "ordering").output == Known(
+        numbers=Interval(low=Decimal(-1), high=Decimal(0))
+    )
+    assert declared(Largest, "of").output == Known(lengths=(1, None))
+    assert declared(Only[Element], "of").output == Known(lengths=(1, 1))
+    assert declared(Portion, "root").output == Known()
+    assert interval(Portion) == Interval(low=Decimal(0))
+    orderings: set[int] = set()
+    for amount in (Decimal("0.5"), Decimal(10), Decimal(11)):
+        try:
+            orderings.add(Low(value=Amount(amount), bound=Limit()).ordering)
+        except ValidationError:
+            continue
+    assert orderings == {-1, 0}
+    with pytest.raises(ValidationError):
+        Largest(of=())
+    portion = Portion(left=Share(Decimal(1)), right=Amount(Decimal(2)))
+    assert len(Largest(of=(portion,)).of) >= 1
+    assert len(Only[Element](of=(Element(name=Name("a")),)).of) == 1
+
+
+def test_extra_outcomes_and_every_branch_are_kept() -> None:
+    class Shapes(BaseModel):
+        model_config = ConfigDict(validate_default=False)
+
+        maybe: Decimal | None = Field(gt=0)
+        count: int = Field(default=-5, ge=1)
+        made: int = Field(default_factory=lambda: 7, ge=1)
+        either: Annotated[int, Ge(1)] | Annotated[Decimal, Ge(5)]
+        tainted: Annotated[int, Ge(1)] | Annotated[Decimal, Ge(5), AfterValidator(lambda v: v)]
+        few: tuple[int, ...] = Field(default=(1, 2, 3), max_length=2)
+
+    at = ("model", "model-fields", "model-field")
+    assert declared(Shapes, "maybe").output == Known(
+        numbers=Interval(low=Decimal(0), low_strict=True), none=True
+    )
+    assert declared(Shapes, "count").output == Known(numbers=Interval(low=Decimal(-5)))
+    assert declared(Shapes, "made").output == Unknown("default_factory", (*at, "default"))
+    assert declared(Shapes, "either").output == Known(numbers=Interval(low=Decimal(1)))
+    assert declared(Shapes, "tainted").output == Unknown(
+        "function-after", (*at, "union", "function-after")
+    )
+    assert declared(Shapes, "few").output == Known(lengths=(0, 3))
+    made = Shapes(maybe=None, either=1, tainted=Decimal(5))
+    assert (made.count, made.few) == (-5, (1, 2, 3))
+
+
+def test_a_number_admitting_nan_is_unknown_and_a_bound_refusing_it_is_known() -> None:
+    class Loose(BaseModel):
+        value: float
+        bounded: float = Field(gt=0)
+        exact: Decimal
+        finite: float = Field(allow_inf_nan=False)
+
+    at = ("model", "model-fields", "model-field")
+    assert declared(Loose, "value").output == Unknown("allow_inf_nan", (*at, "float"))
+    assert declared(Loose, "bounded").output == Known(
+        numbers=Interval(low=Decimal(0), low_strict=True)
+    )
+    assert declared(Loose, "exact").output == Known()
+    assert declared(Loose, "finite").output == Known()
+    fine = {"value": 1.0, "bounded": 1.0, "exact": Decimal(1), "finite": 1.0}
+    assert isnan(Loose.model_validate({**fine, "value": nan}).value)
+    assert Loose.model_validate({**fine, "bounded": inf}).bounded == inf
+    for name, given in (("bounded", nan), ("exact", Decimal("NaN")), ("finite", inf)):
+        with pytest.raises(ValidationError):
+            Loose.model_validate({**fine, name: given})
+
+
+def test_a_validator_around_the_model_leaves_its_fields_unknown_and_a_before_one_passes() -> None:
+    class Checked(BaseModel):
+        amount: int = Field(ge=1)
+
+        @model_validator(mode="after")
+        def same(self) -> Self:
+            return self
+
+    class Fed(BaseModel):
+        amount: int = Field(ge=1)
+
+        @model_validator(mode="before")
+        @classmethod
+        def feed(cls, data: object) -> object:
+            return data
+
+    assert declared(Checked, "amount").output == Unknown("function-after", ("function-after",))
+    assert declared(Fed, "amount").output == Known(numbers=Interval(low=Decimal(1)))
