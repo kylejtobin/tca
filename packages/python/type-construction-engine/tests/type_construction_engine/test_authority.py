@@ -22,6 +22,7 @@ from type_construction import engine
 from type_construction.engine import (
     Blocked,
     Constructed,
+    ConstructedRef,
     Execution,
     Invocation,
     Occurrence,
@@ -51,12 +52,14 @@ from type_construction.world import (
     Route,
     Scalar,
     Setting,
+    Under,
     Value,
 )
 
 from . import occurrences, optional
 from .test_execution import attributes
 from .test_occurrences import ORDER, exporting
+from .test_proof import unproven
 
 
 class Performed(NamedTuple):
@@ -358,7 +361,14 @@ async def test_notify_is_performed_only_for_the_element_whose_own_high_evidence_
     by_action = {j.action.cls: j for j in proof.justifications}
     assert set(by_action) == {Ask, Notify}
     assert all(j.established for j in by_action.values())
-    assert by_action[Ask].joint.ways == ()
+    assert [u.construction.cls for u in by_action[Ask].uses] == [Low, High]
+    assert [c.use.construction.cls for c in by_action[Ask].coverages if c.use] == [Low]
+    (coverage,) = by_action[Notify].coverages
+    assert coverage.use is not None
+    assert coverage.use.construction.cls is Dear
+    assert coverage.use.field == "noted"
+    assert [name for name, _ in coverage.use.conditions] == ["element", "high"]
+    assert any(isinstance(s, ConstructedRef) and s.cls is High for s in coverage.world)
 
 
 @pytest.mark.asyncio
@@ -443,10 +453,9 @@ def test_a_branch_specific_action_without_its_deciding_premise_is_refused_at_sta
     faults = faults_of(UNGUARDED)
     assert set(faults) == {("undecided", ("Ping",))}
     assert faults["undecided", ("Ping",)] == (
-        "Ping at request.each.[] is performed when ConcludedPinged.valued holds Cheap at"
-        " request.each.[].Cheap as when it holds DearPinged at request.each.[].DearPinged; High at"
-        " request.each.[].High, which DearPinged at request.each.[].DearPinged needs, would decide"
-        " it, and Ping holds nothing that does"
+        "Ping at request.each.[] is performed where Low at request.each.[].Low holds, excluding"
+        " High at request.each.[].High, which DearPinged at request.each.[].DearPinged needs; Ping"
+        " holds nothing that decides it"
     )
     assert PERFORMED == []
 
@@ -640,16 +649,23 @@ async def test_an_action_under_several_alternatives_is_accepted_only_where_its_e
     faults = faults_of(NESTED_LOOSE)
     assert set(faults) == {("undecided", ("ChargeLoose",))}
     assert faults["undecided", ("ChargeLoose",)] == (
-        "ChargeLoose at request.each.[] is performed when Priced.which holds SmallYes at"
-        " request.each.[].SmallYes as when it holds BigYes at request.each.[].BigYes; High at"
-        " request.each.[].High, which BigYes at request.each.[].BigYes needs, would decide it, and"
-        " ChargeLoose holds nothing that does"
+        "ChargeLoose at request.each.[] is performed where Yes at request.each.[].Judge.heard, Low"
+        " at request.each.[].Low hold, excluding High at request.each.[].High, which BigYes at"
+        " request.each.[].BigYes needs; ChargeLoose holds nothing that decides it"
     )
     proof = proven(NESTED)
     by_action = {j.action.cls: j for j in proof.justifications}
     assert all(j.established for j in by_action.values())
-    assert by_action[Judge].joint.ways == ()
-    assert by_action[Charge].joint.open == ()
+    assert [u.construction.cls for u in by_action[Judge].uses] == [BigYes, SmallYes, BigNo, SmallNo]
+    assert [c.use.construction.cls for c in by_action[Judge].coverages if c.use] == [
+        SmallYes,
+        BigYes,
+    ]
+    assert [u.construction.cls for u in by_action[Charge].uses] == [BigYes, BigNo]
+    assert [c.use.construction.cls for c in by_action[Charge].coverages if c.use] == [
+        BigYes,
+        BigNo,
+    ]
     judged(
         {"a": "50", "b": "50", "c": "5", "d": "5"}, {"a": "yes", "b": "no", "c": "yes", "d": "no"}
     )
@@ -728,6 +744,19 @@ async def test_equal_values_reused_objects_siblings_routes_and_invocations_keep_
     assert unauthorized(
         Invocation(Operation, proof, done.root, set()), Occurrence(elsewhere, first.construction)
     ) == ("its scope is not one this invocation opened at its site")
+    first_ask, second_ask, _ = occurrences_of(done.root, Ask)
+    made_first_ask, made_second_ask = first_ask.made, second_ask.made
+    assert isinstance(made_first_ask, Constructed)
+    assert isinstance(made_second_ask, Constructed)
+    assert made_first_ask.supplied.premises["element"].found.instance is element
+    assert made_second_ask.supplied.premises["element"].found.instance is element
+    assert made_first_ask.supplied.premises["element"].found.owner is first_ask.scope
+    assert made_second_ask.supplied.premises["element"].found.owner is second_ask.scope
+    second_ask.scope.made[second_ask.construction] = made_first_ask
+    assert unauthorized(Invocation(Operation, proof, done.root, set()), second_ask) == (
+        "element dereferences to another occurrence than the one that supplied it"
+    )
+    second_ask.scope.made[second_ask.construction] = made_second_ask
     PERFORMED.clear()
     parties({"a": "20", "b": "30"})
     first_run, second_run = await asyncio.gather(
@@ -743,6 +772,35 @@ async def test_equal_values_reused_objects_siblings_routes_and_invocations_keep_
     assert {id(h) for h in notified(second_run).values()} == {
         p.evidence for p in performed(Notify) if p.subject == "30"
     }
+
+
+@pytest.mark.asyncio
+async def test_two_invocations_sharing_request_and_deployment_objects_witness_their_own(
+    parties: Callable[[dict[str, str]], None],
+) -> None:
+    proof = proven(TWO_ROUTES)
+    parties({"a": "20"})
+    shared, deployment = requested("a"), config(TWO_ROUTES)()
+    one, other = await asyncio.gather(
+        ran(Operation, shared, deployment, proof), ran(Operation, shared, deployment, proof)
+    )
+    assert isinstance(one, Run)
+    assert isinstance(other, Run)
+    assert [p.subject for p in performed(Notify)] == ["20", "20"]
+    (mine,), (theirs,) = occurrences_of(one.root, Notify), occurrences_of(other.root, Notify)
+    made_mine, made_theirs = mine.made, theirs.made
+    assert isinstance(made_mine, Constructed)
+    assert isinstance(made_theirs, Constructed)
+    party_mine = made_mine.supplied.premises["party"].found
+    party_theirs = made_theirs.supplied.premises["party"].found
+    assert party_mine.instance is party_theirs.instance
+    assert party_mine.owner is one.root
+    assert party_theirs.owner is other.root
+    assert party_mine.path == party_theirs.path == ("deployment", "teller")
+    theirs.scope.made[theirs.construction] = made_mine
+    assert unauthorized(Invocation(Operation, proof, other.root, set()), theirs) == (
+        "party dereferences to another occurrence than the one that supplied it"
+    )
 
 
 @pytest.mark.asyncio
@@ -844,7 +902,9 @@ async def test_a_substituted_premise_a_foreign_action_or_a_mismatched_pair_is_ne
     first.scope.made[first.construction] = Constructed(made_second.instance, made_first.supplied)
     assert unauthorized(fresh, first) == "high hold other instances than were supplied"
     first.scope.made[first.construction] = Constructed(made_second.instance, made_second.supplied)
-    assert unauthorized(fresh, first) == "high no longer dereferences to what supplied it"
+    assert unauthorized(fresh, first) == (
+        "high dereferences to another occurrence than the one that supplied it"
+    )
     high = made_first.supplied.premises["high"].found.instance
     assert isinstance(high, High)
     assert isinstance(made_first.instance, Notify)
@@ -863,6 +923,95 @@ async def test_a_substituted_premise_a_foreign_action_or_a_mismatched_pair_is_ne
             " invocation already",
         )
     ]
+
+
+class Impostor(Action[Teller, Noted]):
+    """An action of another class holding a party and a high as ``Notify`` does: in no program,
+    constructed by no proof's construction, justified by nothing."""
+
+    high: High
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(Impostor, str(self.high.value.root), id(self.high)))
+        return Json(self.party.says.root)
+
+
+class Masked(Action[Teller, Noted]):
+    """Tell the teller about an element valued high, with a validator that returns an impostor
+    holding the same party and the same high in place of the instance Pydantic constructed."""
+
+    high: High
+
+    @model_validator(mode="after")
+    def mask(self) -> Self:
+        return Impostor(high=self.high, party=self.party)  # type: ignore[return-value]
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(Masked, str(self.high.value.root), id(self.high)))
+        return Json(self.party.says.root)
+
+
+class DearMasked(Fact):
+    """An element valued high, told about through the masked action."""
+
+    element: Element
+    high: High
+    noted: Noted
+
+
+class ConcludedMasked(Fact):
+    """Every element valued."""
+
+    valued: tuple[Cheap | DearMasked, ...]
+
+
+class AnsweredMasked(Reply[ConcludedMasked]):
+    """What leaves."""
+
+
+class MaskOperation(Route[Elements, AnsweredMasked]):
+    """Value each element through the masked action."""
+
+
+MASKED = program_of(
+    *CORE, Noted, Masked, Cheap, DearMasked, ConcludedMasked, AnsweredMasked, MaskOperation
+)
+"""The program whose action's validator substitutes another action for itself."""
+
+
+@pytest.mark.asyncio
+async def test_an_action_of_another_class_than_the_construction_makes_never_reaches_perform(
+    parties: Callable[[dict[str, str]], None],
+) -> None:
+    parties({"a": "50"})
+    proof = proven(MASKED)
+    (masked,) = (j for j in proof.justifications if j.action.cls is Masked)
+    assert masked.established
+    assert (
+        type(
+            Masked.model_validate(
+                {
+                    "high": High(value=Amount(Decimal(50)), bound=Limit()),
+                    "party": Teller(says=Said("{}")),
+                }
+            )
+        )
+        is Impostor
+    )
+    with pytest.raises(ValidationError) as failure:
+        await valued(MASKED, "a", route=MaskOperation, proof=proof)
+    assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
+        (
+            "substituted",
+            ("Masked",),
+            "Masked at request.each.[0].Masked constructed Impostor, not itself",
+        )
+    ]
+    assert performed(Impostor) == []
+    assert performed(Masked) == []
+    assert [p.subject for p in performed(Ask)] == ["a"]
 
 
 # --- 7. admission timing ----------------------------------------------------------------------
@@ -901,10 +1050,40 @@ async def test_pending_refuted_failed_and_unadmitted_evidence_authorizes_nothing
 # --- 8. the batch is preflighted before any task is created ----------------------------------
 
 
+type Forgery = Literal["premise", "action", "witness"]
+"""How a candidate after a valid one is forged: the first element's high in place of the
+second's, an impostor of another class in place of the second ``Notify``, or the first
+element's ``Ask`` witness grafted onto the second's, the two elements being one object."""
+
+REFUSED: dict[str, tuple[str, str]] = {
+    "premise": (
+        "Notify",
+        "Notify at request.each.[1].Notify is not performed: high hold other instances than were"
+        " supplied",
+    ),
+    "action": (
+        "Notify",
+        "Notify at request.each.[1].Notify is not performed: it is Impostor, not the Notify the"
+        " construction makes",
+    ),
+    "witness": (
+        "Ask",
+        "Ask at request.each.[1].Ask is not performed: element dereferences to another occurrence"
+        " than the one that supplied it",
+    ),
+}
+"""The one refusal each forgery meets, at the forged occurrence."""
+
+
 @pytest.mark.asyncio
+@pytest.mark.parametrize("forgery", ["premise", "action", "witness"])
 @pytest.mark.parametrize("eager", [False, True])
 async def test_an_invalid_candidate_after_a_valid_one_starts_no_action_of_the_batch(
-    parties: Callable[[dict[str, str]], None], monkeypatch: pytest.MonkeyPatch, *, eager: bool
+    parties: Callable[[dict[str, str]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    forgery: Forgery,
+    eager: bool,
 ) -> None:
     loop = asyncio.get_running_loop()
     factory = loop.get_task_factory()
@@ -912,18 +1091,26 @@ async def test_an_invalid_candidate_after_a_valid_one_starts_no_action_of_the_ba
         loop.set_task_factory(asyncio.eager_task_factory)
     try:
         parties({"a": "50", "b": "60"})
-        done = await valued(PROGRAM, "a", "b")
-        assert sorted(p.subject for p in performed(Notify)) == ["50", "60"]
+        element = Element(name=Name("a"))
+        request = Elements(each=(element, element)) if forgery == "witness" else requested("a", "b")
+        proof = proven(PROGRAM)
+        done = await ran(Operation, request, config(PROGRAM)(), proof)
+        assert isinstance(done, Run)
+        expected = ["50", "50"] if forgery == "witness" else ["50", "60"]
+        assert sorted(p.subject for p in performed(Notify)) == expected
         PERFORMED.clear()
         constructing = engine.construct
-        witnessing = engine.witnessed
-        notifies: list[BaseModel] = []
+        notifies: list[Notify] = []
+        grafts: list[Constructed] = []
 
         def forging(occurrence: Occurrence, given: engine.Given) -> BaseModel | ValidationError:
             found = constructing(occurrence, given)
-            if occurrence.construction.cls is Notify and isinstance(found, BaseModel):
+            if isinstance(found, Notify):
                 notifies.append(found)
-                return notifies[0]
+                if forgery == "premise":
+                    return notifies[0]
+                if forgery == "action" and len(notifies) == 2:
+                    return Impostor(high=found.high, party=found.party)
             return found
 
         def unchecked(
@@ -931,28 +1118,187 @@ async def test_an_invalid_candidate_after_a_valid_one_starts_no_action_of_the_ba
             instance: BaseModel,
             supplied: engine.Bound,
         ) -> Constructed:
-            return Constructed(instance, supplied)
+            made = Constructed(instance, supplied)
+            if forgery == "witness" and occurrence.construction.cls is Ask:
+                grafts.append(made)
+                return grafts[0]
+            return made
 
         monkeypatch.setattr(engine, "construct", forging)
         monkeypatch.setattr(engine, "witnessed", unchecked)
         with pytest.raises(ValidationError) as failure:
-            await valued(PROGRAM, "a", "b")
+            await ran(Operation, request, config(PROGRAM)(), proof)
+        cls, message = REFUSED[forgery]
         assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
-            (
-                "unauthorized",
-                ("Notify",),
-                "Notify at request.each.[1].Notify is not performed: high hold other instances"
-                " than were supplied",
-            )
+            ("unauthorized", (cls,), message)
         ]
-        assert len(notifies) == 2
         assert performed(Notify) == []
-        assert [p.subject for p in performed(Ask)] == ["a", "b"]
-        monkeypatch.setattr(engine, "construct", constructing)
-        monkeypatch.setattr(engine, "witnessed", witnessing)
-        assert isinstance(done, Run)
+        assert performed(Impostor) == []
+        assert [p.subject for p in performed(Ask)] == ([] if forgery == "witness" else ["a", "b"])
     finally:
         loop.set_task_factory(factory)
+
+
+# --- 9. a competing branch excluded justifies nothing: the use's own evidence does ------------
+
+
+class Reading(Scalar[Decimal]):
+    """A measurement that arrives."""
+
+    root: Decimal
+
+
+class Measured(Request):
+    """What arrives: one reading."""
+
+    reading: Reading
+
+
+class Zero(Scalar[Decimal]):
+    """The reading under which a reading is negative."""
+
+    root: Decimal = Decimal(0)
+
+
+class Ten(Scalar[Decimal]):
+    """The reading beyond which a reading is over."""
+
+    root: Decimal = Decimal(10)
+
+
+class Negative(Under[Reading, Zero]):
+    """A reading under zero."""
+
+
+class Within(AtMost[Reading, Ten]):
+    """A reading at most ten: holds of every negative reading, and of others."""
+
+
+class Over(Beyond[Reading, Ten]):
+    """A reading over ten."""
+
+
+class Told(Record):
+    """What the teller says."""
+
+    word: Word
+
+
+class TellWithin(Action[Teller, Told]):
+    """Tell the teller of a reading at most ten: used only where the reading is negative, of
+    which this holds nothing."""
+
+    within: Within
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(TellWithin, str(self.within.value.root)))
+        return Json(self.party.says.root)
+
+
+class TellNegative(Action[Teller, Told]):
+    """Tell the teller of a negative reading: holds the evidence its use needs."""
+
+    negative: Negative
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(TellNegative, str(self.negative.value.root)))
+        return Json(self.party.says.root)
+
+
+class Below(Fact):
+    """A negative reading, told of."""
+
+    negative: Negative
+    told: Told
+
+
+class Above(Fact):
+    """A reading over ten."""
+
+    over: Over
+
+
+class Decided(Fact):
+    """Below or above: nothing is concluded of a reading between."""
+
+    which: Below | Above
+
+
+class DecidedReply(Reply[Decided]):
+    """What leaves."""
+
+
+class Decide(Route[Measured, DecidedReply]):
+    """Decide a reading."""
+
+
+class Telling(Config):
+    """The teller."""
+
+    teller: Teller
+
+
+READINGS: tuple[type[object], ...] = (
+    Reading,
+    Measured,
+    Zero,
+    Ten,
+    Negative,
+    Over,
+    Said,
+    Teller,
+    Word,
+    Told,
+    Below,
+    Above,
+    Decided,
+    DecidedReply,
+    Decide,
+    Telling,
+)
+"""The two branches, without the action."""
+
+NONEXHAUSTIVE = program_of(*READINGS, Within, TellWithin)
+"""The program whose action holds a reading at most ten, used only where it is negative: the
+other branch, over ten, is excluded by the action's premise, and a reading between is in
+neither."""
+
+GUARDED = program_of(*READINGS, TellNegative)
+"""The same program with the action holding the evidence its use needs."""
+
+
+def measured(reading: str) -> Measured:
+    """A request of one reading."""
+    return Measured(reading=Reading(Decimal(reading)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("parties")
+async def test_a_branch_action_is_not_justified_by_the_competing_branch_being_excluded() -> None:
+    faults = faults_of(NONEXHAUSTIVE)
+    assert set(faults) == {("undecided", ("TellWithin",))}
+    assert faults["undecided", ("TellWithin",)] == (
+        "TellWithin at the root is performed before Negative at Negative, which Below at Below"
+        " needs, is established; TellWithin holds nothing that establishes it"
+    )
+    assert PERFORMED == []
+    done = await ran(
+        Decide, measured("5"), config(NONEXHAUSTIVE)(), unproven(NONEXHAUSTIVE, Decide)
+    )
+    assert isinstance(done, Blocked)
+    assert [p.subject for p in performed(TellWithin)] == ["5"]
+    PERFORMED.clear()
+    proof = proven(GUARDED)
+    (negative,) = proof.justifications
+    assert [u.construction.cls for u in negative.uses] == [Below]
+    assert [c.use.construction.cls for c in negative.coverages if c.use] == [Below]
+    for reading, outcome, told in (("5", Blocked, []), ("-1", Run, ["-1"]), ("50", Run, [])):
+        PERFORMED.clear()
+        done = await ran(Decide, measured(reading), config(GUARDED)(), proof)
+        assert isinstance(done, outcome)
+        assert [p.subject for p in performed(TellNegative)] == told
 
 
 # --- 10. conditional programs and other capability implementations ---------------------------

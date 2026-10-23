@@ -207,9 +207,7 @@ def unproven[Q: Request, A: Reply[Fact]](program: ModuleType, route: type[Route[
         exclusions=exclusions(found.constructions),
         existences=(),
         justifications=tuple(
-            Justification(c, (), Joint((ConstructedRef(c),), ()))
-            for c in found.constructions
-            if issubclass(c.cls, Action)
+            Justification(c, (), ()) for c in found.constructions if issubclass(c.cls, Action)
         ),
     )
 
@@ -404,12 +402,7 @@ def test_competing_producers_are_accepted_only_where_both_are_never_available() 
     assert which.established
     assert [c.why for c in which.joint.clashes] == ["ordering"]
     faults = faults_of(LOOSE)
-    assert set(faults) == {("ambiguous", ("Loose", "which")), ("undecided", ("Ask",))}
-    assert faults["undecided", ("Ask",)] == (
-        "Ask at request.each.[] is performed when Loose.which holds Other at request.each.[].Other"
-        " as when it holds Cheap at request.each.[].Cheap; nothing Cheap at request.each.[].Cheap"
-        " needs excludes Other at request.each.[].Other"
-    )
+    assert set(faults) == {("ambiguous", ("Loose", "which"))}
     assert faults["ambiguous", ("Loose", "which")] == (
         "Loose.which at request.each.[] may hold both Cheap at request.each.[].Cheap and Other at"
         " request.each.[].Other; with Low at request.each.[].Low holding, nothing excludes either"
@@ -1027,7 +1020,7 @@ MINGLED = program_of(
 
 def test_alternative_branches_keep_their_separate_assumptions() -> None:
     faults = faults_of(MINGLED)
-    assert set(faults) == {("ambiguous", ("Mingled", "which")), ("undecided", ("Ask",))}
+    assert set(faults) == {("ambiguous", ("Mingled", "which"))}
     proof = unproven(MINGLED, MingleOperation)
     found = by_class(proof)
     low, high = ConstructedRef(found[Low]), ConstructedRef(found[High])
@@ -1192,7 +1185,7 @@ async def test_bounded_runs_never_contradict_established_exclusions(
                 ]
 
 
-def test_an_action_is_justified_by_its_own_premises_excluding_every_way_without_it() -> None:
+def test_an_action_is_justified_by_its_premises_establishing_a_use_of_it() -> None:
     proof = proven(test_engine.PROGRAM)
     found = placed(proof, test_engine.Operation)
     valued = exclusion_at(proof, test_engine.Concluded, "valued")
@@ -1202,11 +1195,22 @@ def test_an_action_is_justified_by_its_own_premises_excluding_every_way_without_
     by_action = {j.action.cls: j for j in proof.justifications}
     assert set(by_action) == {test_engine.Asked, test_engine.Notify}
     assert all(j.established for j in by_action.values())
-    assert all(j.concluding == (found[test_engine.Operation, ()],) for j in by_action.values())
-    assert by_action[test_engine.Asked].joint.ways == ()
-    notify = by_action[test_engine.Notify].joint
-    assert notify.open == ()
-    assert {c.why for c in notify.clashes} == {"ordering"}
+    asked = by_action[test_engine.Asked]
+    assert {u.construction.cls for u in asked.uses} >= {test_engine.Low, test_engine.High}
+    assert all(c.use is not None for c in asked.coverages)
+    notify = by_action[test_engine.Notify]
+    assert [u.construction for u in notify.uses] == [found[test_engine.Dear, ELEMENT]]
+    (coverage,) = notify.coverages
+    assert coverage.use is not None
+    assert coverage.use.field == "noted"
+    assert [name for name, _ in coverage.use.conditions] == [
+        "element",
+        "high",
+        "portions",
+        "largest",
+    ]
+    assert ConstructedRef(found[test_engine.High, ELEMENT]) in coverage.world
+    assert ConstructedRef(found[test_engine.Largest, ELEMENT]) in coverage.world
 
 
 def test_the_proof_keeps_each_conclusion_with_its_ways_and_clashes() -> None:

@@ -435,7 +435,7 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
         if s.name != "Operation":
             assert parented([s], routes[trace_of(s)])
     (notify,) = by_name(spans, "Notify")
-    assert attributes(notify)["tca.pass"] == 2
+    assert attributes(notify)["tca.pass"] == 3
     assert {attributes(s)["tca.outcome"] for s in spans if s.name != "Operation"} == {"heard"}
     for trace, route in routes.items():
         assert attributes(route)["tca.outcome"] == "answered"
@@ -450,7 +450,7 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
         ["request.each.[0].Asked", "request.each.[0].Notify"],
         ["request.each.[0].Asked", "request.each.[1].Asked"],
     ]
-    assert (done.passes, later.passes) == (4, 4)
+    assert (done.passes, later.passes) == (4, 5)
 
 
 @pytest.mark.asyncio
@@ -720,7 +720,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             stalls.Low,
             ELEMENT,
             premises={
-                "value": (heard.held(stalls.Amount, "amount", optional=False),),
+                "value": (heard.held(stalls.Amount, "amount", conditional=False),),
                 "bound": (InputRef((), ("Limit",), stalls.Limit),),
             },
         ),
