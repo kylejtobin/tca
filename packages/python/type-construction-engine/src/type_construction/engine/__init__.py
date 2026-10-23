@@ -949,25 +949,6 @@ class Symbolic(NamedTuple):
     faulted: list[Fault]
 
 
-def placement(
-    route: type[BaseModel], cls: type[BaseModel], context: Context, binding: Binding
-) -> Placement:
-    """A binding as the run reads it: sites in place of symbols."""
-    return Placement(
-        route=route,
-        cls=cls,
-        scope=context.site,
-        singles={
-            n: tuple(dict.fromkeys(s.site for s in found)) for n, found in binding.singles.items()
-        },
-        freshly=binding.freshly,
-        collections={
-            n: Collected(site=g.site, elements=tuple(dict.fromkeys(e.site for e in g.elements)))
-            for n, g in binding.collections.items()
-        },
-    )
-
-
 def symbolic[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], classes_: tuple[type[BaseModel], ...]
 ) -> Symbolic:
@@ -1981,16 +1962,6 @@ class Bound(NamedTuple):
     unfilled: dict[Premise, list[tuple[Scope, Site]]]
 
 
-class Cause(NamedTuple):
-    """Why a premise of an occurrence can never be filled by one of its candidates: a relation
-    or a selection whose declared condition did not hold, or a site that resolved without what
-    the premise holds."""
-
-    code: Literal["relation", "missing"]
-    loc: tuple[str, ...]
-    message: str
-
-
 def found_at(sites: Iterable[Site], classes_: Options, scope: Scope) -> list[Found]:
     """The instances of the classes a scope sees at any of the sites, with their paths: two
     alternatives share a site, and the one that arrived is the one whose class the field
@@ -2097,155 +2068,6 @@ def rendered(cls: type[BaseModel], refusal: ValidationError, provenance: Provena
     return "; ".join(error["msg"] for error in refusal.errors())
 
 
-def producer(
-    site: Site, scope: Scope, placements: tuple[Placement, ...]
-) -> tuple[Occurrence, Site] | None:
-    """The occurrence a bound site is constructed by, seen from a scope: the placement, in the
-    scope or an ancestor, whose own site is a prefix of it, with the path under that site,
-    ``()`` for the construction itself and ``("heard", ...)`` for what its record holds;
-    ``None`` for a site that arrives, under the request, the deployment or a constant."""
-    for scope_ in scope.chain:
-        for placed in placements:
-            if placed.scope == scope_.site:
-                made = Occurrence(scope_, placed)
-                if site[: len(made.site)] == made.site:
-                    return made, site[len(made.site) :]
-    return None
-
-
-def candidate(
-    site: Site, scope: Scope, placements: tuple[Placement, ...], consumer: Occurrence, name: str
-) -> Occurrence | Cause:
-    """What could still fill a bound site of a consumer's premise that the scope does not see:
-    the pending occurrence that constructs it; else the cause why nothing will: the site arrived
-    without it, the occurrence that constructs it was refuted, or that occurrence heard a record
-    without it."""
-    placed = consumer.placed
-    classes_ = {**holds(placed.cls), **collects(placed.cls)}[name]
-    unfilled = (
-        f"no instance fills {placed.cls.__name__}.{name} at {'.'.join(consumer.path)}, which"
-        f" holds {names(classes_)}"
-    )
-    made = producer(site, scope, placements)
-    if made is None:
-        absent = next(s.at(site) for s in scope.chain if site[: len(s.site)] == s.site)
-        return Cause(
-            "missing", (placed.cls.__name__, name), f"{unfilled}; {'.'.join(absent)} is absent"
-        )
-    occurrence, rest = made
-    cls = occurrence.placed.cls.__name__
-    if (refuted := occurrence.refuted) is not None:
-        why = rendered(occurrence.placed.cls, refuted.refusal, refuted.provenance)
-        return Cause(
-            "relation", (cls,), f"{cls} at {'.'.join(occurrence.path)} did not hold: {why}"
-        )
-    if occurrence.constructed is None:
-        return occurrence
-    heard_ = occurrence.scope.owned.get((*occurrence.site, HEARD))
-    said = "nothing" if heard_ is None else type(heard_).__name__
-    without = f" without {'.'.join(rest[1:])}" if len(rest) > 1 else ""
-    return Cause(
-        "missing",
-        (placed.cls.__name__, name),
-        f"{unfilled}; {cls} at {'.'.join(occurrence.path)} heard {said}{without}",
-    )
-
-
-type Candidates = dict[Premise, list[Occurrence | Cause]]
-"""What could still fill each unfilled premise of an occurrence, or why nothing will."""
-
-
-def blocked_by(premises: Candidates, blocked: Mapping[Site, list[Cause]]) -> list[Cause]:
-    """The causes of every premise of an occurrence that nothing can fill any more: each pending
-    occurrence that could have is blocked, and their causes are its causes; empty while every
-    unfilled premise still has a pending occurrence that could fill it."""
-    return [
-        cause
-        for candidates in premises.values()
-        if all(c.path in blocked for c in candidates if isinstance(c, Occurrence))
-        for c in candidates
-        for cause in ([c] if isinstance(c, Cause) else blocked[c.path])
-    ]
-
-
-def waited_on(start: Site, pending: Mapping[Site, tuple[Occurrence, Candidates]]) -> list[Site]:
-    """An occurrence and every occurrence it waits on, transitively, in order of reach."""
-    found: list[Site] = []
-    todo = [start]
-    while todo:
-        path = todo.pop(0)
-        if path in found or path not in pending:
-            continue
-        found.append(path)
-        todo.extend(
-            c.path
-            for candidates in pending[path][1].values()
-            for c in candidates
-            if isinstance(c, Occurrence)
-        )
-    return found
-
-
-def ended(
-    root: Scope, placements: tuple[Placement, ...], route: type[BaseModel]
-) -> ValidationError:
-    """Why the route did not construct, from the binding of every occurrence the passes left
-    unconstructed, in its own scope, each unfilled site resolved to the occurrence that
-    constructs it. An occurrence a premise of which no candidate can fill is blocked, by the
-    refutations and the resolved sites that are its causes, and so is every occurrence waiting
-    on it, until nothing moves. The route blocked is the run refused, as a value: one error per
-    cause, each at its own occurrence. The route not blocked waits on occurrences that wait on
-    one another, which no evidence explains: a failure, raised, naming each and what it waits
-    for."""
-    pending: dict[Site, tuple[Occurrence, Candidates]] = {}
-    for scope in scopes(root):
-        for placed in placements:
-            occurrence = Occurrence(scope, placed)
-            if (
-                placed.scope != scope.site
-                or occurrence.constructed is not None
-                or occurrence.refuted is not None
-            ):
-                continue
-            premises: Candidates = {
-                premise: [
-                    candidate(site, at, placements, occurrence, premise[0]) for at, site in sites
-                ]
-                for premise, sites in bound(placed, scope).unfilled.items()
-            }
-            pending[occurrence.path] = (occurrence, premises)
-    blocked: dict[Site, list[Cause]] = {}
-    moved = True
-    while moved:
-        moved = False
-        for path, (_, premises) in pending.items():
-            if path not in blocked and (causes := blocked_by(premises, blocked)):
-                blocked[path] = causes
-                moved = True
-    at = (route.__name__,)
-    if at in blocked:
-        details = [fault(c.code, "{why}", c.loc, why=c.message) for c in dict.fromkeys(blocked[at])]
-        return ValidationError.from_exception_data(route.__name__, details)
-    details = [
-        fault(
-            "deadlock",
-            "{cls} at {path} waits for {on}, and nothing constructs",
-            (occurrence.placed.cls.__name__,),
-            cls=occurrence.placed.cls.__name__,
-            path=".".join(path),
-            on=", ".join(
-                f"{c.placed.cls.__name__} at {'.'.join(c.path)}"
-                for candidates in premises.values()
-                for c in candidates
-                if isinstance(c, Occurrence) and c.path not in blocked
-            ),
-        )
-        for path in waited_on(at, pending)
-        for occurrence, premises in (pending[path],)
-    ]
-    raise ValidationError.from_exception_data(route.__name__, details)
-
-
 async def performed_in_span(performed: Performed) -> Record:
     """Perform one action occurrence inside a span named for its class, carrying the party's
     class name, the occurrence's concrete path, the pass it was built in, and ``tca.outcome``,
@@ -2324,32 +2146,6 @@ class Performed(NamedTuple):
     def path(self) -> Site:
         """The concrete path of the action occurrence."""
         return self.scope.at(self.site)
-
-
-def refutes(cls: type[BaseModel], given: Given, error: ErrorDetails) -> bool:
-    """Whether one error of a refusal is the declared condition of a refutable kind not holding
-    over what was supplied: a relation's comparison, computed over its operands, with an
-    ordering the ``Literal`` of its field excludes; a selection's supplied elements, more or
-    fewer than its ``of`` declares, too short or too long for a tuple of any number, a position
-    missing for a fixed one. An operand or the elements not supplied, of another class, an
-    ordering given or not computed, is a failure of the construction, not the condition."""
-    loc = error["loc"]
-    name = str(loc[0]) if loc else ""
-    if is_relation(cls):
-        compared = (
-            isinstance(computation(cls, name), Comparison) if name in cls.model_fields else False
-        )
-        return (
-            len(loc) == 1
-            and compared
-            and error["type"] == "literal_error"
-            and isinstance(error["input"], int)
-        )
-    if is_selection(cls) and name == "of" and is_elements(given.get("of")):
-        return (len(loc) == 1 and error["type"] in ("too_short", "too_long")) or (
-            isinstance(loc[-1], int) and error["type"] == "missing"
-        )
-    return False
 
 
 def construct(placed: Placement, given: Given, path: Site) -> BaseModel | ValidationError:
