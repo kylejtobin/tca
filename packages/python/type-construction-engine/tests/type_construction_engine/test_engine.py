@@ -225,11 +225,10 @@ class Noted(Record):
 
 
 class Notify(Tell[Teller, Noted]):
-    """Tell the teller about an element valued high whose parts have a largest: holds what
-    ``Dear`` needs before the effect, which is what justifies it."""
+    """Tell the teller about an element valued high: holds the evidence it is performed with, and
+    is performed where ``Dear`` needs what it hears."""
 
     high: High
-    largest: Largest
 
 
 class Cheap(Fact):
@@ -348,7 +347,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         (Operation, ()),
     }
     heard_ = HeardRef(placed[Asked, ELEMENT], Heard, (), Heard)
-    amount = heard_.held(Amount, "amount", conditional=False)
+    amount = heard_.held(Amount, "amount")
     assert amount.site == (*ELEMENT, "Asked", "heard", "amount")
     assert placed[Asked, ELEMENT].premises == {
         "party": (InputRef((), ("deployment", "party"), Party),),
@@ -359,11 +358,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         "bound": (InputRef((), ("Limit",), Limit),),
     }
     assert placed[Portion, PART].premises == {
-        "left": (
-            heard_.element(Part, "parts", "[]", conditional=False).held(
-                Share, "share", conditional=False
-            ),
-        ),
+        "left": (heard_.element(Part, "parts", "[]").held(Share, "share"),),
         "right": (amount,),
     }
     assert placed[Portion, PART].premises["left"][0].site == (*PART, "share")
@@ -698,7 +693,6 @@ def test_the_proof_refuses_every_fault_at_once() -> None:
         ("never", ("Never",)),
         ("never", ("Undecided",)),
         ("undiscriminated", ("Both",)),
-        ("undecided", ("Charge",)),
     }
     assert found["ambiguous", ("Named", "name")] == (
         "Named.name at request.each.[] may hold both Name at request.each.[].name and Name at"
@@ -927,7 +921,7 @@ async def test_an_answer_is_one_span_per_route_and_one_per_performed_action() ->
             )
             for i in (0, 1)
         ),
-        ("Operation", {"tca.request": "Elements", "tca.outcome": "answered", "tca.passes": 4}),
+        ("Operation", {"tca.request": "Elements", "tca.outcome": "answered", "tca.passes": 2}),
     ]
     assert not any("2.50" in str(v) for _, a in spans for v in a.values())
 

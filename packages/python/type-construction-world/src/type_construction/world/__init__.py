@@ -1024,9 +1024,9 @@ class Action[P: Connection, T: Record](BaseModel):
     the library kind's ``perform`` sends through ``self.party`` and returns what the party said
     as ``Json`` or ``Python``, or raises; the engine validates it as ``T`` at its one boundary,
     a union choosing its member, and only a record that validates is heard. ``perform`` is
-    abstract: an action with no library kind cannot be constructed. An action performed on one
-    branch of a choice and not the other holds a premise that decides the choice; the proof
-    refuses one that does not.
+    abstract: an action with no library kind cannot be constructed. An action is performed when
+    the route's answer needs it or what it hears and its fields are all supplied: its fields are
+    the evidence it is performed with, and what holds it decides whether it is needed.
     """
 
     model_config = PRODUCT

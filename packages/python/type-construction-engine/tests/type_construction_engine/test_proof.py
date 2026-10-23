@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 from typing import Annotated, Literal, override
 
 import pytest
@@ -19,6 +19,7 @@ from pydantic import AfterValidator, BaseModel, Field, PrivateAttr, ValidationEr
 from type_construction.engine import (
     Available,
     Blocked,
+    Bound,
     Clash,
     Collected,
     Constructed,
@@ -28,7 +29,6 @@ from type_construction.engine import (
     HeardRef,
     InputRef,
     Joint,
-    Justification,
     Proof,
     Ref,
     Refuted,
@@ -194,9 +194,8 @@ def faults_of(program: ModuleType) -> dict[tuple[str, tuple[object, ...]], str]:
 
 
 def unproven[Q: Request, A: Reply[Fact]](program: ModuleType, route: type[Route[Q, A]]) -> Proof:
-    """A program's constructions and exclusions as a ``Proof`` the validator did not see, every
-    action's justification forged as established: how a run is driven over a program the proof
-    refuses, to observe what the proof foresaw."""
+    """A program's constructions and exclusions as a ``Proof`` the validator did not see: how a
+    run is driven over a program the proof refuses, to observe what the proof foresaw."""
     found = symbolic(route, models(program))
     return Proof.model_construct(
         program=program.__name__,
@@ -206,10 +205,13 @@ def unproven[Q: Request, A: Reply[Fact]](program: ModuleType, route: type[Route[
         faulted=(),
         exclusions=exclusions(found.constructions),
         existences=(),
-        justifications=tuple(
-            Justification(c, (), ()) for c in found.constructions if issubclass(c.cls, Action)
-        ),
     )
+
+
+BOUND = Bound(
+    MappingProxyType({}), MappingProxyType({}), MappingProxyType({}), MappingProxyType({})
+)
+"""An empty witness, for an occurrence a test places by hand."""
 
 
 def placed(
@@ -410,34 +412,33 @@ def test_competing_producers_are_accepted_only_where_both_are_never_available() 
 
 
 @pytest.mark.asyncio
-async def test_the_run_finds_both_where_the_proof_found_them_both_available(
+async def test_the_run_takes_the_alternative_at_hand_where_the_proof_found_both_available(
     party: Callable[[dict[str, str]], None],
 ) -> None:
     proof = unproven(LOOSE, LooseOperation)
     which = exclusion_at(proof, Loose, "which")
     assert not which.established
     (cheap, other) = which.left, which.right
-    party({"a": "5"})
-    done = await ran(LooseOperation, requested("a"), config(LOOSE)(), proof)
-    assert isinstance(done, Run)
-    (valued,) = done.route.reply.of.valued
-    (element,) = (s for s in scopes(done.root) if s.site == ELEMENT)
-    assert type(valued.which) is Other
-    assert present_in(cheap, element)
-    assert present_in(other, element)
-    assert done.passes == 2
+    for amount in ("5", "50"):
+        party({"a": amount})
+        done = await ran(LooseOperation, requested("a"), config(LOOSE)(), proof)
+        assert isinstance(done, Run)
+        (valued,) = done.route.reply.of.valued
+        (element,) = (s for s in scopes(done.root) if s.site == ELEMENT)
+        assert type(valued.which) is Other
+        assert present_in(other, element)
+        assert not present_in(cheap, element)
+        assert made_in(done.root, Ask) == made_in(done.root, Low) == {}
+        assert done.passes == 1
     claimed = Exclusion(which.construction, which.field, cheap, other, Joint((cheap, other), ()))
     assert claimed.established
+    assert isinstance(cheap, ConstructedRef)
+    assert isinstance(other, ConstructedRef)
+    both = Scope(ELEMENT, ("request", "each", "[0]"), None)
+    for construction in (cheap.construction, other.construction):
+        both.made[construction] = Constructed(Other(element=Element(name=Name("a"))), BOUND)
     with pytest.raises(AssertionError):
-        agreeing(Proof.model_construct(exclusions=(claimed,), existences=()), done.root)
-    party({"b": "50"})
-    done = await ran(LooseOperation, requested("b"), config(LOOSE)(), proof)
-    assert isinstance(done, Run)
-    (valued,) = done.route.reply.of.valued
-    assert type(valued.which) is Other
-    (low,) = made_in(done.root, Low).values()
-    assert isinstance(low, Refuted)
-    assert made_in(done.root, Cheap) == {}
+        agreeing(Proof.model_construct(exclusions=(claimed,), existences=()), both)
 
 
 # --- 3. contradictory shared conditions ------------------------------------------------------
@@ -956,8 +957,8 @@ async def test_optional_evidence_cannot_become_guaranteed_or_exclusive(
     found = by_class(proof)
     coupon = (*ELEMENT, "AskQuoted", "heard", "coupon")
     (coupon_ref,) = found[Discount].premises["coupon"]
-    assert isinstance(coupon_ref, HeardRef)
-    assert coupon_ref.because == (coupon,)
+    assert coupon_ref == HeardRef(found[AskQuoted], Quoted, ("coupon",), Coupon)
+    assert coupon_ref.site == coupon
     assert not exclusion_at(proof, Offered, "which").established
     assert not joint((ConstructedRef(found[Discount]),)).impossible
     assert not joint((ConstructedRef(found[Plain]),)).impossible
@@ -1183,34 +1184,6 @@ async def test_bounded_runs_never_contradict_established_exclusions(
                 assert [type(v.which) for v in done.route.reply.of.valued] == [
                     Cheap if Decimal(a) <= 10 else Dear for a in (first, second)[: len(names)]
                 ]
-
-
-def test_an_action_is_justified_by_its_premises_establishing_a_use_of_it() -> None:
-    proof = proven(test_engine.PROGRAM)
-    found = placed(proof, test_engine.Operation)
-    valued = exclusion_at(proof, test_engine.Concluded, "valued")
-    assert valued.established
-    cheap = valued.left
-    assert joint((ConstructedRef(found[test_engine.Notify, ELEMENT]), cheap)).impossible
-    by_action = {j.action.cls: j for j in proof.justifications}
-    assert set(by_action) == {test_engine.Asked, test_engine.Notify}
-    assert all(j.established for j in by_action.values())
-    asked = by_action[test_engine.Asked]
-    assert {u.construction.cls for u in asked.uses} >= {test_engine.Low, test_engine.High}
-    assert all(c.use is not None for c in asked.coverages)
-    notify = by_action[test_engine.Notify]
-    assert [u.construction for u in notify.uses] == [found[test_engine.Dear, ELEMENT]]
-    (coverage,) = notify.coverages
-    assert coverage.use is not None
-    assert coverage.use.field == "noted"
-    assert [name for name, _ in coverage.use.conditions] == [
-        "element",
-        "high",
-        "portions",
-        "largest",
-    ]
-    assert ConstructedRef(found[test_engine.High, ELEMENT]) in coverage.world
-    assert ConstructedRef(found[test_engine.Largest, ELEMENT]) in coverage.world
 
 
 def test_the_proof_keeps_each_conclusion_with_its_ways_and_clashes() -> None:
@@ -1673,9 +1646,7 @@ async def test_optional_alternatives_both_absent_block_the_run_and_never_the_pro
     found = by_class(proof)
     (coupon_ref,) = found[WithCoupon].premises["coupon"]
     (bonus_ref,) = found[WithBonus].premises["bonus"]
-    assert isinstance(coupon_ref, HeardRef)
-    assert isinstance(bonus_ref, HeardRef)
-    assert (coupon_ref.because, bonus_ref.because) == ((COUPON,), (BONUS,))
+    assert (coupon_ref.site, bonus_ref.site) == (COUPON, BONUS)
     assert found[CouponAgain].premises["coupon"] == (coupon_ref,)
     which = exclusion_at(proof, Perk, "which")
     assert which.joint.clashes[0].why == "heard"

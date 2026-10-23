@@ -1,41 +1,35 @@
-"""Effect authorization against adversarial programs and runs: an effect is performed because
-its exact occurrence was constructed from the evidence the proof established justifies it,
-observed at ``perform`` itself, by subject, timing and evidence, never through the
-authorization's own reads. The base program values each element of a request through a party
-that answers per element and tells a teller about each element valued high; each test adds the
-classes its counterexample needs."""
+"""Demand and eligibility against adversarial programs and runs: an effect is performed because
+the route's answer needs what it hears and its own declared evidence is there, each observed at
+``perform`` itself, by subject, timing and evidence. The base program values each element of a
+request through a party that answers per element and tells a teller about each element valued
+high; each test adds the classes its counterexample needs."""
 
 import asyncio
 import json
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from decimal import Decimal
-from inspect import signature
 from pathlib import Path
 from types import ModuleType
-from typing import Literal, NamedTuple, Self, override
+from typing import Literal, NamedTuple, Self, cast, override
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import Field, ValidationError, model_validator
 
-from type_construction import engine
 from type_construction.engine import (
     Blocked,
     Constructed,
-    ConstructedRef,
-    Execution,
-    Invocation,
     Occurrence,
     Proof,
     Refuted,
     Run,
     Scope,
+    Undecided,
     config,
-    performed_in_span,
     proven,
     ran,
+    refused,
     scopes,
-    unauthorized,
 )
 from type_construction.world import (
     Action,
@@ -165,7 +159,7 @@ class Noted(Record):
 
 
 class Notify(Action[Teller, Noted]):
-    """Tell the teller about an element valued high: made from the evidence that decides it."""
+    """Tell the teller about an element valued high: its evidence is the high it holds."""
 
     high: High
 
@@ -211,6 +205,12 @@ class Deployment(Config):
     teller: Teller
 
 
+class Telling(Config):
+    """The teller alone."""
+
+    teller: Teller
+
+
 CORE: tuple[type[object], ...] = (
     Name,
     Element,
@@ -239,8 +239,8 @@ REFERENCE: tuple[type[object], ...] = (
     Answered,
     Operation,
 )
-"""The reference program: ``Ask`` obtains the evidence, ``Low`` or ``High`` decides, ``Notify``
-holds the ``High`` that justifies it."""
+"""The reference program: ``Ask`` obtains the evidence, ``Low`` or ``High`` decides, ``Dear``
+needs what ``Notify`` hears and ``Notify`` holds the ``High`` it is performed with."""
 
 ELEMENT = ("request", "each", "[]")
 """The site of each element's scope."""
@@ -314,6 +314,13 @@ def occurrences_of(root: Scope, cls: type[object]) -> list[Occurrence]:
     return [Occurrence(s, c) for s in scopes(root) for c in s.made if c.cls is cls]
 
 
+def constructed(occurrence: Occurrence) -> Constructed:
+    """What a scope made of an occurrence it constructed."""
+    made = occurrence.made
+    assert isinstance(made, Constructed)
+    return made
+
+
 def notified(done: Run[Elements, Answered]) -> dict[str, High]:
     """The ``High`` each dear element's ``Notify`` was performed with, by element name."""
     found: dict[str, High] = {}
@@ -328,11 +335,17 @@ def performed(cls: type[object]) -> list[Performed]:
     return [p for p in PERFORMED if p.action is cls]
 
 
-# --- 1, 4. the correct branch, from evidence obtained before the choice ---------------------
+def errors_of(blocked: Blocked) -> list[tuple[str, tuple[object, ...], str]]:
+    """The causes a blocked run is refused with, as the caller sees them."""
+    return [(e["type"], tuple(e["loc"]), e["msg"]) for e in refused(blocked).errors()]
+
+
+# --- 1. demand and eligibility are two properties: the answer needs the effect, the action -----
+# --- holds its evidence ------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_notify_is_performed_only_for_the_element_whose_own_high_evidence_exists(
+async def test_an_effect_is_performed_where_the_answer_needs_it_with_the_evidence_it_holds(
     parties: Callable[[dict[str, str]], None],
 ) -> None:
     exporter = exporting()
@@ -351,24 +364,12 @@ async def test_notify_is_performed_only_for_the_element_whose_own_high_evidence_
     }
     cheap = made_in(done.root, High)[("request", "each", "[0]", "High")]
     assert isinstance(cheap, Refuted)
+    assert done.passes == 3
     spans = exporter.get_finished_spans()
     by_site = {attributes(s)["tca.site"]: s for s in spans if s.name == "Notify"}
     assert set(by_site) == {"request.each.[1].Notify", "request.each.[2].Notify"}
-    asks = {attributes(s)["tca.pass"] for s in spans if s.name == "Ask"}
-    assert asks == {1}
+    assert {attributes(s)["tca.pass"] for s in spans if s.name == "Ask"} == {1}
     assert {attributes(s)["tca.pass"] for s in by_site.values()} == {2}
-    proof = proven(PROGRAM)
-    by_action = {j.action.cls: j for j in proof.justifications}
-    assert set(by_action) == {Ask, Notify}
-    assert all(j.established for j in by_action.values())
-    assert [u.construction.cls for u in by_action[Ask].uses] == [Low, High]
-    assert [c.use.construction.cls for c in by_action[Ask].coverages if c.use] == [Low]
-    (coverage,) = by_action[Notify].coverages
-    assert coverage.use is not None
-    assert coverage.use.construction.cls is Dear
-    assert coverage.use.field == "noted"
-    assert [name for name, _ in coverage.use.conditions] == ["element", "high"]
-    assert any(isinstance(s, ConstructedRef) and s.cls is High for s in coverage.world)
 
 
 @pytest.mark.asyncio
@@ -400,9 +401,6 @@ async def test_effects_are_the_same_whatever_the_declaration_completion_or_invoc
         assert len(performed(Notify)) == 2
 
 
-# --- 2. a branch-specific action missing its deciding premise ------------------------------
-
-
 class Pinged(Record):
     """What the teller says when pinged."""
 
@@ -410,7 +408,8 @@ class Pinged(Record):
 
 
 class Ping(Action[Teller, Pinged]):
-    """Tell the teller about an element: holds the element, not what decides the branch."""
+    """Tell the teller about an element: holds the element, nothing of the branch its record
+    is needed on, and is supplied from the first pass."""
 
     element: Element
 
@@ -442,25 +441,95 @@ class PingOperation(Route[Elements, AnsweredPinged]):
     """Value each element and ping about the dear ones."""
 
 
-UNGUARDED = program_of(
+PINGED = program_of(
     *CORE, Pinged, Ping, Cheap, DearPinged, ConcludedPinged, AnsweredPinged, PingOperation
 )
-"""The program whose branch-specific action holds nothing that decides the branch."""
+"""The program whose branch-specific action is supplied before the branch is known."""
 
 
-def test_a_branch_specific_action_without_its_deciding_premise_is_refused_at_startup() -> None:
+@pytest.mark.asyncio
+async def test_an_action_supplied_from_the_start_waits_for_the_branch_that_needs_its_record(
+    parties: Callable[[dict[str, str]], None],
+) -> None:
+    proof = proven(PINGED)
+    assert proof.faulted == ()
+    parties({"a": "5", "b": "50"})
+    done = await valued(PINGED, "a", "b", route=PingOperation, proof=proof)
+    assert [p.subject for p in performed(Ask)] == ["a", "b"]
+    assert [p.subject for p in performed(Ping)] == ["b"]
+    assert max(PERFORMED.index(p) for p in performed(Ask)) < PERFORMED.index(performed(Ping)[0])
+    assert set(made_in(done.root, Ping)) == {("request", "each", "[1]", "Ping")}
+    assert [type(v) for v in done.route.reply.of.valued] == [Cheap, DearPinged]
     PERFORMED.clear()
-    faults = faults_of(UNGUARDED)
-    assert set(faults) == {("undecided", ("Ping",))}
-    assert faults["undecided", ("Ping",)] == (
-        "Ping at request.each.[] is performed where Low at request.each.[].Low holds, excluding"
-        " High at request.each.[].High, which DearPinged at request.each.[].DearPinged needs; Ping"
-        " holds nothing that decides it"
-    )
-    assert PERFORMED == []
+    parties({"a": "5"})
+    cheap = await valued(PINGED, "a", route=PingOperation, proof=proof)
+    assert performed(Ping) == []
+    assert made_in(cheap.root, Ping) == {}
+    assert cheap.passes == 2
 
 
-# --- 3. an action under several alternatives, accepted only when its evidence covers them ----
+class CheapNoted(Fact):
+    """An element valued low, which the teller was told about all the same: a consumer that
+    needs what ``Notify`` hears where ``Notify`` has no high to hold."""
+
+    element: Element
+    low: Low
+    noted: Noted
+
+
+class ConcludedNoted(Fact):
+    """Every element valued, the cheap ones told about."""
+
+    valued: tuple[CheapNoted | Dear, ...]
+
+
+class AnsweredNoted(Reply[ConcludedNoted]):
+    """What leaves."""
+
+
+class NotedOperation(Route[Elements, AnsweredNoted]):
+    """Value each element and tell the teller about every one."""
+
+
+NOTED = program_of(
+    *CORE, Noted, Notify, CheapNoted, Dear, ConcludedNoted, AnsweredNoted, NotedOperation
+)
+"""The reference program with a consumer added that needs ``Notify`` under the cheap branch."""
+
+
+@pytest.mark.asyncio
+async def test_a_consumer_added_demands_an_effect_and_weakens_its_evidence_not_at_all(
+    parties: Callable[[dict[str, str]], None],
+) -> None:
+    assert faults_of(NOTED) == {
+        ("never", (*ELEMENT, "CheapNoted")): (
+            "CheapNoted at request.each.[].CheapNoted never constructs: High at"
+            " request.each.[].High and Low at request.each.[].Low admit no ordering in common"
+            " over the same operands"
+        )
+    }
+    proof = unproven(NOTED, NotedOperation)
+    parties({"a": "5"})
+    blocked = await ran(NotedOperation, requested("a"), config(NOTED)(), proof)
+    assert isinstance(blocked, Blocked)
+    assert performed(Notify) == []
+    assert made_in(blocked.occurrence.scope, Notify) == {}
+    assert errors_of(blocked) == [
+        (
+            "relation",
+            ("High",),
+            "High at request.each.[0].High did not hold: value Amount at"
+            " request.each.[0].Ask.heard.amount < bound Limit at Limit",
+        )
+    ]
+    PERFORMED.clear()
+    parties({"a": "50"})
+    done = await valued(NOTED, "a", route=NotedOperation, proof=proof)
+    assert [p.subject for p in performed(Notify)] == ["50"]
+    assert [type(v) for v in done.route.reply.of.valued] == [Dear]
+
+
+# --- 2. branches: evidence gathered first, one branch's effect after, a choice never guessed ---
 
 
 class Judging(Party):
@@ -504,14 +573,24 @@ class Charged(Record):
 
 
 class Charge(Action[Teller, Charged]):
-    """Charge for an element valued high, whatever the party judged: holds the evidence that
-    decides the inner choice under either outer alternative."""
+    """Charge for an element valued high, whatever the party judged."""
 
     high: High
 
     @override
     async def perform(self) -> Json:
         PERFORMED.append(Performed(Charge, str(self.high.value.root), id(self.high)))
+        return Json('{"receipt": "paid"}')
+
+
+class ChargeLoose(Action[Teller, Charged]):
+    """Charge for an element: holds the element alone, and is supplied from the first pass."""
+
+    element: Element
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(ChargeLoose, self.element.name.root))
         return Json('{"receipt": "paid"}')
 
 
@@ -598,6 +677,10 @@ NESTED_CORE: tuple[type[object], ...] = (
     Judge,
     Receipt,
     Charged,
+    BigYes,
+    SmallYes,
+    BigNo,
+    SmallNo,
     Priced,
     Free,
     Outcome,
@@ -606,27 +689,14 @@ NESTED_CORE: tuple[type[object], ...] = (
     ChargeOperation,
     Judged,
 )
-"""The nested program without its charge and the four leaves."""
+"""The nested program without its charge."""
 
-NESTED = program_of(*NESTED_CORE, Charge, BigYes, SmallYes, BigNo, SmallNo)
-"""The program whose charge is used under both outer alternatives, and holds what decides
-the inner choice under each."""
+NESTED = program_of(*NESTED_CORE, Charge)
+"""The program whose charge holds the high it is performed with."""
 
-
-class ChargeLoose(Action[Teller, Charged]):
-    """Charge for an element: holds nothing that decides the inner choice."""
-
-    element: Element
-
-    @override
-    async def perform(self) -> Json:
-        PERFORMED.append(Performed(ChargeLoose, self.element.name.root))
-        return Json('{"receipt": "paid"}')
-
-
-NESTED_LOOSE = program_of(*NESTED_CORE, ChargeLoose, BigYes, SmallYes, BigNo, SmallNo)
-"""The same program with the charge holding only the element: reachable under both outer
-alternatives, and used under neither's small leaf."""
+NESTED_LOOSE = program_of(*NESTED_CORE, ChargeLoose)
+"""The same program with the charge holding only the element: supplied before anything is
+judged or valued, needed only on the two big leaves."""
 
 
 @pytest.fixture
@@ -643,50 +713,217 @@ def judged(
 
 
 @pytest.mark.asyncio
-async def test_an_action_under_several_alternatives_is_accepted_only_where_its_evidence_covers_them(
+@pytest.mark.parametrize(("program", "charge"), [(NESTED, Charge), (NESTED_LOOSE, ChargeLoose)])
+async def test_evidence_is_gathered_first_and_one_branchs_effect_performed_after(
     judged: Callable[[dict[str, str], dict[str, str]], None],
+    program: ModuleType,
+    charge: type[Action[Teller, Charged]],
 ) -> None:
-    faults = faults_of(NESTED_LOOSE)
-    assert set(faults) == {("undecided", ("ChargeLoose",))}
-    assert faults["undecided", ("ChargeLoose",)] == (
-        "ChargeLoose at request.each.[] is performed where Yes at request.each.[].Judge.heard, Low"
-        " at request.each.[].Low hold, excluding High at request.each.[].High, which BigYes at"
-        " request.each.[].BigYes needs; ChargeLoose holds nothing that decides it"
-    )
-    proof = proven(NESTED)
-    by_action = {j.action.cls: j for j in proof.justifications}
-    assert all(j.established for j in by_action.values())
-    assert [u.construction.cls for u in by_action[Judge].uses] == [BigYes, SmallYes, BigNo, SmallNo]
-    assert [c.use.construction.cls for c in by_action[Judge].coverages if c.use] == [
-        SmallYes,
-        BigYes,
-    ]
-    assert [u.construction.cls for u in by_action[Charge].uses] == [BigYes, BigNo]
-    assert [c.use.construction.cls for c in by_action[Charge].coverages if c.use] == [
-        BigYes,
-        BigNo,
-    ]
+    proof = proven(program)
+    assert proof.faulted == ()
     judged(
         {"a": "50", "b": "50", "c": "5", "d": "5"}, {"a": "yes", "b": "no", "c": "yes", "d": "no"}
     )
-    done = await ran(ChargeOperation, requested("a", "b", "c", "d"), config(NESTED)(), proof)
+    done = await ran(ChargeOperation, requested("a", "b", "c", "d"), config(program)(), proof)
     assert isinstance(done, Run)
     leaves = [type(o.which.which) for o in done.route.reply.of.outcomes]
     assert leaves == [BigYes, BigNo, SmallYes, SmallNo]
-    highs = {
-        id(o.which.which.high): o.element.name.root
-        for o in done.route.reply.of.outcomes
-        if isinstance(o.which.which, BigYes | BigNo)
-    }
-    assert sorted(highs[p.evidence] for p in performed(Charge)) == ["a", "b"]
-    assert all(p.subject == "50" for p in performed(Charge))
     assert [p.subject for p in performed(Judge)] == ["a", "b", "c", "d"]
-    assert max(PERFORMED.index(p) for p in performed(Judge)) < min(
-        PERFORMED.index(p) for p in performed(Charge)
-    )
+    assert [p.subject for p in performed(Ask)] == ["a", "b", "c", "d"]
+    gathered = max(PERFORMED.index(p) for p in (*performed(Judge), *performed(Ask)))
+    assert gathered < min(PERFORMED.index(p) for p in performed(charge))
+    assert set(made_in(done.root, charge)) == {
+        ("request", "each", "[0]", charge.__name__),
+        ("request", "each", "[1]", charge.__name__),
+    }
+    if charge is Charge:
+        highs = {
+            id(o.which.which.high): o.element.name.root
+            for o in done.route.reply.of.outcomes
+            if isinstance(o.which.which, BigYes | BigNo)
+        }
+        assert sorted(highs[p.evidence] for p in performed(Charge)) == ["a", "b"]
+    else:
+        assert [p.subject for p in performed(ChargeLoose)] == ["a", "b"]
+    assert done.passes == 3
 
 
-# --- 5. occurrence integrity ------------------------------------------------------------------
+class Mailed(Record):
+    """What the teller says to a letter."""
+
+    word: Word
+
+
+class SendMail(Action[Teller, Mailed]):
+    """Write to the teller about an element."""
+
+    element: Element
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(SendMail, self.element.name.root))
+        return Json(self.party.says.root)
+
+
+class Texted(Record):
+    """What the teller says to a text."""
+
+    word: Word
+
+
+class SendText(Action[Teller, Texted]):
+    """Text the teller about an element."""
+
+    element: Element
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(SendText, self.element.name.root))
+        return Json(self.party.says.root)
+
+
+class ByMail(Fact):
+    """An element written about."""
+
+    element: Element
+    mailed: Mailed
+
+
+class ByText(Fact):
+    """An element texted about."""
+
+    element: Element
+    texted: Texted
+
+
+class Sent(Fact):
+    """Written or texted about: two effects, and nothing declared says which."""
+
+    element: Element
+    which: ByMail | ByText
+
+
+class AllSent(Fact):
+    """Every element sent about."""
+
+    sent: tuple[Sent, ...]
+
+
+class SentReply(Reply[AllSent]):
+    """What leaves."""
+
+
+class Send(Route[Elements, SentReply]):
+    """Send about each element."""
+
+
+SENDING: tuple[type[object], ...] = (
+    Name,
+    Element,
+    Elements,
+    Said,
+    Teller,
+    Word,
+    Mailed,
+    SendMail,
+    Texted,
+    SendText,
+)
+"""The two ways of sending about an element, toward the teller."""
+
+UNDECIDED = program_of(*SENDING, ByMail, ByText, Sent, AllSent, SentReply, Send, Telling)
+"""The program whose one choice is between two effects nothing decides."""
+
+
+class ByMailLow(Fact):
+    """An element valued low, written about."""
+
+    element: Element
+    low: Low
+    mailed: Mailed
+
+
+class ByTextHigh(Fact):
+    """An element valued high, texted about."""
+
+    element: Element
+    high: High
+    texted: Texted
+
+
+class SentDecided(Fact):
+    """Written or texted about, as the amount decides."""
+
+    element: Element
+    which: ByMailLow | ByTextHigh
+
+
+class AllSentDecided(Fact):
+    """Every element sent about."""
+
+    sent: tuple[SentDecided, ...]
+
+
+class SentDecidedReply(Reply[AllSentDecided]):
+    """What leaves."""
+
+
+class SendDecided(Route[Elements, SentDecidedReply]):
+    """Send about each element the way its amount decides."""
+
+
+DECIDED = program_of(
+    *CORE,
+    *SENDING,
+    ByMailLow,
+    ByTextHigh,
+    SentDecided,
+    AllSentDecided,
+    SentDecidedReply,
+    SendDecided,
+)
+"""The same two effects, each on a branch the party's amount decides."""
+
+
+@pytest.mark.asyncio
+async def test_a_choice_between_effects_is_never_guessed_and_a_decided_one_performs_one(
+    parties: Callable[[dict[str, str]], None],
+) -> None:
+    assert set(faults_of(UNDECIDED)) == {("ambiguous", ("Sent", "which"))}
+    parties({"a": "5"})
+    blocked = await ran(Send, requested("a"), config(UNDECIDED)(), unproven(UNDECIDED, Send))
+    assert isinstance(blocked, Blocked)
+    assert PERFORMED == []
+    (cause,) = blocked.causes
+    assert isinstance(cause, Undecided)
+    assert (cause.occurrence.construction.cls, cause.premise) == (Sent, ("which", None))
+    assert [
+        (ref.cls, [o.construction.cls for o in n.actions]) for ref, n in cause.alternatives
+    ] == [
+        (ByMail, [SendMail]),
+        (ByText, [SendText]),
+    ]
+    assert errors_of(blocked) == [
+        (
+            "undecided",
+            ("Sent", "which"),
+            "Sent.which at request.each.[0].Sent is decided by nothing before an effect: ByMail at"
+            " request.each.[].ByMail needs SendMail at request.each.[0].SendMail performed; ByText"
+            " at request.each.[].ByText needs SendText at request.each.[0].SendText performed",
+        )
+    ]
+    proof = proven(DECIDED)
+    assert proof.faulted == ()
+    for amount, mailed, texted in (("5", ["a"], []), ("50", [], ["a"])):
+        PERFORMED.clear()
+        parties({"a": amount})
+        done = await ran(SendDecided, requested("a"), config(DECIDED)(), proof)
+        assert isinstance(done, Run)
+        assert [p.subject for p in performed(SendMail)] == mailed
+        assert [p.subject for p in performed(SendText)] == texted
+
+
+# --- 3. occurrence integrity -------------------------------------------------------------------
 
 
 class Reviewed(Reply[Concluded]):
@@ -702,7 +939,7 @@ TWO_ROUTES = program_of(*REFERENCE, Reviewed, Review)
 
 
 @pytest.mark.asyncio
-async def test_equal_values_reused_objects_siblings_routes_and_invocations_keep_their_authority(
+async def test_equal_values_reused_objects_siblings_routes_and_invocations_are_their_own(
     parties: Callable[[dict[str, str]], None],
 ) -> None:
     parties({"x": "50", "y": "5"})
@@ -722,41 +959,24 @@ async def test_equal_values_reused_objects_siblings_routes_and_invocations_keep_
         ("request", "each", "[0]", "Notify"),
         ("request", "each", "[1]", "Notify"),
     }
-    first = occurrences_of(done.root, Notify)[0]
-    made = first.made
-    assert isinstance(made, Constructed)
-    assert made.supplied.premises["party"].found.path == ("deployment", "teller")
-    assert made.supplied.premises["high"].found.path == ("request", "each", "[0]", "High")
-    assert unauthorized(Invocation(Operation, proof, done.root, set()), first) is None
-    assert unauthorized(Invocation(Operation, proof, done.root, {first}), first) == (
-        "it was performed in this invocation already"
-    )
-    assert unauthorized(Invocation(Review, proof, done.root, set()), first) == (
-        "its construction is not in the proof of Review"
-    )
-    (cheap,) = (s for s in scopes(done.root) if s.path == ("request", "each", "[2]"))
-    foreign = Occurrence(cheap, first.construction)
-    assert unauthorized(Invocation(Operation, proof, done.root, set()), foreign) == (
-        "its scope made no action of it"
-    )
-    elsewhere = Scope(ELEMENT, ("request", "each", "[0]"), None)
-    elsewhere.made[first.construction] = made
-    assert unauthorized(
-        Invocation(Operation, proof, done.root, set()), Occurrence(elsewhere, first.construction)
-    ) == ("its scope is not one this invocation opened at its site")
     first_ask, second_ask, _ = occurrences_of(done.root, Ask)
-    made_first_ask, made_second_ask = first_ask.made, second_ask.made
-    assert isinstance(made_first_ask, Constructed)
-    assert isinstance(made_second_ask, Constructed)
-    assert made_first_ask.supplied.premises["element"].found.instance is element
-    assert made_second_ask.supplied.premises["element"].found.instance is element
-    assert made_first_ask.supplied.premises["element"].found.owner is first_ask.scope
-    assert made_second_ask.supplied.premises["element"].found.owner is second_ask.scope
-    second_ask.scope.made[second_ask.construction] = made_first_ask
-    assert unauthorized(Invocation(Operation, proof, done.root, set()), second_ask) == (
-        "element dereferences to another occurrence than the one that supplied it"
-    )
-    second_ask.scope.made[second_ask.construction] = made_second_ask
+    for ask in (first_ask, second_ask):
+        witness = constructed(ask).supplied.premises["element"].found
+        assert witness.instance is element
+        assert witness.owner is ask.scope
+        assert witness.path == ask.scope.path
+        assert (ask.construction, ()) in ask.scope.arrived
+    first, second = occurrences_of(done.root, Notify)
+    assert constructed(first).supplied.premises["party"].found.path == ("deployment", "teller")
+    assert constructed(first).supplied.premises["high"].found.owner is first.scope
+    assert constructed(second).supplied.premises["high"].found.owner is second.scope
+    PERFORMED.clear()
+    reviewed = await ran(Review, requested("x"), config(TWO_ROUTES)(), proof)
+    assert isinstance(reviewed, Run)
+    assert [p.subject for p in performed(Notify)] == ["50"]
+    (own,) = occurrences_of(reviewed.root, Notify)
+    assert own.construction in proof.constructs(Review)
+    assert own.construction not in proof.constructs(Operation)
     PERFORMED.clear()
     parties({"a": "20", "b": "30"})
     first_run, second_run = await asyncio.gather(
@@ -775,12 +995,13 @@ async def test_equal_values_reused_objects_siblings_routes_and_invocations_keep_
 
 
 @pytest.mark.asyncio
-async def test_two_invocations_sharing_request_and_deployment_objects_witness_their_own(
+async def test_two_invocations_sharing_request_and_deployment_objects_perform_their_own(
     parties: Callable[[dict[str, str]], None],
 ) -> None:
     proof = proven(TWO_ROUTES)
     parties({"a": "20"})
     shared, deployment = requested("a"), config(TWO_ROUTES)()
+    assert isinstance(deployment, Deployment)
     one, other = await asyncio.gather(
         ran(Operation, shared, deployment, proof), ran(Operation, shared, deployment, proof)
     )
@@ -788,18 +1009,16 @@ async def test_two_invocations_sharing_request_and_deployment_objects_witness_th
     assert isinstance(other, Run)
     assert [p.subject for p in performed(Notify)] == ["20", "20"]
     (mine,), (theirs,) = occurrences_of(one.root, Notify), occurrences_of(other.root, Notify)
-    made_mine, made_theirs = mine.made, theirs.made
-    assert isinstance(made_mine, Constructed)
-    assert isinstance(made_theirs, Constructed)
-    party_mine = made_mine.supplied.premises["party"].found
-    party_theirs = made_theirs.supplied.premises["party"].found
-    assert party_mine.instance is party_theirs.instance
+    party_mine = constructed(mine).supplied.premises["party"].found
+    party_theirs = constructed(theirs).supplied.premises["party"].found
+    assert party_mine.instance is party_theirs.instance is deployment.teller
     assert party_mine.owner is one.root
     assert party_theirs.owner is other.root
     assert party_mine.path == party_theirs.path == ("deployment", "teller")
-    theirs.scope.made[theirs.construction] = made_mine
-    assert unauthorized(Invocation(Operation, proof, other.root, set()), theirs) == (
-        "party dereferences to another occurrence than the one that supplied it"
+    assert constructed(mine).instance is not constructed(theirs).instance
+    assert (
+        mine.scope.arrived[mine.construction, ()]
+        is not theirs.scope.arrived[theirs.construction, ()]
     )
 
 
@@ -824,18 +1043,19 @@ async def test_nested_collections_perform_each_occurrence_once(
     assert len(sites) == len(set(sites)) == 7
 
 
-# --- 6. substitution --------------------------------------------------------------------------
+# --- 4. substitution: another instance, another class, never performed, none of the batch -------
 
 
 class Swapping(Action[Teller, Noted]):
     """Tell the teller about an element valued high, with a validator that puts another high
-    in place of the one supplied."""
+    in place of the one supplied when the amount is 60."""
 
     high: High
 
     @model_validator(mode="after")
     def swap(self) -> Self:
-        object.__setattr__(self, "high", High(value=Amount(Decimal(99)), bound=Limit()))
+        if self.high.value.root == 60:
+            object.__setattr__(self, "high", High(value=Amount(Decimal(60)), bound=Limit()))
         return self
 
     @override
@@ -844,90 +1064,9 @@ class Swapping(Action[Teller, Noted]):
         return Json(self.party.says.root)
 
 
-class DearSwapped(Fact):
-    """An element valued high, told about through the swapping action."""
-
-    element: Element
-    high: High
-    noted: Noted
-
-
-class ConcludedSwapped(Fact):
-    """Every element valued."""
-
-    valued: tuple[Cheap | DearSwapped, ...]
-
-
-class AnsweredSwapped(Reply[ConcludedSwapped]):
-    """What leaves."""
-
-
-class SwapOperation(Route[Elements, AnsweredSwapped]):
-    """Value each element through the swapping action."""
-
-
-SWAPPING = program_of(
-    *CORE, Noted, Swapping, Cheap, DearSwapped, ConcludedSwapped, AnsweredSwapped, SwapOperation
-)
-"""The program whose action substitutes its own premise."""
-
-
-@pytest.mark.asyncio
-async def test_a_substituted_premise_a_foreign_action_or_a_mismatched_pair_is_never_performed(
-    parties: Callable[[dict[str, str]], None],
-) -> None:
-    assert list(signature(performed_in_span).parameters) == ["execution", "pass_"]
-    assert Execution._fields == ("occurrence", "action", "supplied")
-    parties({"a": "50"})
-    with pytest.raises(ValidationError) as failure:
-        await valued(SWAPPING, "a", route=SwapOperation)
-    assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
-        (
-            "substituted",
-            ("Swapping", "high"),
-            "Swapping.high at request.each.[0].Swapping holds another instance than the one"
-            " supplied for it",
-        )
-    ]
-    assert performed(Swapping) == []
-    parties({"a": "50", "b": "60"})
-    proof = proven(PROGRAM)
-    done = await valued(PROGRAM, "a", "b", proof=proof)
-    first, second = occurrences_of(done.root, Notify)
-    made_first, made_second = first.made, second.made
-    assert isinstance(made_first, Constructed)
-    assert isinstance(made_second, Constructed)
-    fresh = Invocation(Operation, proof, done.root, set())
-    assert unauthorized(fresh, first) is None
-    first.scope.made[first.construction] = Constructed(made_second.instance, made_first.supplied)
-    assert unauthorized(fresh, first) == "high hold other instances than were supplied"
-    first.scope.made[first.construction] = Constructed(made_second.instance, made_second.supplied)
-    assert unauthorized(fresh, first) == (
-        "high dereferences to another occurrence than the one that supplied it"
-    )
-    high = made_first.supplied.premises["high"].found.instance
-    assert isinstance(high, High)
-    assert isinstance(made_first.instance, Notify)
-    handmade = Notify(high=high, party=made_first.instance.party)
-    first.scope.made[first.construction] = Constructed(handmade, made_first.supplied)
-    assert unauthorized(fresh, first) is None
-    assert handmade is not made_first.instance
-    first.scope.made[first.construction] = made_first
-    with pytest.raises(ValidationError) as refused:
-        engine.authorized(Invocation(Operation, proof, done.root, {first}), first)
-    assert [(e["type"], e["loc"], e["msg"]) for e in refused.value.errors()] == [
-        (
-            "unauthorized",
-            ("Notify",),
-            "Notify at request.each.[0].Notify is not performed: it was performed in this"
-            " invocation already",
-        )
-    ]
-
-
 class Impostor(Action[Teller, Noted]):
-    """An action of another class holding a party and a high as ``Notify`` does: in no program,
-    constructed by no proof's construction, justified by nothing."""
+    """An action of another class holding a party and a high as ``Masked`` does: in no program,
+    constructed by no proof's construction."""
 
     high: High
 
@@ -939,13 +1078,16 @@ class Impostor(Action[Teller, Noted]):
 
 class Masked(Action[Teller, Noted]):
     """Tell the teller about an element valued high, with a validator that returns an impostor
-    holding the same party and the same high in place of the instance Pydantic constructed."""
+    holding the same party and the same high in place of the instance Pydantic constructed when
+    the amount is 60."""
 
     high: High
 
     @model_validator(mode="after")
     def mask(self) -> Self:
-        return Impostor(high=self.high, party=self.party)  # type: ignore[return-value]
+        if self.high.value.root == 60:
+            return Impostor(high=self.high, party=self.party)  # type: ignore[return-value]
+        return self
 
     @override
     async def perform(self) -> Json:
@@ -953,72 +1095,110 @@ class Masked(Action[Teller, Noted]):
         return Json(self.party.says.root)
 
 
-class DearMasked(Fact):
-    """An element valued high, told about through the masked action."""
-
-    element: Element
-    high: High
-    noted: Noted
-
-
-class ConcludedMasked(Fact):
-    """Every element valued."""
-
-    valued: tuple[Cheap | DearMasked, ...]
-
-
-class AnsweredMasked(Reply[ConcludedMasked]):
-    """What leaves."""
-
-
-class MaskOperation(Route[Elements, AnsweredMasked]):
-    """Value each element through the masked action."""
-
-
-MASKED = program_of(
-    *CORE, Noted, Masked, Cheap, DearMasked, ConcludedMasked, AnsweredMasked, MaskOperation
-)
-"""The program whose action's validator substitutes another action for itself."""
-
-
-@pytest.mark.asyncio
-async def test_an_action_of_another_class_than_the_construction_makes_never_reaches_perform(
-    parties: Callable[[dict[str, str]], None],
-) -> None:
-    parties({"a": "50"})
-    proof = proven(MASKED)
-    (masked,) = (j for j in proof.justifications if j.action.cls is Masked)
-    assert masked.established
-    assert (
-        type(
-            Masked.model_validate(
-                {
-                    "high": High(value=Amount(Decimal(50)), bound=Limit()),
-                    "party": Teller(says=Said("{}")),
-                }
-            )
-        )
-        is Impostor
+def telling_through(
+    action: type[Action[Teller, Noted]],
+) -> tuple[ModuleType, type[Route[Elements, Reply[Fact]]]]:
+    """The reference program with its notification made through another action class, and its
+    route, which is made here and so is typed by hand."""
+    dear = type(
+        f"Dear{action.__name__}",
+        (Fact,),
+        {
+            "__annotations__": {"element": Element, "high": High, "noted": Noted},
+            "__module__": __name__,
+            "__doc__": "An element valued high, told about.",
+        },
     )
-    with pytest.raises(ValidationError) as failure:
-        await valued(MASKED, "a", route=MaskOperation, proof=proof)
-    assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
+    concluded = type(
+        f"Concluded{action.__name__}",
+        (Fact,),
+        {
+            "__annotations__": {"valued": tuple[Cheap | dear, ...]},  # type: ignore[valid-type]
+            "__module__": __name__,
+            "__doc__": "Every element valued.",
+        },
+    )
+    answered = type(
+        f"Answered{action.__name__}",
+        (Reply[concluded],),  # type: ignore[valid-type]
+        {"__module__": __name__, "__doc__": "What leaves."},
+    )
+    route = type(
+        f"{action.__name__}Operation",
+        (Route[Elements, answered],),  # type: ignore[valid-type]
+        {"__module__": __name__, "__doc__": "Value each element."},
+    )
+    program = program_of(*CORE, Noted, action, Cheap, dear, concluded, answered, route)
+    return program, cast("type[Route[Elements, Reply[Fact]]]", route)
+
+
+type Forgery = Literal["premise", "action"]
+"""How the second element's action is forged by its own validator: another instance in place of
+the high supplied, or an impostor of another class in place of the action constructed."""
+
+FORGED: dict[Forgery, tuple[type[Action[Teller, Noted]], tuple[str, tuple[str, ...], str]]] = {
+    "premise": (
+        Swapping,
+        (
+            "substituted",
+            ("Swapping", "high"),
+            "Swapping.high at request.each.[1].Swapping holds another instance than the one"
+            " supplied for it",
+        ),
+    ),
+    "action": (
+        Masked,
         (
             "substituted",
             ("Masked",),
-            "Masked at request.each.[0].Masked constructed Impostor, not itself",
-        )
-    ]
-    assert performed(Impostor) == []
-    assert performed(Masked) == []
-    assert [p.subject for p in performed(Ask)] == ["a"]
-
-
-# --- 7. admission timing ----------------------------------------------------------------------
+            "Masked at request.each.[1].Masked constructed Impostor, not itself",
+        ),
+    ),
+}
+"""Each forgery's action class and the one refusal it meets, at the forged occurrence."""
 
 
 @pytest.mark.asyncio
-async def test_pending_refuted_failed_and_unadmitted_evidence_authorizes_nothing(
+@pytest.mark.parametrize("forgery", ["premise", "action"])
+@pytest.mark.parametrize("eager", [False, True])
+async def test_a_forged_candidate_after_a_valid_one_starts_no_action_of_the_batch(
+    parties: Callable[[dict[str, str]], None],
+    *,
+    forgery: Forgery,
+    eager: bool,
+) -> None:
+    loop = asyncio.get_running_loop()
+    factory = loop.get_task_factory()
+    if eager:
+        loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        action, (code, loc, message) = FORGED[forgery]
+        program, route = telling_through(action)
+        proof = proven(program)
+        assert proof.faulted == ()
+        parties({"a": "50"})
+        done = await ran(route, requested("a"), config(program)(), proof)
+        assert isinstance(done, Run)
+        assert [p.subject for p in performed(action)] == ["50"]
+        PERFORMED.clear()
+        parties({"a": "50", "b": "60"})
+        with pytest.raises(ValidationError) as failure:
+            await ran(route, requested("a", "b"), config(program)(), proof)
+        assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
+            (code, loc, message)
+        ]
+        assert performed(action) == []
+        assert performed(Impostor) == []
+        assert [p.subject for p in performed(Ask)] == ["a", "b"]
+    finally:
+        loop.set_task_factory(factory)
+
+
+# --- 5. admission timing: pending, refuted and unadmitted evidence demands nothing -------------
+
+
+@pytest.mark.asyncio
+async def test_pending_refuted_failed_and_unadmitted_evidence_performs_nothing_after_it(
     parties: Callable[[dict[str, str]], None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     parties({"a": "5", "boom": "50", "c": "50"})
@@ -1047,99 +1227,7 @@ async def test_pending_refuted_failed_and_unadmitted_evidence_authorizes_nothing
     assert ("request", "each", "[1]", "Notify") in made_in(done.root, Notify)
 
 
-# --- 8. the batch is preflighted before any task is created ----------------------------------
-
-
-type Forgery = Literal["premise", "action", "witness"]
-"""How a candidate after a valid one is forged: the first element's high in place of the
-second's, an impostor of another class in place of the second ``Notify``, or the first
-element's ``Ask`` witness grafted onto the second's, the two elements being one object."""
-
-REFUSED: dict[str, tuple[str, str]] = {
-    "premise": (
-        "Notify",
-        "Notify at request.each.[1].Notify is not performed: high hold other instances than were"
-        " supplied",
-    ),
-    "action": (
-        "Notify",
-        "Notify at request.each.[1].Notify is not performed: it is Impostor, not the Notify the"
-        " construction makes",
-    ),
-    "witness": (
-        "Ask",
-        "Ask at request.each.[1].Ask is not performed: element dereferences to another occurrence"
-        " than the one that supplied it",
-    ),
-}
-"""The one refusal each forgery meets, at the forged occurrence."""
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("forgery", ["premise", "action", "witness"])
-@pytest.mark.parametrize("eager", [False, True])
-async def test_an_invalid_candidate_after_a_valid_one_starts_no_action_of_the_batch(
-    parties: Callable[[dict[str, str]], None],
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    forgery: Forgery,
-    eager: bool,
-) -> None:
-    loop = asyncio.get_running_loop()
-    factory = loop.get_task_factory()
-    if eager:
-        loop.set_task_factory(asyncio.eager_task_factory)
-    try:
-        parties({"a": "50", "b": "60"})
-        element = Element(name=Name("a"))
-        request = Elements(each=(element, element)) if forgery == "witness" else requested("a", "b")
-        proof = proven(PROGRAM)
-        done = await ran(Operation, request, config(PROGRAM)(), proof)
-        assert isinstance(done, Run)
-        expected = ["50", "50"] if forgery == "witness" else ["50", "60"]
-        assert sorted(p.subject for p in performed(Notify)) == expected
-        PERFORMED.clear()
-        constructing = engine.construct
-        notifies: list[Notify] = []
-        grafts: list[Constructed] = []
-
-        def forging(occurrence: Occurrence, given: engine.Given) -> BaseModel | ValidationError:
-            found = constructing(occurrence, given)
-            if isinstance(found, Notify):
-                notifies.append(found)
-                if forgery == "premise":
-                    return notifies[0]
-                if forgery == "action" and len(notifies) == 2:
-                    return Impostor(high=found.high, party=found.party)
-            return found
-
-        def unchecked(
-            occurrence: Occurrence,
-            instance: BaseModel,
-            supplied: engine.Bound,
-        ) -> Constructed:
-            made = Constructed(instance, supplied)
-            if forgery == "witness" and occurrence.construction.cls is Ask:
-                grafts.append(made)
-                return grafts[0]
-            return made
-
-        monkeypatch.setattr(engine, "construct", forging)
-        monkeypatch.setattr(engine, "witnessed", unchecked)
-        with pytest.raises(ValidationError) as failure:
-            await ran(Operation, request, config(PROGRAM)(), proof)
-        cls, message = REFUSED[forgery]
-        assert [(e["type"], e["loc"], e["msg"]) for e in failure.value.errors()] == [
-            ("unauthorized", (cls,), message)
-        ]
-        assert performed(Notify) == []
-        assert performed(Impostor) == []
-        assert [p.subject for p in performed(Ask)] == ([] if forgery == "witness" else ["a", "b"])
-    finally:
-        loop.set_task_factory(factory)
-
-
-# --- 9. a competing branch excluded justifies nothing: the use's own evidence does ------------
+# --- 6. conditional construction: blocked without an irrelevant effect, and an effect kept -----
 
 
 class Reading(Scalar[Decimal]):
@@ -1185,8 +1273,8 @@ class Told(Record):
 
 
 class TellWithin(Action[Teller, Told]):
-    """Tell the teller of a reading at most ten: used only where the reading is negative, of
-    which this holds nothing."""
+    """Tell the teller of a reading at most ten: supplied for a reading of 5, needed only where
+    the reading is negative."""
 
     within: Within
 
@@ -1197,7 +1285,7 @@ class TellWithin(Action[Teller, Told]):
 
 
 class TellNegative(Action[Teller, Told]):
-    """Tell the teller of a negative reading: holds the evidence its use needs."""
+    """Tell the teller of a negative reading."""
 
     negative: Negative
 
@@ -1234,12 +1322,6 @@ class Decide(Route[Measured, DecidedReply]):
     """Decide a reading."""
 
 
-class Telling(Config):
-    """The teller."""
-
-    teller: Teller
-
-
 READINGS: tuple[type[object], ...] = (
     Reading,
     Measured,
@@ -1261,12 +1343,11 @@ READINGS: tuple[type[object], ...] = (
 """The two branches, without the action."""
 
 NONEXHAUSTIVE = program_of(*READINGS, Within, TellWithin)
-"""The program whose action holds a reading at most ten, used only where it is negative: the
-other branch, over ten, is excluded by the action's premise, and a reading between is in
-neither."""
+"""The program whose action holds a reading at most ten, needed only where it is negative: a
+reading between is in neither branch, and the action is supplied for it."""
 
 GUARDED = program_of(*READINGS, TellNegative)
-"""The same program with the action holding the evidence its use needs."""
+"""The same program with the action holding the evidence of the branch that needs it."""
 
 
 def measured(reading: str) -> Measured:
@@ -1276,32 +1357,22 @@ def measured(reading: str) -> Measured:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
-async def test_a_branch_action_is_not_justified_by_the_competing_branch_being_excluded() -> None:
-    faults = faults_of(NONEXHAUSTIVE)
-    assert set(faults) == {("undecided", ("TellWithin",))}
-    assert faults["undecided", ("TellWithin",)] == (
-        "TellWithin at the root is performed before Negative at Negative, which Below at Below"
-        " needs, is established; TellWithin holds nothing that establishes it"
-    )
-    assert PERFORMED == []
-    done = await ran(
-        Decide, measured("5"), config(NONEXHAUSTIVE)(), unproven(NONEXHAUSTIVE, Decide)
-    )
-    assert isinstance(done, Blocked)
-    assert [p.subject for p in performed(TellWithin)] == ["5"]
-    PERFORMED.clear()
-    proof = proven(GUARDED)
-    (negative,) = proof.justifications
-    assert [u.construction.cls for u in negative.uses] == [Below]
-    assert [c.use.construction.cls for c in negative.coverages if c.use] == [Below]
+@pytest.mark.parametrize(
+    ("program", "action"), [(NONEXHAUSTIVE, TellWithin), (GUARDED, TellNegative)]
+)
+async def test_a_route_blocked_in_neither_branch_performs_no_effect_of_either(
+    program: ModuleType, action: type[object]
+) -> None:
+    proof = proven(program)
+    assert proof.faulted == ()
     for reading, outcome, told in (("5", Blocked, []), ("-1", Run, ["-1"]), ("50", Run, [])):
         PERFORMED.clear()
-        done = await ran(Decide, measured(reading), config(GUARDED)(), proof)
+        done = await ran(Decide, measured(reading), config(program)(), proof)
         assert isinstance(done, outcome)
-        assert [p.subject for p in performed(TellNegative)] == told
-
-
-# --- 9b. a choice among what arrives is held by the action performed under it ----------------
+        assert [p.subject for p in performed(action)] == told
+    blocked = await ran(Decide, measured("5"), config(program)(), proof)
+    assert isinstance(blocked, Blocked)
+    assert {c.occurrence.construction.cls for c in blocked.causes} == {Negative, Over}
 
 
 class Quick(Value):
@@ -1323,7 +1394,7 @@ class Timed(Request):
 
 
 class TellTimed(Action[Teller, Told]):
-    """Tell the teller of a reading, quick or slow: holds the choice it is performed under."""
+    """Tell the teller of a reading, quick or slow: holds the choice."""
 
     kind: Quick | Slow
 
@@ -1334,7 +1405,8 @@ class TellTimed(Action[Teller, Told]):
 
 
 class TellReading(Action[Teller, Told]):
-    """Tell the teller of a reading: holds nothing of the choice its uses are made under."""
+    """Tell the teller of a reading: holds what both alternatives hold, and is needed under
+    either."""
 
     reading: Reading
 
@@ -1399,39 +1471,53 @@ UNHELD = program_of(*TIMED, TellReading)
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
-async def test_an_action_under_a_choice_among_what_arrives_holds_the_choice() -> None:
-    faults = faults_of(UNHELD)
-    assert set(faults) == {("undecided", ("TellReading",))}
-    assert faults["undecided", ("TellReading",)] == (
-        "TellReading at the root is performed before Quick at request.kind, which ToldQuick at"
-        " ToldQuick needs, is established; TellReading holds nothing that establishes it"
-    )
-    proof = proven(HELD)
-    (timed,) = proof.justifications
-    assert [u.construction.cls for u in timed.uses] == [ToldQuick, ToldSlow]
-    assert [c.use.construction.cls for c in timed.coverages if c.use] == [ToldQuick, ToldSlow]
+@pytest.mark.parametrize(("program", "action"), [(HELD, TellTimed), (UNHELD, TellReading)])
+async def test_an_action_needed_under_either_alternative_is_performed_once_under_each(
+    program: ModuleType, action: type[object]
+) -> None:
+    proof = proven(program)
+    assert proof.faulted == ()
     for told in (Quick, Slow):
         PERFORMED.clear()
         request = Timed(kind=told(reading=Reading(Decimal(1))))
-        done = await ran(Tell, request, config(HELD)(), proof)
+        done = await ran(Tell, request, config(program)(), proof)
         assert isinstance(done, Run)
-        assert [p.subject for p in performed(TellTimed)] == [told.__name__]
+        assert [p.action for p in PERFORMED] == [action]
         assert type(done.route.reply.of.which) is (ToldQuick if told is Quick else ToldSlow)
 
 
-# --- 10. conditional programs and other capability implementations ---------------------------
+@pytest.mark.asyncio
+async def test_an_effect_performed_stays_performed_when_what_needs_it_then_blocks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PARTY__SAYS", '{"amount": "4"}')
+    exporter = exporting()
+    proof = proven(optional)
+    request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
+    blocked = await ran(optional.Checkout, request, config(optional)(), proof)
+    assert isinstance(blocked, Blocked)
+    (quote,) = occurrences_of(blocked.occurrence.scope, optional.Quote)
+    assert isinstance(quote.made, Constructed)
+    heard = blocked.occurrence.scope.arrived[quote.construction, ()]
+    assert isinstance(heard, optional.Quoted)
+    assert heard.coupon is None
+    (span,) = (s for s in exporter.get_finished_spans() if s.name == "Quote")
+    assert attributes(span)["tca.outcome"] == "heard"
+    assert [(e["type"], e["loc"]) for e in refused(blocked).errors()] == [
+        ("missing", ("Discount", "coupon"))
+    ]
 
 
 @pytest.mark.asyncio
-async def test_a_conditional_program_still_blocks_and_another_implementation_changes_nothing(
+async def test_no_element_and_another_implementation_demand_nothing_more(
     parties: Callable[[dict[str, str]], None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PARTY__SAYS", '{"amount": "4"}')
-    proof = proven(optional)
-    assert all(j.established for j in proof.justifications)
-    request = optional.PlaceOrder.model_validate_json('{"sku": "tea"}')
-    done = await ran(optional.Checkout, request, config(optional)(), proof)
-    assert isinstance(done, Blocked)
+    parties({})
+    empty = await valued(PROGRAM)
+    assert PERFORMED == []
+    assert empty.route.reply.of.valued == ()
+    assert empty.passes == 1
     parties({"a": "50"})
     done = await valued(PROGRAM, "a")
     assert [p.subject for p in performed(Notify)] == ["50"]
@@ -1447,4 +1533,3 @@ async def test_a_conditional_program_still_blocks_and_another_implementation_cha
     assert [p.subject for p in performed(Notify)] == ["50"]
     assert set(made_in(again.root, Notify)) == before
     assert again.route.reply.of.valued[0].noted.word.root == "dear"  # type: ignore[union-attr]
-    assert {j.action.cls for j in proven(PROGRAM).justifications if j.established} == {Ask, Notify}

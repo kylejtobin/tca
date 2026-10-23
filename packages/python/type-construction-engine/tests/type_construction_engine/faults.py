@@ -6,8 +6,8 @@ sibling elements, a collection of a once-per-run class, a route that would exist
 element, a scalar nothing holds, a bare primitive on a fact, a request that holds a fact, a
 deployment that holds a business value, two deployments, two union members the proof cannot
 tell apart, relations their operands' intervals decide, a relation kind that compares nothing,
-two records one action hears that no field tells apart, and an action performed on one branch
-of a choice that holds nothing deciding it. The same scalar on two carriers, the same record
+and two records one action hears that no field tells apart. The same scalar on two carriers,
+the same record
 heard by two actions and the same element class in two collections are not faults by
 themselves: only a field that could be filled from two of them is."""
 
@@ -243,8 +243,8 @@ class Charged(Record):
 
 
 class Charge(Tell[Party, Charged]):
-    """Charge for an element: performed when Priced holds and not when Free holds, yet holding
-    nothing that decides between them."""
+    """Charge for an element: performed where Priced needs what it hears, which Low decides, and
+    holding the element alone, which is no fault."""
 
     element: Element
 

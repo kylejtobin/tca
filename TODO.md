@@ -11,16 +11,16 @@ Not built, in order. The design for each is in `docs/decisions/`; the developer'
 
 ### Task 4: Route-Local Proof and Construction Soundness - Done
 
-### Task 5: Occurrence-Bound Effect Authorization - Not Done
+### Task 5: Demand-Directed, Evidence-Eligible Effects - Delivered for review
 
-**Derive effect authorization from Task 4's proven construction relationships.** Do not introduce a separate policy model.
+**Derive what is performed from the route's own construction, and what it is performed with from the action's declared fields.** Do not introduce a separate policy model, a second dependency graph, or a developer-facing authorization API.
 
-- Establish each action's required evidence and branch conditions from its declared premises.
-- Reject actions whose declarations do not establish why that effect is authorized, including actions missing the evidence that distinguishes mutually exclusive outcomes.
-- At runtime, authorize against the actual occurrence's admitted evidence and provenance. Evidence from another scope, invocation, or refuted condition cannot authorize an effect.
-- Preserve Pydantic validation, structured concurrency, and atomic pass-level evidence admission.
+- Each pass constructs every pure occurrence a scope supplies, to a fixed point; then the route's own occurrence is asked what it still needs performed, read backward through its unfilled premises, a premise needing only what every pending alternative needs, so a branch's effect waits for the branch and a choice among effects is never guessed.
+- An action's eligibility is its fields: the demanded actions whose scopes supply every premise are constructed from the exact occurrences bound there, each of its own class and holding the very instances supplied, every one before any is performed; that construction is the only way to the effect boundary.
+- A route refused by what arrived performs nothing it cannot use; a choice between effects nothing decides ends the run blocked, naming the premise and what each alternative would perform.
+- Preserve Pydantic validation, structured concurrency, at-most-once dispatch and atomic pass-level evidence admission.
 
-**Outcome:** An effect executes only when the correct occurrence's actual evidence satisfies its proven authorization requirements.
+**Outcome:** An effect executes only when the requested answer needs its result and the correct occurrence's own evidence supplies it. Records 0054, 0055 and 0056, the developer skill's account of `undecided`, and the feature files are reconciled in Task 7.
 
 ### Task 6: Declarative CLI Projection - Not Done
 

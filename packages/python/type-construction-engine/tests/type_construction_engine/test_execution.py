@@ -37,6 +37,7 @@ from type_construction.engine import (
     opened,
     proven,
     ran,
+    refused,
     scopes,
     symbolic,
 )
@@ -310,7 +311,7 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     assert done.route.reply.model_dump_json() == (
         '{"cart":"10.00","gifts":"4","pair":"14.50","solo":"10"}'
     )
-    assert done.passes == 4
+    assert done.passes == 2
     assert len(HELD) == 7
     assert set(HELD) == set(OPENED) == {id(deployment.catalog), id(deployment.fraud)}
     quotes = [
@@ -328,7 +329,7 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     assert attributes(answered) == {
         "tca.request": "PlaceOrder",
         "tca.outcome": "answered",
-        "tca.passes": 4,
+        "tca.passes": 2,
     }
     assert sorted(admitted(answered)) == sorted(
         f"{s}.heard" for s in ("Screen", *QUOTES.split(", "), "request.solo.lines.[0].Quote")
@@ -435,7 +436,7 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
         if s.name != "Operation":
             assert parented([s], routes[trace_of(s)])
     (notify,) = by_name(spans, "Notify")
-    assert attributes(notify)["tca.pass"] == 3
+    assert attributes(notify)["tca.pass"] == 2
     assert {attributes(s)["tca.outcome"] for s in spans if s.name != "Operation"} == {"heard"}
     for trace, route in routes.items():
         assert attributes(route)["tca.outcome"] == "answered"
@@ -450,7 +451,7 @@ async def test_two_answers_interleaving_across_passes_keep_their_evidence_and_tr
         ["request.each.[0].Asked", "request.each.[0].Notify"],
         ["request.each.[0].Asked", "request.each.[1].Asked"],
     ]
-    assert (done.passes, later.passes) == (4, 5)
+    assert (done.passes, later.passes) == (2, 3)
 
 
 @pytest.mark.asyncio
@@ -578,56 +579,31 @@ async def test_a_premise_refuted_in_one_scope_is_reported_there_and_nowhere_else
     assert len(admitted(route)) == 3
 
 
+FLAGGED = (
+    "missing",
+    ("Screened", "clear"),
+    "no instance fills Screened.clear at Screened, which holds Clear; Screen at Screen heard"
+    " Flagged",
+)
+OVER = (
+    "relation",
+    ("Low",),
+    "Low at Low did not hold: value Amount at request.amount > bound Limit at Limit",
+)
+"""The two causes that block the blockers program's route."""
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("says", "amount", "expected"),
     [
-        (
-            '{"status": "flagged", "reason": "velocity"}',
-            "25",
-            [
-                (
-                    "missing",
-                    ("Screened", "clear"),
-                    "no instance fills Screened.clear at Screened, which holds Clear; Screen at"
-                    " Screen heard Flagged",
-                ),
-                (
-                    "relation",
-                    ("Low",),
-                    "Low at Low did not hold: value Amount at request.amount > bound Limit at"
-                    " Limit",
-                ),
-            ],
-        ),
-        (
-            '{"status": "flagged", "reason": "velocity"}',
-            "5",
-            [
-                (
-                    "missing",
-                    ("Screened", "clear"),
-                    "no instance fills Screened.clear at Screened, which holds Clear; Screen at"
-                    " Screen heard Flagged",
-                ),
-            ],
-        ),
-        (
-            '{"status": "clear"}',
-            "25",
-            [
-                (
-                    "relation",
-                    ("Low",),
-                    "Low at Low did not hold: value Amount at request.amount > bound Limit at"
-                    " Limit",
-                ),
-            ],
-        ),
+        ('{"status": "flagged", "reason": "velocity"}', "25", [OVER]),
+        ('{"status": "flagged", "reason": "velocity"}', "5", [FLAGGED]),
+        ('{"status": "clear"}', "25", [OVER]),
         ('{"status": "clear"}', "5", []),
     ],
 )
-async def test_each_premise_blocking_the_route_is_named_whatever_the_others_are(
+async def test_a_route_refused_by_what_arrived_performs_no_screening_it_cannot_use(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     says: str,
@@ -637,13 +613,16 @@ async def test_each_premise_blocking_the_route_is_named_whatever_the_others_are(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FRAUD__SAYS", says)
     request = blockers.Ask.model_validate_json(f'{{"amount": "{amount}"}}')
-    if not expected:
-        done = await answer(blockers.Approve, request, config(blockers)(), proven(blockers))
-        assert done.reply.of.low.value is request.amount
+    proof = proven(blockers)
+    done = await ran(blockers.Approve, request, config(blockers)(), proof)
+    root = done.root if isinstance(done, Run) else done.occurrence.scope
+    (screen,) = (c for c in proof.constructs(blockers.Approve) if c.cls is blockers.Screen)
+    assert (screen in root.made) is (OVER not in expected)
+    if isinstance(done, Run):
+        assert expected == []
+        assert done.route.reply.of.low.value is request.amount
         return
-    with pytest.raises(ValidationError) as refusal:
-        await answer(blockers.Approve, request, config(blockers)(), proven(blockers))
-    assert [(e["type"], e["loc"], e["msg"]) for e in refusal.value.errors()] == expected
+    assert [(e["type"], e["loc"], e["msg"]) for e in refused(done).errors()] == expected
 
 
 def placing(cls: type[BaseModel], **premises: Ref) -> Construction:
@@ -720,7 +699,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             stalls.Low,
             ELEMENT,
             premises={
-                "value": (heard.held(stalls.Amount, "amount", conditional=False),),
+                "value": (heard.held(stalls.Amount, "amount"),),
                 "bound": (InputRef((), ("Limit",), stalls.Limit),),
             },
         ),
@@ -968,7 +947,7 @@ async def test_one_resolver_serves_construction_and_explanation_and_only_a_block
     }
     done = await ran(Checkout, request, config(program)(), proof)
     assert isinstance(done, Run)
-    assert done.passes == 4
+    assert done.passes == 2
     assert resolved
     assert all(r in retained for r in resolved)
     assert explained == []
