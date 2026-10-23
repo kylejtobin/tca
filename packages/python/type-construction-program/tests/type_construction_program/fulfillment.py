@@ -138,6 +138,22 @@ class Fulfilled(Fact):
     outcome: Shipped | Refused
 
 
+class Cancellation(Record):
+    order: OrderId = Field(alias="order_id")
+
+
+class Cancelled(Fact):
+    order: Order
+    cancellation: Cancellation
+
+
+class FulfilledUnlessCancelled(Fact):
+    """Shipped, refused, or cancelled by the customer: a passive alternative beside the two the
+    charge decides."""
+
+    outcome: Shipped | Refused | Cancelled
+
+
 class Settled(Fact):
     """Funds held and captured for one order: two operations with equal request bodies."""
 
@@ -147,6 +163,7 @@ class Settled(Fact):
 
 
 PAYMENTS = Source("payments")
+CUSTOMER = Source("customer")
 APPROVALS = Source("approvals")
 CARRIER = Source("carrier")
 
@@ -167,5 +184,11 @@ SHIP = Interaction(
 
 FULFILLMENT = Program(goal=Fulfilled, accepts=FulfillOrder, interactions=(CHARGE, APPROVAL, SHIP))
 SETTLEMENT = Program(goal=Settled, accepts=FulfillOrder, interactions=(HOLD, CHARGE))
+CANCELLATION = Interaction(source=CUSTOMER, receives=(Cancellation,), correlated=BY_ORDER)
+RACING = Program(
+    goal=FulfilledUnlessCancelled,
+    accepts=FulfillOrder,
+    interactions=(CHARGE, APPROVAL, SHIP, CANCELLATION),
+)
 
 ORDER = FulfillOrder(order=Order(id=OrderId("o-1"), total=Total(Decimal("50.00"))))

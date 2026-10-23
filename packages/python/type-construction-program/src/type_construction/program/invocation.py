@@ -17,16 +17,18 @@ built from a different element, or from different evidence, is a different opera
 built from the same occurrences is the same one, however many premises hold it.
 
 The functions here are the host protocol in its smallest form. ``accept`` opens an invocation.
-``admit`` validates a delivery against the program's declared receives, ties it to the invocation
-by the declared correlation or by the intent it answers, refuses what is closed, duplicated or
-conflicting, and records it as evidence. A correlation whose subject enters a collection ties the
-delivery to the one element whose value is equal, recorded as the evidence's ``element``.
-``intend`` commits the evaluator's proposed dispatches before anything is sent. ``perform``,
-``acknowledge``, ``failed`` and ``uncertain`` record what one attempt produced, as the capability
-reports it: the result, which becomes evidence in the same step; a receipt, which does not; a
-failure that did not happen; or an outcome that is not known. Which of these came back is the
-capability's report, not an inference from the payload's shape: a receipt may have the shape of a
-result. Nothing here calls an external system, reads a clock, or decides a business branch.
+``intend`` commits the evaluator's proposed dispatches before anything is sent. Every claim about
+the world then passes through one admission, whether it arrives as a delivery (``admit``) or comes
+back inside an attempt (``perform``): the receive is selected by the request the claim answers or
+by its declared correlation, the payload is validated as what that receive says, a repeated claim
+is one claim and a conflicting one is refused, every declared equality is checked, a claim for a
+solicited receive must answer a request this invocation committed, and a receive that says
+nothing more refuses. A returned payload is not evidence until it passes the same admission a
+delivery does. ``acknowledge``, ``failed`` and ``uncertain`` record what else an attempt produced,
+as the capability reports it: a receipt, which satisfies no premise; a failure that did not
+happen; or an outcome that is not known. Which of these came back is the capability's report, not
+an inference from the payload's shape: a receipt may have the shape of a result. Nothing here
+calls an external system, reads a clock, or decides a business branch.
 
 These are in-memory records for contract experiments. They are not a durable codec, and nothing
 here demonstrates recovery, concurrency or worker ownership.
@@ -124,19 +126,6 @@ class EffectIdentity(BaseModel):
         return hash((self.invocation.root, self.operation, self.occurrence))
 
 
-class Delivery(BaseModel):
-    """An external claim presented for admission: who says it, its transport identity, the
-    payload as received, and, when the party echoes it, the intent it answers."""
-
-    model_config = RECORDED
-
-    source: Source
-    id: DeliveryId
-    payload: str
-    """The payload as JSON text; admission validates it in JSON mode."""
-    answers: EffectIdentity | None = None
-
-
 class Delivered(BaseModel):
     """Evidence came in a delivery."""
 
@@ -152,6 +141,31 @@ class Returned(BaseModel):
 
     identity: EffectIdentity
     attempt: int
+
+
+class Delivery(BaseModel):
+    """An external claim presented for admission: who says it, its transport identity, the
+    payload as received, and, when the party echoes it, the intent it answers."""
+
+    model_config = RECORDED
+
+    source: Source
+    id: DeliveryId
+    payload: str
+    """The payload as JSON text; admission validates it in JSON mode."""
+    answers: EffectIdentity | None = None
+
+
+class Claim(BaseModel):
+    """What admission judges, whatever brought it: the party, how it came, the payload as the
+    party gave it, and the request it answers when that is known."""
+
+    model_config = RECORDED
+
+    source: Source
+    origin: Delivered | Returned
+    payload: str
+    answers: EffectIdentity | None = None
 
 
 class Evidence(BaseModel):
@@ -186,12 +200,14 @@ class Admitted(BaseModel):
 
 
 class Intended(BaseModel):
-    """An effect intent was committed, before dispatch."""
+    """An effect intent was committed, before dispatch. ``elements`` are the input elements the
+    request was constructed for, when it is one of many."""
 
     model_config = RECORDED
 
     identity: EffectIdentity
     request: SerializeAsAny[BaseModel]
+    elements: tuple[Site, ...] = ()
 
 
 class Answered(BaseModel):
@@ -243,13 +259,14 @@ type Entry = Accepted | Admitted | Intended | Attempted
 
 class Dispatch(BaseModel):
     """What the evaluator proposes the host perform: one request under one identity, as attempt
-    ``attempt``."""
+    ``attempt``, constructed for the input ``elements`` when it is one of many."""
 
     model_config = RECORDED
 
     identity: EffectIdentity
     request: SerializeAsAny[BaseModel]
     attempt: int = Field(ge=1)
+    elements: tuple[Site, ...] = ()
 
 
 class Invocation(BaseModel):
@@ -281,9 +298,28 @@ class Invocation(BaseModel):
         return tuple(e.evidence for e in self.history if isinstance(e, Admitted))
 
     @property
+    def committed(self) -> tuple[Intended, ...]:
+        """Every committed intent, in order."""
+        return tuple(e for e in self.history if isinstance(e, Intended))
+
+    @property
     def intents(self) -> dict[EffectIdentity, BaseModel]:
         """Every committed intent and its request."""
-        return {e.identity: e.request for e in self.history if isinstance(e, Intended)}
+        return {e.identity: e.request for e in self.committed}
+
+    def answered(self, identity: EffectIdentity) -> Evidence | None:
+        """The evidence that answers an intent, if any."""
+        for e in self.evidence:
+            if e.answers == identity:
+                return e
+        return None
+
+    def intended(self, identity: EffectIdentity) -> Intended:
+        """The committed intent with this identity."""
+        for e in self.committed:
+            if e.identity == identity:
+                return e
+        raise Refusal(Unintended(identity=identity))
 
     def attempts(self, identity: EffectIdentity) -> tuple[Attempted, ...]:
         """The attempts of one identity, in order."""
@@ -318,13 +354,15 @@ class Unmatched(BaseModel):
 
 class Ambiguous(BaseModel):
     """More than one declared receive of the source admits the payload, or more than one element
-    of the input matches its correlation."""
+    of the input matches its correlation, or more than one committed request could be the one
+    the payload answers."""
 
     model_config = RECORDED
 
     source: Source
     admitted: tuple[type[BaseModel], ...]
     elements: tuple[Site, ...] = ()
+    intents: tuple[EffectIdentity, ...] = ()
 
 
 class Uncorrelated(BaseModel):
@@ -338,6 +376,17 @@ class Uncorrelated(BaseModel):
     correlation: Correlation | None
     found: SerializeAsAny[BaseModel] | None = None
     expected: tuple[SerializeAsAny[BaseModel], ...] = ()
+
+
+class Unrequested(BaseModel):
+    """The payload is what a solicited receive says, and this invocation has committed no request
+    it could answer: the source said it, and this program did not ask. It is not evidence for a
+    premise obtained by asking."""
+
+    model_config = RECORDED
+
+    received: type[BaseModel]
+    sends: type[BaseModel]
 
 
 class UnknownIntent(BaseModel):
@@ -361,11 +410,11 @@ class Closed(BaseModel):
 
 
 class Conflict(BaseModel):
-    """A second payload under a delivery identity already admitted, differing from the first."""
+    """A second payload under an origin already admitted, differing from the first."""
 
     model_config = RECORDED
 
-    delivery: DeliveryId
+    delivery: Delivered | Returned
     prior: int
 
 
@@ -402,6 +451,7 @@ type Reason = (
     | Unmatched
     | Ambiguous
     | Uncorrelated
+    | Unrequested
     | UnknownIntent
     | Closed
     | Conflict
@@ -505,93 +555,154 @@ def correlated(
     return element
 
 
-def varying(program: Program, interaction: Interaction) -> bool:
-    """Whether a receive is one per element: its request, or the element its correlation
-    selects, varies over a collection."""
-    if interaction.sends is not None:
-        return bool(program.analysis.walked(interaction.sends))
-    return program.element_collection(interaction) is not None
+def requested(
+    program: Program, invocation: Invocation, interaction: Interaction, element: Site | None
+) -> EffectIdentity:
+    """The one committed, unanswered request of an interaction that a claim correlated to
+    ``element`` could answer. None is ``Unrequested``: the source said it, this program did not
+    ask. More than one is ``Ambiguous``: the declaration ties the claim to no one of them. When
+    every request it could answer is answered, the claim is for the answered one, and closure
+    judges it as a second answer."""
+    sends = interaction.sends
+    if sends is None:
+        msg = "an unsolicited receive answers no request"
+        raise TypeError(msg)
+    mine = [
+        i.identity
+        for i in invocation.committed
+        if program.sending(i.identity.operation) is interaction
+        and (element is None or element in i.elements)
+    ]
+    candidates = [identity for identity in mine if invocation.answered(identity) is None]
+    if not candidates and mine:
+        return mine[-1]
+    if not candidates:
+        raise Refusal(Unrequested(received=interaction.receives[0], sends=sends))
+    if len(candidates) > 1:
+        kinds = (interaction.receives[0],)
+        intents = tuple(candidates)
+        raise Refusal(Ambiguous(source=interaction.source, admitted=kinds, intents=intents))
+    return candidates[0]
 
 
-def closed(
-    program: Program, invocation: Invocation, interaction: Interaction, arriving: Evidence
-) -> None:
-    """Refuse a receive that says nothing more: one whose declared closing evidence is admitted,
-    or one held as a single record whose same occurrence was already said. For a receive that
-    is one per element, the same occurrence is the same intent answered or the same element
-    correlated to; for one that is one per invocation, any record the source said."""
+def closed(invocation: Invocation, interaction: Interaction, arriving: Evidence) -> Evidence | None:
+    """Refuse a receive that says nothing more, or return the earlier evidence a claim repeats.
+
+    A collection source is closed by its declared closing evidence. A solicited receive takes one
+    answer per request: the same answer again, from a second delivery or from the attempt that
+    performed the request, is that one answer; a different answer to an answered request is
+    refused. An unsolicited receive is one record per element it correlates to, or per
+    invocation."""
     kind = type(arriving.value)
     if interaction.closed_by is not None:
         closing = [e for e in invocation.evidence if isinstance(e.value, interaction.closed_by)]
         if closing:
             raise Refusal(Closed(received=kind, by=closing[0].id))
-        return
+        return None
+    if interaction.sends is not None:
+        prior = invocation.answered(arriving.answers) if arriving.answers is not None else None
+        if prior is None:
+            return None
+        if prior.value == arriving.value:
+            return prior
+        raise Refusal(Closed(received=kind, by=prior.id))
     said = invocation.said(interaction)
-    if varying(program, interaction):
-        said = tuple(
-            e for e in said if e.answers == arriving.answers and e.element == arriving.element
-        )
+    if arriving.element is not None:
+        said = tuple(e for e in said if e.element == arriving.element)
     if said:
         raise Refusal(Closed(received=kind, by=said[0].id))
+    return None
 
 
-def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invocation:
-    """Admit a delivery as evidence, or refuse it.
-
-    The receive is selected by the declared tie, then the payload is validated as what that
-    receive says. A delivery naming the intent it answers is for the interaction that sent that
-    intent, which must be committed here; shape alone cannot select among a source's records,
-    since two may have one shape. A delivery naming no intent is for the source's unsolicited
-    receives and its solicited receives with a field correlation; it must validate as exactly
-    one of what they say. A delivery already admitted under its identity is one claim: the same
-    payload changes nothing, a different one is a conflict. Every declared correlation must
-    hold, at exactly one element where the subject is in a collection, and a receive that says
-    nothing more refuses.
-    """
-    at_source = [i for i in program.interactions if i.source == delivery.source]
-    if delivery.answers is not None:
-        sent = program.sending(delivery.answers.operation)
-        if sent is None or sent not in at_source or delivery.answers not in invocation.intents:
-            raise Refusal(UnknownIntent(received=None, answers=delivery.answers))
+def selected(
+    program: Program, invocation: Invocation, claim: Claim
+) -> tuple[Interaction, BaseModel]:
+    """The one receive a claim is for and the payload validated as what it says."""
+    at_source = [i for i in program.interactions if i.source == claim.source]
+    if claim.answers is not None:
+        sent = program.sending(claim.answers.operation)
+        if sent is None or sent not in at_source or claim.answers not in invocation.intents:
+            raise Refusal(UnknownIntent(received=None, answers=claim.answers))
         eligible = [sent]
     else:
         eligible = [i for i in at_source if i.sends is None or i.correlated]
     candidates: list[tuple[Interaction, BaseModel]] = []
     errors: list[str] = []
     for interaction in eligible:
-        admitted, refused = validated(delivery.payload, interaction.receives)
+        admitted, refused = validated(claim.payload, interaction.receives)
         candidates.extend((interaction, value) for value in admitted)
         errors.extend(refused)
     if not candidates:
         elsewhere = [i for i in at_source if i not in eligible]
-        said = [type(v) for i in elsewhere for v in validated(delivery.payload, i.receives)[0]]
-        if said and delivery.answers is not None:
-            raise Refusal(UnknownIntent(received=said[0], answers=delivery.answers))
+        said = [type(v) for i in elsewhere for v in validated(claim.payload, i.receives)[0]]
+        if said and claim.answers is not None:
+            raise Refusal(UnknownIntent(received=said[0], answers=claim.answers))
         if said:
             raise Refusal(Uncorrelated(received=said[0], correlation=None))
         tried = tuple(kind for i in eligible for kind in i.receives)
-        raise Refusal(Unmatched(source=delivery.source, tried=tried, errors=tuple(errors)))
+        raise Refusal(Unmatched(source=claim.source, tried=tried, errors=tuple(errors)))
     if len(candidates) > 1:
         kinds = tuple(type(value) for _, value in candidates)
-        raise Refusal(Ambiguous(source=delivery.source, admitted=kinds))
-    interaction, value = candidates[0]
+        raise Refusal(Ambiguous(source=claim.source, admitted=kinds))
+    return candidates[0]
+
+
+def admissible(program: Program, invocation: Invocation, claim: Claim) -> Evidence:
+    """Judge one claim and return the evidence it is, new at the next position of the history,
+    or the earlier evidence it repeats. Raise ``Refusal`` otherwise.
+
+    The receive is selected by the declared tie, then the payload is validated as what that
+    receive says. A claim naming the request it answers is for the interaction that sent that
+    request, which must be committed here; shape alone cannot select among a source's records,
+    since two may have one shape. A claim naming no request is for the source's unsolicited
+    receives and its solicited receives with a field correlation; it must validate as exactly one
+    of what they say. A claim already admitted under its origin is one claim: the same payload is
+    the same evidence, a different one is a conflict. Every declared correlation must hold, at
+    exactly one element where the subject is in a collection. A claim for a solicited receive
+    answers one committed request, named or the one its correlation selects; with none it is not
+    evidence, whatever its source said. A receive that says nothing more refuses.
+    """
+    interaction, value = selected(program, invocation, claim)
     for prior in invocation.evidence:
-        if prior.origin == Delivered(delivery=delivery.id):
+        if prior.origin == claim.origin:
             if prior.value == value:
-                return invocation
-            raise Refusal(Conflict(delivery=delivery.id, prior=prior.id))
+                return prior
+            raise Refusal(Conflict(delivery=claim.origin, prior=prior.id))
     element = correlated(program, invocation, interaction, value)
-    if delivery.answers is None and interaction.sends is not None and varying(program, interaction):
-        raise Refusal(Uncorrelated(received=type(value), correlation=None))
+    answers = claim.answers
+    if interaction.sends is not None:
+        if answers is None:
+            if program.varying(interaction) and element is None:
+                raise Refusal(Uncorrelated(received=type(value), correlation=None))
+            answers = requested(program, invocation, interaction, element)
+        elif element is not None and element not in invocation.intended(answers).elements:
+            raise Refusal(
+                Ambiguous(source=claim.source, admitted=(type(value),), elements=(element,))
+            )
     evidence = Evidence(
         id=invocation.revision,
-        source=delivery.source,
+        source=claim.source,
         value=value,
-        origin=Delivered(delivery=delivery.id),
-        answers=delivery.answers,
+        origin=claim.origin,
+        answers=answers,
         element=element,
     )
-    closed(program, invocation, interaction, evidence)
+    repeated = closed(invocation, interaction, evidence)
+    return evidence if repeated is None else repeated
+
+
+def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invocation:
+    """Admit a delivery as evidence through ``admissible``, or refuse it. A delivery that repeats
+    admitted evidence changes nothing."""
+    claim = Claim(
+        source=delivery.source,
+        origin=Delivered(delivery=delivery.id),
+        payload=delivery.payload,
+        answers=delivery.answers,
+    )
+    evidence = admissible(program, invocation, claim)
+    if evidence.id < invocation.revision:
+        return invocation
     return invocation._with(Admitted(evidence=evidence))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -599,7 +710,9 @@ def intend(invocation: Invocation, dispatches: tuple[Dispatch, ...]) -> Invocati
     """Commit each proposed dispatch's intent that is not yet committed."""
     for dispatch in dispatches:
         if dispatch.identity not in invocation.intents:
-            entry = Intended(identity=dispatch.identity, request=dispatch.request)
+            entry = Intended(
+                identity=dispatch.identity, request=dispatch.request, elements=dispatch.elements
+            )
             invocation = invocation._with(entry)  # pyright: ignore[reportPrivateUsage]
     return invocation
 
@@ -617,8 +730,11 @@ def _attempting(invocation: Invocation, identity: EffectIdentity) -> int:
 def perform(
     program: Program, invocation: Invocation, identity: EffectIdentity, result: str
 ) -> Invocation:
-    """Record that an attempt of a committed intent returned the result: it becomes evidence
-    answering the intent, in the same step as the attempt.
+    """Record that an attempt of a committed intent returned the result. The result passes the
+    same admission a delivery does, as a claim answering the intent; admitted, it becomes
+    evidence in the same step as the attempt. Refused, nothing is recorded: the attempt returned
+    something that is not evidence for this invocation, and the host decides what that makes of
+    the attempt.
 
     The capability reports whether what came back is the result or a receipt; this function
     is the report of a result. The payload's shape cannot establish that, since a receipt may
@@ -627,21 +743,17 @@ def perform(
     interaction = program.sending(identity.operation)
     if interaction is None:
         raise Refusal(Unintended(identity=identity))
-    results, errors = validated(result, interaction.receives)
-    if len(results) > 1:
-        kinds = tuple(type(value) for value in results)
-        raise Refusal(Ambiguous(source=interaction.source, admitted=kinds))
-    if not results:
-        raise Refusal(Unrecognized(identity=identity, tried=interaction.receives, errors=errors))
-    evidence = Evidence(
-        id=invocation.revision,
+    claim = Claim(
         source=interaction.source,
-        value=results[0],
         origin=Returned(identity=identity, attempt=number),
+        payload=result,
         answers=identity,
     )
+    evidence = admissible(program, invocation, claim)
+    if evidence.id == invocation.revision:
+        invocation = invocation._with(Admitted(evidence=evidence))  # pyright: ignore[reportPrivateUsage]
     attempt = Attempted(identity=identity, number=number, outcome=Answered(evidence=evidence.id))
-    return invocation._with(Admitted(evidence=evidence))._with(attempt)  # pyright: ignore[reportPrivateUsage]
+    return invocation._with(attempt)  # pyright: ignore[reportPrivateUsage]
 
 
 def acknowledge(

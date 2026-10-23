@@ -26,6 +26,7 @@ from type_construction.program import (
     evaluate,
     failed,
     intend,
+    perform,
 )
 
 from . import fulfillment
@@ -49,11 +50,16 @@ def test_a_retry_keeps_the_identity_and_numbers_a_new_attempt() -> None:
 
 
 def test_two_operations_with_equal_request_bodies_have_different_identities() -> None:
+    """The charge decides (the provider may decline), so the hold waits for it; once captured,
+    the hold is dispatched with a request body equal to the charge's and an identity that is
+    not."""
     program = fulfillment.SETTLEMENT
     invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
-    result = frontier(evaluate(program, invocation))
-    assert len(result.dispatch) == 2
-    charge, hold = sorted(result.dispatch, key=lambda d: d.identity.operation)
+    opening = frontier(evaluate(program, invocation))
+    (charge,) = opening.dispatch
+    assert [type(w.request) for w in opening.withheld] == [fulfillment.HoldRequest]
+    invocation = perform(program, intend(invocation, opening.dispatch), charge.identity, CAPTURED)
+    (hold,) = frontier(evaluate(program, invocation)).dispatch
     assert isinstance(charge.request, fulfillment.ChargeRequest)
     assert isinstance(hold.request, fulfillment.HoldRequest)
     assert hold.request.model_dump_json() == charge.request.model_dump_json()
@@ -124,9 +130,10 @@ def test_a_request_built_from_later_evidence_names_that_evidence() -> None:
 def test_an_answer_naming_another_operations_intent_is_refused() -> None:
     program = fulfillment.SETTLEMENT
     invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
-    proposed = frontier(evaluate(program, invocation))
-    invocation = intend(invocation, proposed.dispatch)
-    (hold,) = [d for d in proposed.dispatch if isinstance(d.request, fulfillment.HoldRequest)]
+    invocation, charge = performing(program, invocation, CAPTURED)
+    (hold,) = frontier(evaluate(program, invocation)).dispatch
+    invocation = intend(invocation, (hold,))
+    assert isinstance(hold.request, fulfillment.HoldRequest)
     with pytest.raises(Refusal) as refusal:
         admit(
             program,
@@ -135,3 +142,4 @@ def test_an_answer_naming_another_operations_intent_is_refused() -> None:
         )
     assert isinstance(refusal.value.reason, UnknownIntent)
     assert refusal.value.reason.answers == hold.identity
+    assert charge.identity != hold.identity

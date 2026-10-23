@@ -1,6 +1,10 @@
 # 0001. The declarative contract for durable business programs
 
-**Status:** decided by experiment, 2026-10-23. Resolves the four design questions in `TCA_ARCHITECTURAL_FOUNDATIONS.md` §18 at the depth of outcome 1 in `TODO.md`. Nothing here is a durable-host demonstration.
+**Status:** superseded in part by [`0002-demand-admission-and-occurrence.md`](0002-demand-admission-and-occurrence.md), 2026-10-23. Written the same day as decided by experiment; the review of that work rejected its resolution claims, and this header records the correction. The body below is preserved as written, so that what the first experiments demonstrated stays on record and what they did not is not rewritten to look as if it had been.
+
+**Withdrawn:** the claim that the four design questions in `TCA_ARCHITECTURAL_FOUNDATIONS.md` §18 are resolved. The experiments below demonstrate the cases they name and nothing beyond them. Three assumptions this record built on were disproved by counterexample and are replaced in 0002: that a request whose premises are available and whose result the goal needs is justified (§7.2 of the foundations says otherwise, and `test_demand.py` shows it); that a result an attempt returns is evidence (it bypassed the admission a delivery goes through, and `test_returned.py` shows it); and that a class is obtained one way, so that two roles of one class are two classes (`test_roles.py` shows the declaration that was missing). The sentence under Q1 that a correlated result arriving before any send satisfies the premise is withdrawn as well: such a result answers no request this invocation made, and 0002 refuses it.
+
+**Still demonstrated:** every test this record names that still exists runs unchanged in meaning under the revised interpreter, with the exceptions named in 0002. Nothing here is a durable-host demonstration.
 
 **Evidence:** `packages/python/type-construction-program`. Every claim below names the test that executes it. Tests are under `tests/type_construction_program/`; the business declarations are `fulfillment.py`, `auction.py`, `review.py` and `lines.py`. The experiments ran under the locked dependencies with `just check`.
 

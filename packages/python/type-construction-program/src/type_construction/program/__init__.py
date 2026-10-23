@@ -5,28 +5,34 @@ This package is the executable form of the contract validated under outcome 1 of
 how business types declare where external evidence comes from, and what an evaluator derives
 from an invocation's history. ``declaration`` holds ``Source``, ``Correlation``, ``Interaction``
 and ``Program``. ``invocation`` holds the history entries, ``EffectIdentity``, and the protocol
-``accept``, ``admit``, ``intend``, ``perform``, ``acknowledge``, ``failed`` and ``uncertain``.
+``accept``, ``intend``, ``admissible``, ``admit``, ``perform``, ``acknowledge``, ``failed`` and
+``uncertain``.
 ``evaluation`` holds ``evaluate`` and its three results, ``Completed``, ``Frontier`` and
-``Blocked``.
+``Blocked``; a frontier carries the requests withheld as well, ``Deferred`` behind an undecided
+premise or ``Unchosen`` among alternatives.
 
 Nothing here is a durable host. The history is in memory, no worker owns it, and no experiment
 on it demonstrates recovery, concurrency or stale-commit rejection.
 """
 
-from .declaration import Correlation, Interaction, Program, Source
+from .declaration import Binding, Correlation, Interaction, Program, Source
 from .evaluation import (
     AnsweredOtherwise,
     Blocked,
     Completed,
+    Deferred,
     Evaluation,
     Frontier,
     Indeterminate,
     Malformed,
     Refutation,
     Solicited,
+    Unchosen,
     Unclosed,
+    Undecidable,
     Unresolved,
     Unsolicited,
+    Withheld,
     evaluate,
 )
 from .invocation import (
@@ -37,6 +43,7 @@ from .invocation import (
     Answered,
     Attempted,
     Built,
+    Claim,
     Closed,
     Conflict,
     Delivered,
@@ -62,8 +69,10 @@ from .invocation import (
     UnknownIntent,
     Unmatched,
     Unrecognized,
+    Unrequested,
     accept,
     acknowledge,
+    admissible,
     admit,
     failed,
     intend,
@@ -79,12 +88,15 @@ __all__ = [
     "Answered",
     "AnsweredOtherwise",
     "Attempted",
+    "Binding",
     "Blocked",
     "Built",
+    "Claim",
     "Closed",
     "Completed",
     "Conflict",
     "Correlation",
+    "Deferred",
     "Delivered",
     "Delivery",
     "DeliveryId",
@@ -112,16 +124,21 @@ __all__ = [
     "Solicited",
     "Source",
     "Uncertain",
+    "Unchosen",
     "Unclosed",
     "Uncorrelated",
+    "Undecidable",
     "Unintended",
     "UnknownIntent",
     "Unmatched",
     "Unrecognized",
+    "Unrequested",
     "Unresolved",
     "Unsolicited",
+    "Withheld",
     "accept",
     "acknowledge",
+    "admissible",
     "admit",
     "evaluate",
     "failed",

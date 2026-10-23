@@ -194,16 +194,6 @@ def test_the_clock_is_read_once_and_the_reading_is_reused() -> None:
     assert [type(d.request) for d in first.dispatch] == [auction.Deadline]
 
 
-def test_a_result_that_arrives_before_the_send_satisfies_the_premise() -> None:
-    program = fulfillment.FULFILLMENT
-    invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
-    invocation = admit(program, invocation, delivered(fulfillment.PAYMENTS, "wh-early", CAPTURED))
-    result = frontier(evaluate(program, invocation))
-    assert all(not isinstance(d.request, fulfillment.ChargeRequest) for d in result.dispatch)
-    assert invocation.intents == {}
-    assert invocation.evidence[0].answers is None
-
-
 def test_a_receipt_shaped_like_the_result_is_told_from_it_by_report_not_by_shape() -> None:
     """The counterexample that ruled out inferring the role from the payload: the clock's
     receipt and its result have one shape. Reported as a result, the receipt closes the bidding
@@ -244,10 +234,9 @@ class TwoOrders(Value):
     credit: Order
 
 
-def test_a_class_held_at_two_sites_is_refused_not_bound_by_guess() -> None:
-    """This evaluator binds a premise by its declared class, validated to be found one way. A
-    program where one class is found two ways is refused with both paths named; it is not
-    expressible in this slice. Occurrence binding that tells the sites apart is outcome 2."""
+def test_a_class_held_at_two_sites_is_refused_naming_the_binding_that_would_decide() -> None:
+    """One class found two ways is not bound by guess and not refused for good: the refusal names
+    both places and the ``Binding`` that declares which. ``test_roles`` runs the bound program."""
     by_debit = {"correlated": (Correlation(received="order", subject="debit.id"),)}
     with pytest.raises(ValidationError) as refusal:
         Program(
@@ -262,6 +251,7 @@ def test_a_class_held_at_two_sites_is_refused_not_bound_by_guess() -> None:
     assert "TwoOrders.debit" in message
     assert "TwoOrders.credit" in message
     assert "does not say which" in message
+    assert "Binding(premise=" in message
 
 
 def test_a_correlation_path_that_does_not_exist_is_refused_at_declaration() -> None:

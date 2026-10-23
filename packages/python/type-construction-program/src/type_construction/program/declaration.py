@@ -1,40 +1,41 @@
-"""What a business program declares beyond its types: where external evidence comes from.
+"""What a business program declares beyond its types, and the construction graph compiled from it.
 
 Pydantic already states a program's composition, constraints, aliases, unions and collections.
 A ``Fact``'s required fields are its premises; a union field is a choice; a tuple field is a
 collection. What Pydantic cannot state is which external party supplies a ``Record``, how that
-party's evidence is tied to one invocation, and when a source that delivers items over time has
-delivered them all. Those three are declared here, once each, and nothing else is.
+party's evidence is tied to one invocation, when a source that delivers items over time has
+delivered them all, and, where one class is held at more than one place, which place a premise
+is obtained from. Those are declared here, once each, and nothing else is.
 
 An ``Interaction`` is one declared relationship with one ``Source``. It names what the source
 can say (``receives``), optionally what this program sends to make it say so (``sends``),
 optionally the receipt the source may answer the send with before the result (``acknowledges``),
-how a delivery is tied to the invocation (``correlated``), and, for a source whose items
-accumulate, the evidence that closes it (``closed_by``). An interaction with ``closed_by`` is a
-collection source: the source says many records, and the program holds every one of them.
-Whether a result comes back inside the sending attempt or in a later delivery is not declared:
-it is observed, and the premise it satisfies is the same either way.
+how a delivery is tied to the invocation (``correlated``), where a premise of the request is
+obtained when its class alone does not say (``bound``), and, for a source whose items
+accumulate, the evidence that closes it (``closed_by``). Whether a result comes back inside the
+sending attempt or in a later delivery is not declared: it is observed, and the premise it
+satisfies is the same either way.
 
-A ``Program`` is a goal, the input it accepts, and its interactions. Constructing one walks the
-goal's premises and checks that each is obtained exactly one way: a declared interaction, one
-location in the accepted input or in a received record, or construction from premises that are.
-A class is not an occurrence. A premise found inside a collection varies, one occurrence per
-element, and a tuple of a constructed class is one construction per element of the one
-collection its premises vary over. A premise that varies where the goal needs one, or that is
-found at two places the declaration does not tell apart, is refused when the program is
-constructed, naming both places. Distinct roles of one class are distinct classes.
+A ``Program`` is a goal, the input it accepts, its interactions, and the bindings of the goal's
+premises that the classes alone do not determine. Constructing one compiles the goal into a
+graph of construction relationships, ``Node``: where a value is found, which source says it,
+what it is made from, which alternatives it has, and which collection it is one construction
+per element of. A class is not an occurrence: two places that obtain a class the same way are
+one node, and two places that obtain it differently are two. A premise the declarations obtain
+no way, or more than one way, is refused when the program is constructed, naming the places and
+the declaration that would tell them apart.
 """
 
 import types
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.fields import FieldInfo
 
-from type_construction.world import Record, Scalar
+from type_construction.world import Record, Refutable, Scalar
 
 DECLARATION = ConfigDict(
     frozen=True,
@@ -68,6 +69,26 @@ class Correlation(BaseModel):
 
     received: str
     """Dotted field path on the received record."""
+    subject: str
+    """Dotted field path on the accepted input; ``*`` enters each element of a collection."""
+
+
+class Binding(BaseModel):
+    """One declared construction relationship the classes alone do not determine: the premise
+    at ``premise`` is obtained at ``subject`` on the accepted input.
+
+    It is needed only where a class is held at more than one place, which is a business
+    distinction the type does not carry: the two accounts of a transfer are both an ``Account``,
+    and which one a debit concerns is declared here, not inferred from a field name or a
+    traversal. A premise that is a tuple of a constructed class is bound to the collection it is
+    one construction per element of.
+    """
+
+    model_config = DECLARATION
+
+    premise: str
+    """Dotted path from the request an interaction sends, or from the program's goal: field
+    names, ``*`` for the element of a tuple, and a class name for the member of a union."""
     subject: str
     """Dotted field path on the accepted input; ``*`` enters each element of a collection."""
 
@@ -119,6 +140,13 @@ def alternatives(annotation: object) -> tuple[type[BaseModel], ...] | None:
     return None
 
 
+def declared(annotation: object) -> type[BaseModel] | None:
+    """The annotation as a declared class, or ``None`` when it is not one."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
+
+
 def premises(kind: type[BaseModel]) -> Iterator[tuple[str, Any]]:
     """The required fields of a class and their annotations: its premises. A computed field or
     a field with a default is not a premise."""
@@ -133,9 +161,9 @@ def constant(kind: type[BaseModel]) -> bool:
 
 
 def resolve(kind: type[BaseModel], path: str) -> object:
-    """The annotation at a field path on a class, entering collections at ``*``, or
-    ``ValueError`` naming what is missing, which a declaration's validator reports as its
-    refusal."""
+    """The annotation at a path on a class, entering collections at ``*`` and unions at the
+    member's class name, or ``ValueError`` naming what is missing, which a declaration's
+    validator reports as its refusal."""
     current: object = kind
     for name in steps(path):
         if name == EACH:
@@ -145,10 +173,19 @@ def resolve(kind: type[BaseModel], path: str) -> object:
                 raise ValueError(msg)
             current = inner
             continue
-        if not (isinstance(current, type) and issubclass(current, BaseModel)):
+        members = alternatives(current)
+        if members is not None:
+            named = [m for m in members if m.__name__ == name]
+            if len(named) != 1:
+                msg = f"{kind.__name__}.{path}: {current!r} has no member {name}"
+                raise ValueError(msg)
+            current = named[0]
+            continue
+        holder = declared(current)
+        if holder is None:
             msg = f"{kind.__name__}.{path}: {current!r} has no field {name}"
-            raise ValueError(msg)  # noqa: TRY004  a validator's refusal is a ValueError
-        info = current.model_fields.get(name)
+            raise ValueError(msg)
+        info = holder.model_fields.get(name)
         if info is None or info.annotation is None:
             msg = f"{kind.__name__} has no field path {path}"
             raise ValueError(msg)
@@ -164,9 +201,10 @@ class Interaction(BaseModel):
     it; without, the receive is unsolicited and waits for a correlated delivery. With
     ``acknowledges``, the source may answer the send with that receipt first and deliver the
     result later; a receipt is recorded against the attempt and satisfies no premise. A
-    solicited receive with no ``correlated`` pair is tied to the invocation by the delivery
-    naming the intent it answers. With ``closed_by``, the source says many records and the
-    program holds every one until that evidence arrives.
+    solicited receive is tied to the invocation by the request it answers; ``correlated``
+    equalities are checked as well, and tie a delivery that does not name its request. With
+    ``closed_by``, the source says many records and the program holds every one until that
+    evidence arrives.
     """
 
     model_config = DECLARATION
@@ -182,6 +220,8 @@ class Interaction(BaseModel):
     """The receipt the party may answer the send with before the result."""
     correlated: tuple[Correlation, ...] = ()
     """Declared equalities between the received record and the accepted input."""
+    bound: tuple[Binding, ...] = ()
+    """Where a premise of the request is obtained, when its class alone does not say."""
     closed_by: type[BaseModel] | None = None
     """The evidence after which the source says nothing more; declared, the source says many."""
 
@@ -207,9 +247,15 @@ class Interaction(BaseModel):
                 " invocation"
             )
             raise ValueError(msg)
+        if self.bound and self.sends is None:
+            msg = f"{names(self.receives)} binds a premise of a request, and nothing is sent"
+            raise ValueError(msg)
         for correlation in self.correlated:
             for kind in self.receives:
                 resolve(kind, correlation.received)
+        if self.sends is not None:
+            for binding in self.bound:
+                resolve(self.sends, binding.premise)
         return self
 
     def says(self, kind: type[BaseModel]) -> bool:
@@ -247,17 +293,18 @@ class Location:
     def __str__(self) -> str:
         return ".".join((self.container.__name__, *self.path))
 
-    def collections(self, *, source_many: bool) -> frozenset[Collection]:
-        """The collections the location varies over: the container's own records when it is a
-        collection source, and each collection the path enters."""
-        entered = {
+    def entered(self) -> frozenset[Collection]:
+        """The collections the path enters."""
+        return frozenset(
             Collection(self.container, self.path[:k])
             for k, step in enumerate(self.path)
             if step == EACH
-        }
-        if source_many:
-            entered.add(Collection(self.container, ()))
-        return frozenset(entered)
+        )
+
+    def under(self, over: Collection) -> bool:
+        """Whether the location is inside an element of the collection."""
+        prefix = (*over.path, EACH)
+        return self.container is over.container and self.path[: len(prefix)] == prefix
 
 
 def found(
@@ -286,79 +333,130 @@ def found(
                     paths.append(each)
                 elif not issubclass(inner, RootModel):
                     search(inner, each)
-            elif (
-                isinstance(annotation, type)
-                and issubclass(annotation, BaseModel)
-                and not issubclass(annotation, RootModel)
-            ):
-                search(annotation, path)
+            elif (holder := declared(annotation)) is not None and not issubclass(holder, RootModel):
+                search(holder, path)
 
     if not issubclass(container, RootModel):
         search(container, ())
     return paths
 
 
+# --- the construction graph ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Found:
+    """A value found at a location in the accepted input or in a received record. ``held`` is
+    the node that supplies the record when the container is one."""
+
+    location: Location
+    held: Node | None = None
+
+
+@dataclass(frozen=True)
+class Heard:
+    """One record a source says, through its interaction: the answer to ``request`` when the
+    interaction sends one, a correlated delivery when it does not, and one element of what the
+    source says when the interaction is a collection source."""
+
+    interaction: Interaction
+    kind: type[BaseModel]
+    request: Node | None = None
+
+
+@dataclass(frozen=True)
+class Made:
+    """A class constructed from its premises, each obtained by its own node."""
+
+    kind: type[BaseModel]
+    premises: tuple[tuple[str, Node], ...] = ()
+
+
+@dataclass(frozen=True)
+class Choice:
+    """A union: the premise is whichever member holds."""
+
+    members: tuple[tuple[type[BaseModel], Node], ...]
+
+
+@dataclass(frozen=True)
+class All:
+    """Every record a collection source says, sealed by the closing evidence ``closer``."""
+
+    interaction: Interaction
+    kind: type[BaseModel]
+    closer: Node
+
+
+@dataclass(frozen=True)
+class Each:
+    """One construction of ``element`` per element of ``over``. When ``over`` is a collection
+    source, ``closure`` is the accumulation its tuple is sealed by."""
+
+    element: Node
+    over: Collection
+    closure: All | None = None
+    holder: Node | None = None
+    """The node supplying the collection's container, when it is a received record."""
+
+
+type Node = Found | Heard | Made | Choice | All | Each
+"""One construction relationship: how a premise is obtained."""
+
+
 @dataclass
-class Analysis:
-    """What one walk of a program's declarations established: where each located premise is
-    found, which collection each tuple of constructed classes is one construction per element
-    of, the collections each premise varies over, and the request kinds the program sends."""
+class Graph:
+    """What compiling a program established: the root node, the interactions by the request
+    they send, and, per node, the collections it varies over and whether its construction can
+    be refuted by evidence still to come."""
 
-    located: dict[object, Location] = field(default_factory=dict)
-    mapped: dict[object, Collection] = field(default_factory=dict)
-    varies: dict[tuple[object, frozenset[Collection]], frozenset[Collection]] = field(
-        default_factory=dict
-    )
-    sent: dict[str, Interaction] = field(default_factory=dict)
-
-    def walked(self, annotation: object) -> frozenset[Collection] | None:
-        """The collections a premise varies over, if the walk reached it under any bound
-        collections; what a premise varies over is intrinsic to it."""
-        for (walked, _), varies in self.varies.items():
-            if walked == annotation:
-                return varies
-        return None
-
-    def varying(self, annotation: object, bound: frozenset[Collection]) -> frozenset[Collection]:
-        """The collections a premise varies over, as walked under the given bound collections
-        or under any. A premise the walk never reached is a defect: evaluation must construct
-        only what the declaration validated."""
-        exact = self.varies.get((annotation, bound))
-        if exact is not None:
-            return exact
-        varies = self.walked(annotation)
-        if varies is None:
-            msg = f"{annotation!r} was not walked when the program was validated"
-            raise KeyError(msg)
-        return varies
+    root: Node
+    sent: dict[str, Interaction]
+    requests: dict[str, Node]
+    varies: dict[Node, frozenset[Collection]]
+    refutable: dict[Node, bool]
 
 
 @dataclass(frozen=True)
 class Walk:
-    """One pass of the walk: what it records, the premises being constructed above the current
-    one, and the collections bound by the tuples enclosing it."""
+    """One pass of the compiler over one root: the bindings declared for premises under it,
+    keyed by their path, the classes being constructed above the current premise, and the
+    collections bound by the tuples enclosing it."""
 
-    analysis: Analysis
+    bindings: tuple[tuple[tuple[str, ...], str], ...] = ()
     stack: tuple[object, ...] = ()
     bound: frozenset[Collection] = frozenset()
 
     def into(self, annotation: object) -> Walk:
         """The walk one premise deeper."""
-        return Walk(self.analysis, (*self.stack, annotation), self.bound)
+        return Walk(self.bindings, (*self.stack, annotation), self.bound)
 
     def binding(self, over: Collection) -> Walk:
         """The walk with one more collection bound."""
-        return Walk(self.analysis, self.stack, self.bound | {over})
+        return Walk(self.bindings, self.stack, self.bound | {over})
+
+    def rooted(self, bindings: tuple[Binding, ...]) -> Walk:
+        """The walk over a new root, a request, with that root's bindings."""
+        return Walk(tuple((steps(b.premise), b.subject) for b in bindings), self.stack, self.bound)
+
+    def subject(self, at: tuple[str, ...]) -> str | None:
+        """The subject a premise at this path is bound to, if any."""
+        for premise, subject in self.bindings:
+            if premise == at:
+                return subject
+        return None
 
 
 class Program(BaseModel):
-    """A goal, the input it accepts, and the interactions that supply what the input does not.
+    """A goal, the input it accepts, the interactions that supply what the input does not, and
+    the bindings that say where a premise is obtained when its class alone does not.
 
-    Construction validates the whole: each received kind is declared by one interaction, each
-    sent kind by one; every premise the goal transitively needs is obtained one way; a tuple of
-    a constructed class varies over exactly one collection; a collection source has a declared
-    closure; correlation paths exist; the goal itself does not vary. A program that fails is
-    refused with a message naming the premise and the missing business distinction.
+    Construction compiles the whole into a ``Graph`` and validates it: each received kind is
+    declared by one interaction, each sent kind by one; every premise the goal transitively
+    needs is obtained one way; a tuple of a constructed class varies over exactly one
+    collection; a collection source has a declared closure; correlation and binding paths
+    exist; the goal itself does not vary. A program that fails is refused with a message naming
+    the premise and the missing business distinction.
     """
 
     model_config = DECLARATION
@@ -369,6 +467,8 @@ class Program(BaseModel):
     """The input an invocation is accepted with."""
     interactions: tuple[Interaction, ...] = ()
     """The declared relationships with external sources."""
+    bound: tuple[Binding, ...] = ()
+    """Where a premise of the goal is obtained, when its class alone does not say."""
 
     @model_validator(mode="after")
     def _sound(self) -> Program:
@@ -384,6 +484,8 @@ class Program(BaseModel):
                 seen[kind] = interaction
             for correlation in interaction.correlated:
                 resolve(self.accepts, correlation.subject)
+            for binding in interaction.bound:
+                resolve(self.accepts, binding.subject)
         sent = [i.sends for i in self.interactions if i.sends is not None]
         if len(set(sent)) != len(sent):
             msg = (
@@ -398,7 +500,10 @@ class Program(BaseModel):
                     " no interaction receives it"
                 )
                 raise ValueError(msg)
-        varies = self.analysis.varying(self.goal, frozenset())
+        for binding in self.bound:
+            resolve(self.goal, binding.premise)
+            resolve(self.accepts, binding.subject)
+        varies = self.graph.varies[self.graph.root]
         if varies:
             over = " and ".join(sorted(str(c) for c in varies))
             msg = (
@@ -417,15 +522,14 @@ class Program(BaseModel):
 
     def sending(self, operation: str) -> Interaction | None:
         """The interaction that sends the request class with this durable name."""
-        return self.analysis.sent.get(operation)
+        return self.graph.sent.get(operation)
 
     def subject_collections(self, correlation: Correlation) -> frozenset[Collection]:
         """The collections a correlation's subject path enters."""
-        return Location(self.accepts, steps(correlation.subject)).collections(source_many=False)
+        return Location(self.accepts, steps(correlation.subject)).entered()
 
     def element_collection(self, interaction: Interaction) -> Collection | None:
-        """The one collection an unsolicited receive varies over through its correlation, if
-        any."""
+        """The one collection a receive varies over through its correlation, if any."""
         entered: set[Collection] = set()
         for correlation in interaction.correlated:
             entered |= self.subject_collections(correlation)
@@ -435,16 +539,19 @@ class Program(BaseModel):
             raise ValueError(msg)
         return next(iter(entered), None)
 
+    def varying(self, interaction: Interaction) -> bool:
+        """Whether a receive is one per element: its request, or the element its correlation
+        selects, varies over a collection."""
+        if interaction.sends is not None:
+            node = self.graph.requests.get(qualified(interaction.sends))
+            return bool(node is not None and self.graph.varies[node])
+        return self.element_collection(interaction) is not None
+
     @cached_property
-    def analysis(self) -> Analysis:
-        """The walk of the goal's premises; raises ``ValueError`` for a premise the program
+    def graph(self) -> Graph:
+        """The compiled construction graph; raises ``ValueError`` for a premise the program
         does not obtain one way."""
-        analysis = Analysis()
-        for interaction in self.interactions:
-            if interaction.sends is not None:
-                analysis.sent[qualified(interaction.sends)] = interaction
-        self._walk(self.goal, self.goal.__name__, Walk(analysis))
-        return analysis
+        return Compiler(self).compiled()
 
     def _correlated(self, container: type[BaseModel]) -> frozenset[str]:
         """The field paths on a received container that correlation declares equal to the
@@ -454,7 +561,7 @@ class Program(BaseModel):
             return frozenset()
         return frozenset(c.received for c in interaction.correlated)
 
-    def _locations(self, matches: Callable[[object], bool]) -> list[Location]:
+    def locations(self, matches: Callable[[object], bool]) -> list[Location]:
         """Where an annotation is found: in the input, or in a received record."""
         locations = [
             Location(self.accepts, path) for path in found(self.accepts, matches, frozenset())
@@ -465,72 +572,152 @@ class Program(BaseModel):
                 locations.extend(Location(container, path) for path in paths)
         return locations
 
-    def _walk(self, annotation: object, path: str, walk: Walk) -> frozenset[Collection]:
-        """Walk one premise annotation, record how it is obtained, and return the collections
-        it varies over."""
+
+class Compiler:
+    """One compilation of one program's goal into its construction graph."""
+
+    def __init__(self, program: Program) -> None:
+        self.program = program
+        self.varies: dict[Node, frozenset[Collection]] = {}
+        self.refutable: dict[Node, bool] = {}
+        self.requests: dict[str, Node] = {}
+
+    def compiled(self) -> Graph:
+        program = self.program
+        sent = {qualified(i.sends): i for i in program.interactions if i.sends is not None}
+        walk = Walk(tuple((steps(b.premise), b.subject) for b in program.bound))
+        root = self.compile(program.goal, (), program.goal.__name__, walk)
+        return Graph(root, sent, self.requests, self.varies, self.refutable)
+
+    def record(self, node: Node, varies: frozenset[Collection], *, refutable: bool) -> Node:
+        self.varies[node] = varies
+        self.refutable[node] = refutable
+        return node
+
+    def compile(self, annotation: object, at: tuple[str, ...], path: str, walk: Walk) -> Node:
+        """Compile one premise annotation at its path under the current root."""
         if annotation in walk.stack:
             msg = f"{path}: {annotation!r} is constructed from itself with no evidence between"
             raise ValueError(msg)
-        key = (annotation, walk.bound)
-        if key in walk.analysis.varies:
-            return walk.analysis.varies[key]
+        subject = walk.subject(at)
+        if subject is not None:
+            return self.bound(annotation, subject, at, path, walk)
         deeper = walk.into(annotation)
         members = alternatives(annotation)
         if members is not None:
-            varies: frozenset[Collection] = frozenset()
-            for member in members:
-                varies |= self._walk(member, f"{path}.{member.__name__}", deeper)
-        elif (shape := collection(annotation)) is not None:
-            varies = self._walk_many(annotation, shape[0], path, deeper)
-        elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            varies = self._walk_one(annotation, path, deeper)
-        else:
+            compiled = tuple(
+                (m, self.compile(m, (*at, m.__name__), f"{path}.{m.__name__}", deeper))
+                for m in members
+            )
+            node = Choice(compiled)
+            varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
+            refutable = all(self.refutable[n] for _, n in compiled)
+            return self.record(node, varies, refutable=refutable)
+        shape = collection(annotation)
+        if shape is not None:
+            return self.many(shape[0], at, path, deeper)
+        kind = declared(annotation)
+        if kind is None:
             msg = (
                 f"{path}: a premise is a declared class, a union of them, or a tuple of one;"
                 f" {annotation!r} is none"
             )
             raise ValueError(msg)
-        walk.analysis.varies[key] = varies
-        return varies
+        return self.one(kind, at, path, deeper)
 
-    def _walk_interaction(
-        self, interaction: Interaction, path: str, walk: Walk
-    ) -> frozenset[Collection]:
-        """The collections a receive varies over: those of its request, or of the element its
-        correlation selects."""
+    def bound(
+        self, annotation: object, subject: str, at: tuple[str, ...], path: str, walk: Walk
+    ) -> Node:
+        """A premise bound by declaration to a place in the accepted input: the value there, or
+        the collection a tuple of a constructed class is one construction per element of."""
+        accepts = self.program.accepts
+        there = resolve(accepts, subject)
+        shape = collection(annotation)
+        if there == annotation:
+            location = Location(accepts, steps(subject))
+            return self.record(Found(location), location.entered(), refutable=False)
+        if shape is not None and (held := collection(there)) is not None:
+            over = Collection(accepts, steps(subject))
+            if over in walk.bound:
+                msg = f"{path}: {over} is already bound by a tuple enclosing this one"
+                raise ValueError(msg)
+            kind = shape[0]
+            inner = self.compile(kind, (*at, EACH), f"{path}.{EACH}", walk.binding(over))
+            if over not in self.varies[inner]:
+                msg = (
+                    f"{path}: bound to {over}, but nothing a {kind.__name__} is made from is"
+                    f" found in an element of it; {held[0].__name__} is not a premise of"
+                    f" {kind.__name__}"
+                )
+                raise ValueError(msg)
+            node = Each(inner, over)
+            return self.record(node, self.varies[inner] - {over}, refutable=self.refutable[inner])
+        msg = (
+            f"{path}: bound to {accepts.__name__}.{subject}, which holds {there!r}, not"
+            f" {annotation!r}"
+        )
+        raise ValueError(msg)
+
+    def heard(self, interaction: Interaction, kind: type[BaseModel], path: str, walk: Walk) -> Node:
+        """The node for one record a source says."""
+        request: Node | None = None
+        varies: frozenset[Collection] = frozenset()
+        refutable = len(interaction.receives) > 1
         if interaction.sends is not None:
             sends = interaction.sends
-            return self._walk(sends, f"{path}.{sends.__name__}", walk)
-        over = self.element_collection(interaction)
-        return frozenset() if over is None else frozenset({over})
+            request = self.requests.get(qualified(sends))
+            if request is None:
+                rooted = walk.rooted(interaction.bound)
+                request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
+                self.requests[qualified(sends)] = request
+            varies = self.varies[request]
+            refutable = refutable or self.refutable[request]
+        else:
+            over = self.program.element_collection(interaction)
+            if over is not None:
+                varies = frozenset({over})
+        if interaction.many:
+            varies = varies | {Collection(kind, ())}
+        return self.record(Heard(interaction, kind, request), varies, refutable=refutable)
 
-    def _walk_source(
-        self, interaction: Interaction, path: str, walk: Walk
-    ) -> frozenset[Collection]:
-        """The collections a collection source varies over: those of its request and of its
-        closing evidence, both walked so that what supplies them is validated and recorded."""
-        varies = self._walk_interaction(interaction, path, walk)
-        closer = interaction.closed_by
-        if closer is None:
-            return varies
-        return varies | self._walk(closer, f"{path}.closed_by", walk)
-
-    def _located_varies(self, location: Location, path: str, walk: Walk) -> frozenset[Collection]:
-        """The collections a located premise varies over: those its path enters, and those of
-        its container, which is walked too when it is a received record, so that what supplies
-        the record is validated and recorded."""
+    def located(self, location: Location, path: str, walk: Walk) -> Node:
+        """The node for a value found at a location, with the node that supplies its container
+        when the container is a received record."""
         container = location.container
-        interaction = self.receiving(container)
-        varies = location.collections(source_many=interaction is not None and interaction.many)
+        held: Node | None = None
+        varies = location.entered()
+        interaction = self.program.receiving(container)
         if interaction is not None:
-            varies |= self._walk(container, f"{path}.{container.__name__}", walk)
-        return varies
+            held = self.compile(container, (), f"{path}.{container.__name__}", walk)
+            varies = varies | self.varies[held]
+        return self.record(Found(location, held), varies, refutable=False)
 
-    def _walk_many(
-        self, annotation: object, kind: type[BaseModel], path: str, walk: Walk
-    ) -> frozenset[Collection]:
-        interaction = self.receiving(kind)
-        whole = self._locations(lambda a: element(a) is kind)
+    def chosen(
+        self, kind: type[BaseModel], locations: list[Location], path: str, walk: Walk
+    ) -> Location | None:
+        """The one location a class is found at, or ``None`` for none. Inside one construction
+        per element of a collection, a class found in that element is the element's; a class
+        found at two places the declarations do not tell apart is refused, naming the binding
+        that would."""
+        if len(locations) > 1:
+            inner = [loc for loc in locations if any(loc.under(c) for c in walk.bound)]
+            if len(inner) == 1:
+                return inner[0]
+            where = " and ".join(str(location) for location in locations)
+            msg = (
+                f"{path}: {kind.__name__} is held at {where}; the declaration does not say"
+                f" which, so declare it: Binding(premise=<path to this premise>,"
+                f" subject=<one of those places>)"
+            )
+            raise ValueError(msg)
+        return locations[0] if locations else None
+
+    def many(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
+        """A tuple premise: every record a collection source says, a tuple found in the input or
+        in a record, or one construction per element of the one collection the class varies
+        over."""
+        interaction = self.program.receiving(kind)
+        whole = self.program.locations(lambda a: element(a) is kind)
         if interaction is not None and whole:
             msg = (
                 f"{path}: every {kind.__name__} is both said by {interaction.source.root} and"
@@ -538,26 +725,12 @@ class Program(BaseModel):
             )
             raise ValueError(msg)
         if interaction is not None:
-            if interaction.closed_by is None:
-                msg = (
-                    f"{path} holds every {kind.__name__} that {interaction.source.root} will say,"
-                    " and the interaction declares no closure; which evidence closes the source"
-                    " is a business rule the program must state"
-                )
-                raise ValueError(msg)
-            return self._walk_source(interaction, path, walk)
-        if len(whole) > 1:
-            where = " and ".join(str(location) for location in whole)
-            msg = (
-                f"{path}: every {kind.__name__} is held at {where}; the declaration does not"
-                " say which"
-            )
-            raise ValueError(msg)
-        if whole:
-            walk.analysis.located[annotation] = whole[0]
-            return self._located_varies(whole[0], path, walk)
-        each = self._walk(kind, f"{path}.{EACH}", walk)
-        unbound = each - walk.bound
+            return self.all(interaction, kind, at, path, walk)
+        location = self.chosen(kind, whole, path, walk)
+        if location is not None:
+            return self.located(location, path, walk)
+        inner = self.compile(kind, (*at, EACH), f"{path}.{EACH}", walk)
+        unbound = self.varies[inner] - walk.bound
         if not unbound:
             msg = (
                 f"{path}: a tuple of {kind.__name__}, but nothing {kind.__name__} is made from"
@@ -569,17 +742,57 @@ class Program(BaseModel):
             over = " and ".join(sorted(str(c) for c in unbound))
             msg = (
                 f"{path}: each {kind.__name__} varies over both {over}; the declaration does"
-                " not say which collection the tuple follows"
+                " not say which collection the tuple follows, so declare it: Binding(premise="
+                f"<path to this premise>, subject=<the collection>)"
             )
             raise ValueError(msg)
         (over,) = unbound
-        walk.analysis.mapped[annotation] = over
-        self._walk(kind, f"{path}.{EACH}", walk.binding(over))
-        return each - {over}
+        inner = self.compile(kind, (*at, EACH), f"{path}.{EACH}", walk.binding(over))
+        closure: All | None = None
+        holder: Node | None = None
+        source = self.program.receiving(over.container)
+        if source is not None and not over.path:
+            closure = self.all(source, over.container, at, path, walk)
+        elif source is not None:
+            holder = self.compile(over.container, (), f"{path}.{over.container.__name__}", walk)
+        node = Each(inner, over, closure, holder)
+        varies = self.varies[inner] - {over}
+        refutable = self.refutable[inner]
+        for extra in (closure, holder):
+            if extra is not None:
+                varies = varies | self.varies[extra]
+                refutable = refutable or self.refutable[extra]
+        return self.record(node, varies, refutable=refutable)
 
-    def _walk_one(self, kind: type[BaseModel], path: str, walk: Walk) -> frozenset[Collection]:
-        interaction = self.receiving(kind)
-        locations = self._locations(lambda a: a is kind)
+    def all(
+        self,
+        interaction: Interaction,
+        kind: type[BaseModel],
+        at: tuple[str, ...],
+        path: str,
+        walk: Walk,
+    ) -> All:
+        """Every record a collection source says, sealed by its declared closure."""
+        closer = interaction.closed_by
+        if closer is None:
+            msg = (
+                f"{path} holds every {kind.__name__} that {interaction.source.root} will say,"
+                " and the interaction declares no closure; which evidence closes the source"
+                " is a business rule the program must state"
+            )
+            raise ValueError(msg)
+        closing = self.compile(closer, (*at, closer.__name__), f"{path}.closed_by", walk)
+        node = All(interaction, kind, closing)
+        self.record(node, self.varies[closing], refutable=self.refutable[closing])
+        return node
+
+    def one(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
+        """A single premise: a record a source says, a value found at one place, or a class
+        made from its premises."""
+        interaction = self.program.receiving(kind)
+        locations = self.program.locations(lambda a: a is kind)
+        if kind is self.program.accepts:
+            locations.insert(0, Location(kind, ()))
         if interaction is not None and locations:
             msg = (
                 f"{path}: {kind.__name__} is both received from {interaction.source.root} and"
@@ -587,36 +800,31 @@ class Program(BaseModel):
             )
             raise ValueError(msg)
         if interaction is not None:
-            if interaction.many:
-                source = self._walk_source(interaction, path, walk)
-                return frozenset({Collection(kind, ())}) | source
-            return self._walk_interaction(interaction, path, walk)
-        if len(locations) > 1:
-            where = " and ".join(str(location) for location in locations)
-            msg = (
-                f"{path}: {kind.__name__} is held at {where}; the declaration does not say"
-                " which, and distinct roles of one class are distinct classes"
-            )
-            raise ValueError(msg)
-        if locations:
-            walk.analysis.located[kind] = locations[0]
-            return self._located_varies(locations[0], path, walk)
-        empty = constant(kind)
+            return self.heard(interaction, kind, path, walk)
+        location = self.chosen(kind, locations, path, walk)
+        if location is not None:
+            return self.located(location, path, walk)
         if issubclass(kind, Record):
             msg = (
                 f"{path}: {kind.__name__} is what an external party says, and no interaction"
                 " declares a source for it; without a declared source it cannot be waited for"
             )
             raise ValueError(msg)  # noqa: TRY004  a validator's refusal is a ValueError
+        empty = constant(kind)
+        plain = Made(kind)
         if issubclass(kind, RootModel):
             if empty:
-                return frozenset()
+                return self.record(plain, frozenset(), refutable=False)
             msg = (
                 f"{path}: no input or received record holds a {kind.__name__}, and it is a"
                 " value, not constructed from premises"
             )
             raise ValueError(msg)
-        varies: frozenset[Collection] = frozenset()
-        for name, annotation in premises(kind):
-            varies |= self._walk(annotation, f"{path}.{name}", walk)
-        return varies
+        compiled = tuple(
+            (name, self.compile(annotation, (*at, name), f"{path}.{name}", walk))
+            for name, annotation in premises(kind)
+        )
+        node = Made(kind, compiled)
+        varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
+        refutable = issubclass(kind, Refutable) or any(self.refutable[n] for _, n in compiled)
+        return self.record(node, varies, refutable=refutable)

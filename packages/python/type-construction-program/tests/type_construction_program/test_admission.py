@@ -10,6 +10,7 @@ import pytest
 from type_construction.program import (
     Closed,
     Conflict,
+    Delivered,
     DeliveryId,
     InvocationId,
     NotAccepted,
@@ -21,7 +22,7 @@ from type_construction.program import (
 )
 
 from . import fulfillment
-from .drive import delivered, performing
+from .drive import delivered, only, performing
 
 CAPTURED = '{"order_id": "o-1", "amount": "50.00", "id": "ch_1"}'
 CAPTURED_MORE = '{"order_id": "o-1", "amount": "60.00", "id": "ch_1"}'
@@ -31,7 +32,7 @@ APPROVED = '{"order_id": "o-1", "reviewer": "ren"}'
 
 def test_the_same_delivery_twice_is_one_claim_and_a_different_payload_is_a_conflict() -> None:
     program = fulfillment.FULFILLMENT
-    invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
+    invocation, _ = only(program, accept(program, InvocationId("inv"), fulfillment.ORDER))
     once = admit(program, invocation, delivered(fulfillment.PAYMENTS, "wh-1", CAPTURED))
     twice = admit(program, once, delivered(fulfillment.PAYMENTS, "wh-1", CAPTURED))
     assert twice == once
@@ -40,7 +41,9 @@ def test_the_same_delivery_twice_is_one_claim_and_a_different_payload_is_a_confl
         admit(program, once, delivered(fulfillment.PAYMENTS, "wh-1", CAPTURED_MORE))
     reason = refusal.value.reason
     assert isinstance(reason, Conflict)
-    assert reason == Conflict(delivery=DeliveryId("wh-1"), prior=once.evidence[0].id)
+    assert reason == Conflict(
+        delivery=Delivered(delivery=DeliveryId("wh-1")), prior=once.evidence[0].id
+    )
 
 
 def test_equal_field_values_do_not_correlate_without_the_declared_relationship() -> None:

@@ -80,6 +80,14 @@ class LineShipped(Record):
     tracking: Tracking
 
 
+class LineShippedBySku(Record):
+    """The carrier's word with the line named: the sku it shipped."""
+
+    order: OrderId = Field(alias="order_id")
+    sku: Sku
+    tracking: Tracking
+
+
 class LineDone(Fact):
     """One line and its shipment."""
 
@@ -92,6 +100,16 @@ class AllShipped(Fact):
 
     order: LinedOrder
     lines: tuple[LineDone, ...]
+
+
+class LineDoneBySku(Fact):
+    line: Line
+    shipment: LineShippedBySku
+
+
+class AllShippedBySku(Fact):
+    order: LinedOrder
+    lines: tuple[LineDoneBySku, ...]
 
 
 class LineApproved(Record):
@@ -119,6 +137,12 @@ BY_ORDER = (Correlation(received="order", subject="order.id"),)
 LINE_SHIP = Interaction(
     source=CARRIER, sends=LineShipRequest, receives=(LineShipped,), correlated=BY_ORDER
 )
+LINE_SHIP_BY_SKU = Interaction(
+    source=CARRIER,
+    sends=LineShipRequest,
+    receives=(LineShippedBySku,),
+    correlated=(*BY_ORDER, Correlation(received="sku", subject="order.lines.*.sku")),
+)
 LINE_APPROVAL = Interaction(
     source=APPROVALS,
     receives=(LineApproved,),
@@ -127,6 +151,9 @@ LINE_APPROVAL = Interaction(
 
 INVOICING = Program(goal=Invoice, accepts=ProcessOrder)
 SHIPPING = Program(goal=AllShipped, accepts=ProcessOrder, interactions=(LINE_SHIP,))
+SHIPPING_BY_SKU = Program(
+    goal=AllShippedBySku, accepts=ProcessOrder, interactions=(LINE_SHIP_BY_SKU,)
+)
 CLEARANCE = Program(goal=AllCleared, accepts=ProcessOrder, interactions=(LINE_APPROVAL,))
 
 
