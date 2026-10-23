@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 This notice covers everything under the .agents directory of the Type
-Construction Architecture repository, the agent definitions, the skills and
-the smell-check script among them, and the .claude/agents and .claude/skills
-links into it. The rest of the repository is licensed separately; see the
-LICENSE file at the repository root.
+Construction Architecture repository, the agent definitions and the skills
+among them, and the .claude/agents and .claude/skills links into it. The rest
+of the repository is licensed separately; see the LICENSE file at the
+repository root.

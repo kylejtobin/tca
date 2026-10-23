@@ -217,7 +217,7 @@ def test_a_computed_field_declares_its_computation_once_in_its_annotation() -> N
     assert Times.model_fields["root"].default is COMPUTED
 
 
-def test_a_computed_value_is_not_a_request_input() -> None:
+def test_an_undeclared_computed_value_in_the_input_is_refused() -> None:
     assert Order.model_validate_json('{"lines": [{"price": "2.50", "quantity": 3}]}').lines[
         0
     ] == Line(price=UnitPrice(Decimal("2.50")), quantity=Quantity(3))

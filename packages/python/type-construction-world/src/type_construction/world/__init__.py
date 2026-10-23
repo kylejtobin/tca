@@ -1,74 +1,66 @@
-"""The classes a developer writes an application with.
+"""Declarative value and computation primitives.
 
-An application is a module of subclasses of the classes below, and nothing else. There are no
-functions, handlers, validators or steps. Constructing the classes is running the program, and
-``pydantic.ValidationError`` is the only failure path.
+This module holds reusable building blocks for declaring a business program as Pydantic
+types. It does not execute a program. Nothing here runs an invocation, admits external
+evidence, persists history, calls an external system, or projects an interface; none of those
+is implemented in this tree.
 
-Why these classes are enough: an application is data, control flow, computation, I/O and
-deployment, and each is one Pydantic construct.
+What it provides:
 
-- Data: a field is a product, a union ``A | B`` is a sum, ``tuple[T, ...]`` is repetition,
-  ``Scalar`` is a primitive with an invariant, a ``StrEnum`` subclass is an enumeration,
-  ``Value`` is a composite part. Those are the algebraic data types.
-- Control flow: a field is a sequence (a fact holds the fact that came before it); a union is a
-  branch; a tuple is iteration; a fact holding the previous fact is accumulation; a constraint
-  on a ``Scalar`` or the choice of a union member is a rule.
-- Computation: a derived value is a derivation kind, ``Times`` or ``Sum``; a rule over two values
-  is a relation kind, ``Under``, ``AtMost``, ``Equal``, ``AtLeast``, ``Beyond`` or ``Differs``,
-  or ``Between`` over three; a choice among elements is a selection kind, ``Least``,
-  ``Greatest``, ``First`` or ``Only``. A program declares each as a subclass with its own
-  classes as the parameters and writes no expression.
-- I/O: ``Request`` arrives on a ``Route``; ``Record`` is what a party says; ``Action`` asks a
-  ``Connection`` and hears a ``Record``; ``Reply`` leaves. A library kind per transport
-  subclasses ``Connection`` and ``Action`` and carries the one piece of Python that calls a
-  client.
-- Deployment: ``Config`` holds the connections and settings from the environment; each value
-  the deployment sets is a ``Setting``, a lenient root, because the environment is text.
+- Values: ``Scalar`` is one primitive with an invariant, ``Setting`` is a lenient scalar for a
+  value supplied as text, ``Value`` is a composite part, ``Record`` is what an external party
+  says under that party's names, ``Fact`` is a conclusion made of the values it holds, and
+  ``Duration`` is a positive length of time. A field is a product, a union ``A | B`` is a sum,
+  and ``tuple[T, ...]`` is a finite repetition.
+- Derivations: ``Times`` and ``Sum`` hold a value computed from their operands at construction.
+- Relations: ``Under``, ``AtMost``, ``Equal``, ``AtLeast``, ``Beyond`` and ``Differs`` compare
+  two values and ``Between`` relates three. Each admits some orderings and refuses the others.
+- Selections: ``Least``, ``Greatest``, ``First`` and ``Only`` choose among elements by the
+  shape of their tuple.
+- Supporting machinery: ``Computation`` and ``Derived`` compute a field from its operands,
+  ``Comparison`` and ``Shape`` are the conditions a relation or selection refuses by,
+  ``Interval`` bounds what a numeric class can be, and ``Refusals`` and ``REFUTED`` separate a
+  condition that did not hold from a failure of construction.
 
-Each kind declares its meaning once, as something Pydantic reads, and both construction and the
-startup proof read that one declaration. A relation is the restriction of one shared comparison
-to the outcomes it admits, written as a ``Literal`` type: construction computes the ordering of
-its operands and Pydantic admits or refuses it, and the proof reads the admitted set. A
-selection's shape is its tuple annotation: ``tuple[E]`` is exactly one and ``tuple[E, ...]``
-with ``min_length=1`` is at least one. A derivation declares one operation, which computes its
-root at construction and tells the proof what the root can be from what its operands can be.
 A computed field is a ``Computation`` in its annotation and ``COMPUTED`` as its default: its
-operands determine it, and a value given for it is refused. A constant is a scalar with a
-default root. Nothing has a validator the proof cannot read.
+operands determine it, and a value given for it is refused. A relation is one shared
+comparison restricted to the orderings its ``Literal`` admits. A selection's shape is its
+tuple annotation.
 
-Every configuration here is strict: no coercion, no undeclared fields, frozen instances,
-defaults validated. A value the business does not have has no type. Code constructs in Python
-mode, where ``Quantity("3")`` is refused. Input from the world is validated at the edge in the
-mode the edge needs: an HTTP body with ``model_validate_json``, a command line with
-``model_validate(tree, strict=False)``, the environment through ``Setting`` roots. The classes
-stay strict; the call chooses the mode.
+Selections and aggregations operate on the finite tuple they are given. A ``Sum`` is the sum of
+that tuple, ``Only`` refuses a tuple that does not hold exactly one element, and ``Least``
+refuses an empty one. None of them establishes that the tuple is the complete content of an
+external source; whether a source is closed is a separate question this module does not answer.
+
+Every configuration here is strict, frozen, and refuses undeclared fields, except ``Setting``,
+which accepts text. Code constructs in Python mode, where ``Quantity("3")`` is refused. A caller
+that validates data from outside chooses the validation mode that data needs. Construction
+refuses a value with ``pydantic.ValidationError``; a refusal whose every error is ``REFUTED``
+says that a declared condition did not hold over validated operands, and any other error is a
+failure of construction. Errors raised outside validation are not ``ValidationError``.
 """
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
-from functools import partial, reduce
+from functools import reduce
 from operator import mul
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     Final,
-    Generic,
     Literal,
     LiteralString,
     NamedTuple,
-    TypeVar,
     get_args,
 )
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import (
-    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -79,11 +71,9 @@ from pydantic import (
     ValidatorFunctionWrapHandler,
 )
 from pydantic_core import CoreSchema, PydanticCustomError, core_schema
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
     "REFUTED",
-    "Action",
     "AtLeast",
     "AtMost",
     "Between",
@@ -92,8 +82,6 @@ __all__ = [
     "Comparison",
     "Computation",
     "Condition",
-    "Config",
-    "Connection",
     "Derived",
     "Differs",
     "Duration",
@@ -101,24 +89,17 @@ __all__ = [
     "Fact",
     "First",
     "Greatest",
-    "Identity",
-    "Instant",
     "Interval",
-    "Json",
     "Least",
     "Measure",
     "Numeric",
     "Only",
     "Ordering",
     "Primitive",
-    "Python",
     "Record",
     "Refusals",
     "Refutable",
     "Relation",
-    "Reply",
-    "Request",
-    "Route",
     "Scalar",
     "Selection",
     "Setting",
@@ -141,8 +122,8 @@ PRODUCT = ConfigDict(
 )
 """Configuration for a class of fields: strict, frozen, no undeclared fields, defaults validated.
 
-``use_attribute_docstrings`` makes a docstring written under a field its description, which the
-command line shows as help text and the OpenAPI document shows on the property.
+``use_attribute_docstrings`` makes a docstring written under a field its description, which
+appears in the field's JSON schema.
 """
 
 type Primitive = (
@@ -155,14 +136,14 @@ class Scalar[T: Primitive](RootModel[T]):
     """One primitive with an invariant.
 
     Subclass it with the primitive and the constraint, and use the subclass as a field type
-    everywhere the value appears. A field is never typed as a bare primitive, because a bare
-    primitive carries no rule and no name, and the proof refuses one::
+    wherever the value appears, so that the rule and the name travel with the value. A bare
+    primitive carries neither::
 
         class Quantity(Scalar[int]):
             root: int = Field(gt=0)
 
-    The value is read as ``.root``. ``Quantity(0)`` raises ``ValidationError``. A business
-    constant is a scalar with a default root, and exists in every run by being declared::
+    The value is read as ``.root``. ``Quantity(0)`` raises ``ValidationError``. A constant is a
+    scalar with a default root::
 
         class Threshold(Scalar[Decimal]):
             root: Decimal = Decimal(100)
@@ -172,57 +153,24 @@ class Scalar[T: Primitive](RootModel[T]):
 
 
 SETTING = ConfigDict(frozen=True, validate_default=True)
-"""Configuration for a value the deployment sets: frozen, defaults validated, lenient, because it
-arrives as text from the environment and pydantic-settings validates it in Python mode."""
+"""Configuration for a value supplied as text: frozen, defaults validated, lenient, so that
+text constructs the primitive."""
 
 
 class Setting[T](RootModel[T]):
-    """One value the deployment sets: an address, a credential, a limit.
+    """One value supplied as text, such as an address or a limit.
 
-    Subclass it with the primitive and the constraint, and use the subclass as a field type on
-    a ``Connection`` or a ``Config``. It is read from the environment, where every value is
-    text, so it accepts text and constructs the primitive; its constraint still applies::
+    Subclass it with the primitive and the constraint. It accepts text and constructs the
+    primitive; its constraint still applies::
 
         class Retries(Setting[int]):
             root: int = Field(ge=0)
 
-    A business value is a ``Scalar``, which is strict; a deployment value is a ``Setting``.
-    Neither is written as the other.
+    A ``Scalar`` is strict; a ``Setting`` is lenient. Nothing in this module reads the
+    environment or any other source for it.
     """
 
     model_config = SETTING
-
-
-class Instant(Scalar[AwareDatetime]):
-    """The moment a thing was constructed.
-
-    Declare it as a field on a ``Fact`` that concludes at a moment. It is fresh: the engine
-    constructs one for each holder at the moment the holder is asked for, and nothing supplies
-    it::
-
-        class Placed(Fact):
-            order: PlaceOrder
-            at: Instant
-    """
-
-    root: AwareDatetime = Field(
-        default_factory=partial(datetime.now, UTC),
-        description="A timezone-aware datetime; now, in UTC, at construction.",
-    )
-
-
-class Identity(Scalar[UUID]):
-    """What distinguishes one thing from another of the same class.
-
-    Declare it as a field on a ``Fact`` that identifies a thing. It is fresh: the engine
-    constructs one for each holder, and two holders never share one::
-
-        class Placed(Fact):
-            order: PlaceOrder
-            id: Identity
-    """
-
-    root: UUID = Field(default_factory=uuid4, description="A UUID4, fresh at construction.")
 
 
 class Duration(Scalar[timedelta]):
@@ -235,26 +183,11 @@ class Value(BaseModel):
     """A composite part with no standing of its own.
 
     Subclass it for a thing that is held by other things and is nothing by itself: an address,
-    a line of an order, a money amount with its currency. Its fields are typed as your classes.
-    A value arrives inside a request or a record, and brings the scalars and values it holds
-    into the run with it::
+    a line of an order, a money amount with its currency. Its fields are typed as your classes::
 
         class Line(Value):
             sku: Sku
             quantity: Quantity
-    """
-
-    model_config = PRODUCT
-
-
-class Request(BaseModel):
-    """What arrives on a route.
-
-    Subclass it with the fields the caller sends, each typed as one of your classes: scalars,
-    values, enumerations, and tuples of them. A tuple field declares elements: each element gets
-    a run of its own under the request's. The engine deserializes the request body as this
-    class; a body that does not construct is refused with ``ValidationError`` before anything
-    runs. Owned by this program's contract.
     """
 
     model_config = PRODUCT
@@ -269,10 +202,9 @@ class Record(BaseModel):
         class Charged(Record):
             charge: ChargeId = Field(alias="id")
 
-    A party's response is deserialized as the ``Record`` an ``Action`` hears, by alias only,
-    Pydantic's default: ``{"id": "c1"}`` constructs and ``{"charge": "c1"}`` is refused. A field
-    the party sends that is not declared is refused. A test plays the party with the alias,
-    ``Charged(id=ChargeId("c1"))``.
+    A party's payload validates as the ``Record`` by alias only, Pydantic's default:
+    ``{"id": "c1"}`` constructs and ``{"charge": "c1"}`` is refused. A field the party sends that
+    is not declared is refused. Code constructs one with the alias, ``Charged(id=ChargeId("c1"))``.
 
     A party that names everything in one convention gets one subclass with an
     ``alias_generator`` and no per-field alias::
@@ -284,13 +216,11 @@ class Record(BaseModel):
 
         amount: Amount = Field(validation_alias=AliasPath("data", "amount", "value"))
 
-    A party's stated refusal is a ``Record`` too, heard as one member of a union:
-    ``Post[Payments, Payment, Charged | Declined]``. The members are told apart by a
-    ``Literal`` field each declares, ``status: Literal["succeeded"]`` and
-    ``status: Literal["declined"]``, or by a key one requires and the other does not; the proof
-    refuses a union of records it cannot tell apart. A tuple field on a record declares
-    elements, each with a run of its own under the record's. A party that does not answer is
-    not a ``Record``; the client's exception propagates.
+    A party's stated refusal is a ``Record`` too, one member of a union such as
+    ``Charged | Declined``. Members can be told apart by a ``Literal`` field each declares,
+    ``status: Literal["succeeded"]`` and ``status: Literal["declined"]``. This module does not
+    check that a union of records is unambiguous. A party that does not answer is not a
+    ``Record``, and this module does not model it.
     """
 
     model_config = ConfigDict(
@@ -306,12 +236,9 @@ class Record(BaseModel):
 class Fact(BaseModel):
     """What the business concludes.
 
-    Subclass it with fields typed as the things the conclusion is made from: the request, a
-    record a party said, a prior fact, a value, an element, a relation, a derivation, a
-    selection. The fields are the fact's premises; the engine constructs the fact once every
-    premise exists, in the run where they exist. What the fact knows from what it holds is a
-    ``@computed_field`` that reads its fields and constructs a declared class; it computes
-    nothing.
+    Subclass it with fields typed as the things the conclusion is made from: a record a party
+    said, a prior fact, a value, a relation, a derivation, a selection. The fields are the
+    fact's premises; constructing the fact validates them and holds them.
 
     A choice between two conclusions is two ``Fact`` subclasses, each holding the relation that
     makes it true, written as a union where the choice is held::
@@ -324,13 +251,12 @@ class Fact(BaseModel):
             line: Line
             tier: Large
 
-        class Charge(Post[Payments, Payment, Charged]):
+        class Priced(Fact):
             priced: Discounted | FullPrice
 
-    Exactly one of ``Small`` and ``Large`` constructs for a line, so exactly one conclusion
-    exists, and the proof refuses a union whose members it cannot show exclusive. State over
-    time is a fact holding the previous fact. No method, validator or branch is written on a
-    fact.
+    Two relations with disjoint admitted orderings over the same operands cannot both
+    construct. This module does not prove that for an arbitrary union. A ``Fact`` records
+    which premises it was made from; it does not say where they came from.
     """
 
     model_config = PRODUCT
@@ -338,8 +264,9 @@ class Fact(BaseModel):
 
 class Interval(NamedTuple):
     """What a numeric class can be: a lower and an upper bound, each a ``Decimal`` or ``None``
-    for unbounded, and whether each is strict. The proof reads a scalar's interval from its
-    ``Field`` bounds, a constant's from its default, and a derivation's from its operation."""
+    for unbounded, and whether each is strict. A derivation's ``Derived`` operation computes the
+    interval of its root from the intervals of its operands. Nothing in this tree consumes
+    intervals yet."""
 
     low: Decimal | None = None
     """The least the value can be; ``None`` for no lower bound."""
@@ -390,8 +317,8 @@ REFUTED: Final[LiteralString] = "refuted"
 """The error type of a declared condition that did not hold over validated operands: a
 relation's ordering outside its ``Literal``, or a selection's elements outside its tuple's
 shape. The kind raises it at the one boundary where only the condition can refuse, so a
-refusal whose every error is this type says only that the fact does not exist here; any other
-error is a failure of the construction."""
+refusal whose every error is this type says only that a declared condition did not hold over
+these operands; any other error is a failure of the construction."""
 
 
 @dataclass(eq=False)
@@ -400,8 +327,8 @@ class Refusals:
     construction passes to ``model_validate``, which Pydantic hands every validator as
     ``info.context``. A condition that refuses notes itself here, with the field it validated,
     and stamps its error with the number of that note, so the error is traced to the validator
-    that executed and to nothing raised anywhere else. Invocation-local: one per validation,
-    and nothing keeps it after."""
+    that executed and to nothing raised anywhere else. Local to one validation call, and nothing
+    keeps it after."""
 
     noted: list[tuple[str, Condition]] = field(default_factory=list)
 
@@ -432,7 +359,7 @@ class Condition:
 
 class Computation(ABC):
     """A field whose value is a function of the operand fields declared before it: the one
-    declaration construction and the proof read.
+    declaration construction reads.
 
     It is the ``Annotated`` metadata of the field, whose default is ``COMPUTED``. Pydantic
     validates the operands first, in declaration order, then reaches the field with the
@@ -446,7 +373,8 @@ class Computation(ABC):
     Validation is the boundary: what Pydantic validated, in Python or in JSON, is computed, and
     a validated instance is held by identity wherever it is held. ``model_construct`` validates
     nothing, by Pydantic's contract, so nothing it makes is a computed value, and nothing in
-    the engine's path calls it.
+    this module calls it. An instance's identity in memory is not a durable identity for the
+    evidence it was built from.
     """
 
     operands: tuple[str, ...]
@@ -503,8 +431,8 @@ class Derived(Computation):
     """How a derivation kind computes its root from its operand fields, and what the root can
     be from what the operands can be.
 
-    The proof calls ``interval`` with one interval per operand field, the element's interval
-    for a tuple field."""
+    ``interval`` takes one interval per operand field, the element's interval for a tuple
+    field."""
 
     operands: tuple[str, ...]
     """The fields the operation reads, in order."""
@@ -560,19 +488,18 @@ def sum_interval(operands: tuple[Interval, ...]) -> Interval:
 class Measure(Fact):
     """A derived value: a fact whose ``root`` its operation computes from what it holds.
 
-    A program never computes a value. It declares the value's class as a subclass of a
-    derivation kind, ``Times`` or ``Sum``, with the operands as the parameters, and reads the
-    result as ``.root``, as it reads a ``Scalar``::
+    A program declares the value's class as a subclass of a derivation kind, ``Times`` or
+    ``Sum``, with the operands as the parameters, and reads the result as ``.root``, as it reads
+    a ``Scalar``::
 
         class LineTotal(Times[UnitPrice, Quantity]): ...
 
-    The engine constructs a derivation when its operands exist, like any fact, and Pydantic
-    computes and validates the root at construction: each kind declares ``root`` after its
-    operands, with its ``Derived`` operation as the field's metadata and ``COMPUTED`` as its
+    Pydantic computes and validates the root at construction: each kind declares ``root`` after
+    its operands, with its ``Derived`` operation as the field's metadata and ``COMPUTED`` as its
     default, since Pydantic validates fields in declaration order and a base class's field
     comes first. A root given at construction is refused. To the checker every derivation has
-    a ``root``. An operand is a scalar the run holds, or another derivation. A derivation is
-    itself an operand of a relation, a selection or a further derivation.
+    a ``root``. An operand is a numeric scalar or another derivation. A derivation is itself an
+    operand of a relation, a selection or a further derivation.
     """
 
     if TYPE_CHECKING:
@@ -591,8 +518,7 @@ class Times[A: Numeric, B: Numeric](Measure):
 
         class LineTotal(Times[UnitPrice, Quantity]): ...
 
-    A constant factor is a scalar with a default root, which exists in every run by being
-    declared::
+    A constant factor is a scalar with a default root::
 
         class Rate(Scalar[Decimal]):
             root: Decimal = Decimal("0.9")
@@ -610,12 +536,14 @@ class Times[A: Numeric, B: Numeric](Measure):
 
 
 class Sum[E: Numeric](Measure):
-    """The sum of every element's value.
+    """The sum of every element's value in the tuple it is given.
 
-    The elements are what the runs under this one produced, one per element, collected in
-    order; none sums to zero::
+    The elements are a finite tuple, summed in order; an empty tuple sums to zero::
 
         class Lines(Sum[LineTotal]): ...
+
+    The sum is of the tuple supplied. It does not establish that the tuple holds every element
+    an external source has or will have.
     """
 
     of: tuple[E, ...]
@@ -637,9 +565,8 @@ SIGN: Final[dict[int, str]] = {-1: "<", 0: "=", 1: ">"}
 @dataclass(frozen=True)
 class Comparison(Computation, Condition):
     """One comparison a relation kind makes between two of its operand fields: the ordering
-    of the first against the second, which the field's ``Literal`` admits or refuses. The
-    proof reads the same field: the two operands, and the admitted outcomes from the
-    annotation."""
+    of the first against the second, which the field's ``Literal`` admits or refuses. The two
+    operands and the admitted outcomes are both readable from the field's declaration."""
 
     operands: tuple[str, str]
     """The field compared, and the field it is compared with."""
@@ -685,14 +612,14 @@ class Comparison(Computation, Condition):
 class Refutable(Fact):
     """A fact that exists to refuse: a relation or a selection, whose refusal, when every error
     is one its own declared conditions raised, says only that the conditions do not hold over
-    these operands, so the fact does not exist here. The kind owns that distinction, and reads
+    these operands. The kind owns that distinction, and reads
     it from the validation that executed: validated with ``Refusals`` as the context, each
     condition that refused noted itself there and stamped its error; a refutation is a refusal
     whose errors and notes correspond one to one, each error ``REFUTED`` at the noted field of
     this class, raised by the ``Condition`` this class declares there. An operand that did not
     construct, a value given for a computed field, ``REFUTED`` raised by any other validator,
     at the condition's field or elsewhere, or a condition refusing deeper inside an operand, is
-    a failure. The engine reads this through ``refuted`` and interprets no error itself."""
+    a failure. A caller reads this through ``refuted`` and need not interpret any error itself."""
 
     @classmethod
     def refuted(cls, refusal: ValidationError, refusals: Refusals) -> bool:
@@ -722,12 +649,9 @@ class Relation(Refutable):
     Every relation kind subclasses this and declares its meaning as ordering fields: each is
     typed by a ``Literal`` of the outcomes it admits and carries a ``Comparison`` of two
     operand fields as its metadata, with ``COMPUTED`` as its default. Pydantic computes the
-    ordering from the validated operands and admits it or refuses it as ``REFUTED``;
-    the engine reads a refusal of a relation as the fact not existing, so a union of the facts
-    that hold each outcome is the choice. The proof reads the same fields: it tells two
-    relation kinds apart by the outcomes they admit, decides from the operands' intervals
-    whether a relation can ever hold or ever refuse, and refuses a union two relations cannot
-    tell apart. An ordering is computed and never given: one supplied in the input is refused.
+    ordering from the validated operands and admits it or refuses it as ``REFUTED``. A union
+    of the facts that hold each outcome can express a choice. An ordering is computed and never
+    given: one supplied in the input is refused.
     """
 
 
@@ -737,7 +661,7 @@ class Compare[A: Numeric, B: Numeric, O: Ordering](Relation):
     The six relation kinds over two values are this class with the admitted outcomes fixed:
     ``Under`` admits -1, ``AtMost`` -1 and 0, ``Equal`` 0, ``AtLeast`` 0 and 1, ``Beyond`` 1,
     ``Differs`` -1 and 1. Two kinds whose admitted outcomes are disjoint are complements over
-    the same operands, and the proof reads them as such.
+    the same operands.
     """
 
     value: A
@@ -773,14 +697,11 @@ class AtMost[A: Numeric, B: Numeric](Compare[A, B, Literal[-1, 0]]):
             line: Line
             tier: Large
 
-        class Charge(Post[Payments, Payment, Charged]):
+        class Priced(Fact):
             priced: Discounted | FullPrice
 
-    The relation that holds constructs, and the one that does not refuses, which the engine
-    reads as the fact not existing; so exactly one of ``Discounted`` and ``FullPrice`` exists,
-    and the union is the choice. A bound that is a business constant is a scalar with a default
-    root, and exists in every run by being declared. At startup the proof reads the bounds on
-    both operands and refuses a relation that can never hold, or can never refuse.
+    The relation that holds constructs, and the one that does not refuses with ``REFUTED``. A
+    bound that is a business constant is a scalar with a default root.
     """
 
 
@@ -839,8 +760,7 @@ class Between[A: Numeric, L: Numeric, U: Numeric](Relation):
 
 
 class Shape(Condition):
-    """A selection's tuple shape as its condition: the one declaration construction and the
-    proof read.
+    """A selection's tuple shape as its condition: the one declaration construction reads.
 
     It is the ``Annotated`` metadata of a selection's ``of``. Pydantic validates the elements
     first, as a tuple of any number of the element class, and reports an omitted field or an
@@ -877,14 +797,17 @@ class Shape(Condition):
 
 
 class Selection[E: BaseModel](Refutable):
-    """A choice among elements: a fact over the elements the runs under this one produced,
-    whose ``chosen`` is the one selected.
+    """A choice among elements: a fact over a finite tuple of elements, whose ``chosen`` is the
+    one selected.
 
     Every selection kind subclasses this, and its shape is its tuple annotation, which Pydantic
-    constructs and the proof reads: ``tuple[E, ...]`` with ``min_length=1`` is at least one
-    element, ``tuple[E]`` is exactly one. With no element there is nothing to choose, and the
-    selection refuses with ``REFUTED``: a choice among nothing does not exist, and a fact that
-    holds it does not either. The shape is the field's ``Shape`` metadata.
+    constructs: ``tuple[E, ...]`` with ``min_length=1`` is at least one element, ``tuple[E]`` is
+    exactly one. With no element there is nothing to choose, and the selection refuses with
+    ``REFUTED``. The shape is the field's ``Shape`` metadata.
+
+    A selection chooses among the tuple it is given. It does not establish that the tuple is
+    complete, so it does not establish that nothing else exists, that an element is unique
+    among an external source's contents, or that the choice is final.
     """
 
     of: Annotated[tuple[E, ...], Shape()] = Field(min_length=1)
@@ -895,8 +818,7 @@ class Least[E: Numeric](Selection[E]):
     """The element whose value is least.
 
     A choice among elements is declared as a selection kind with the element class as its
-    parameter. The engine collects the elements the runs under this one produced, and
-    ``chosen`` is the one selected::
+    parameter. It is constructed from a tuple of elements, and ``chosen`` is the one selected::
 
         class Cheapest(Least[LineTotal]): ...
 
@@ -931,8 +853,8 @@ class First[E: BaseModel](Selection[E]):
 class Only[E: BaseModel](Selection[E]):
     """The one element, when there is exactly one.
 
-    A rule that a collection holds a single thing, declared as the shape ``tuple[E]``: with
-    none or with more than one it refuses, which the engine reads as the fact not existing::
+    A rule that a supplied tuple holds a single thing, declared as the shape ``tuple[E]``: with
+    none or with more than one it refuses with ``REFUTED``::
 
         class Sole(Only[Quote]): ...
     """
@@ -944,173 +866,3 @@ class Only[E: BaseModel](Selection[E]):
     def chosen(self) -> E:
         """The one element."""
         return self.of[0]
-
-
-class Connection(BaseModel):
-    """A party as the deployment names it.
-
-    Subclass a library kind's connection, such as ``Http`` or ``Keyed``, once per party. Its
-    fields are ``Setting`` subclasses: address, credential, limits, read from the environment.
-    A ``Config`` holds one field per connection.
-
-    ``open`` is abstract: the library kind implements it as an asynchronous context manager,
-    with ``@asynccontextmanager``, acquiring what reaching the party needs in an ``async with``
-    of its own, holding it in a ``PrivateAttr`` outside validation and outside the frozen
-    fields, and yielding once::
-
-        @override
-        @asynccontextmanager
-        async def open(self) -> AsyncGenerator[None]:
-            async with httpx.AsyncClient(base_url=self.url.root) as client:
-                self._client = client
-                yield
-
-    What an ``async with`` acquired, it releases: when a later acquisition in the same
-    ``open`` fails, when the open is cancelled, when the body raises, and when a later release
-    raises. So every acquisition has its owner by construction, and nothing else keeps a
-    list of what to close. The server kind enters every connection's ``open`` once at startup
-    and exits each once at shutdown, through the engine's ``opened``. A connection with no
-    library kind cannot be constructed.
-    """
-
-    model_config = PRODUCT
-
-    @abstractmethod
-    def open(self) -> AbstractAsyncContextManager[None]:
-        """What reaching the party needs, acquired on entry and released on exit."""
-
-
-@dataclass(frozen=True)
-class Json:
-    """What a party said, as JSON text: heard by validating the text as the action's record in
-    JSON mode, strictly. What a library kind's ``perform`` returns from an HTTP body."""
-
-    text: str | bytes
-    """The party's JSON."""
-
-
-@dataclass(frozen=True)
-class Python:
-    """What a party said, as Python data: a mapping under the record's aliases, or a record
-    already validated, which stays the same instance; heard by validating it as the action's
-    record in Python mode, strictly. What a library kind's ``perform`` returns from a client
-    that decoded the response, or from rows."""
-
-    data: object
-    """The party's data."""
-
-
-class Action[P: Connection, T: Record](BaseModel):
-    """What the business asks party ``P``, hearing ``T``.
-
-    Subclass a library kind's action, such as ``Post[P, S, T]`` or ``Get[P, T]``, with fields
-    typed as the fact that intends the action. The library kind declares what the action sends
-    and where as abstract properties, which the subclass implements as plain properties::
-
-        class Charge(Post[Payments, Payment, Charged]):
-            placed: Placed
-
-            @property
-            def sends(self) -> Payment:
-                return Payment(amount=self.placed.amount)
-
-            @property
-            def resource(self) -> Resource:
-                return Resource("/charges")
-
-    The action holds its party as ``party``, the connection the deployment configured for
-    ``P``; the engine fills it like any other field, from the config, so the action exists once
-    the fact that intends it and the party both exist. Then the engine awaits ``perform``, and
-    the library kind's ``perform`` sends through ``self.party`` and returns what the party said
-    as ``Json`` or ``Python``, or raises; the engine validates it as ``T`` at its one boundary,
-    a union choosing its member, and only a record that validates is heard. ``perform`` is
-    abstract: an action with no library kind cannot be constructed. An action is performed when
-    the route's answer needs it or what it hears and its fields are all supplied: its fields are
-    the evidence it is performed with, and what holds it decides whether it is needed.
-    """
-
-    model_config = PRODUCT
-    party: P
-    """The connection this action goes through: the deployment's ``P``."""
-
-    @abstractmethod
-    async def perform(self) -> Json | Python:
-        """Ask ``self.party`` and return what it said, as JSON text or Python data; the library
-        kind's verb."""
-
-
-F_co = TypeVar("F_co", bound=Fact, covariant=True)
-"""``Reply``'s fact, covariant: a ``Reply[Paid]`` is a ``Reply[Fact]``, so a route's bound
-``Reply[Fact]`` admits every reply. Declared the old way because the new syntax infers
-invariance for a field."""
-
-
-class Reply(BaseModel, Generic[F_co]):
-    """What the caller receives: the one fact ``F`` it is made from, and its words.
-
-    Subclass it with the fact as its parameter and a ``@computed_field`` for each value the
-    caller is told. The fact is held as ``of``, declared here with ``Field(exclude=True)``, so
-    ``model_dump_json`` and the OpenAPI response schema carry the computed fields only;
-    ``self.of`` is typed as ``F`` in code and is required at construction. A reply declares no
-    fields of its own::
-
-        class OrderPaid(Reply[Paid]):
-            @computed_field
-            @property
-            def charge(self) -> ChargeId:
-                return self.of.charged.charge
-
-    A reply made from several facts holds the fact that holds them. Owned by this program's
-    contract.
-    """
-
-    model_config = PRODUCT
-    of: F_co = Field(
-        exclude=True, description="The fact this reply is made from; never serialized."
-    )
-
-
-class Route[Q: Request, A: Reply[Fact]](BaseModel):
-    """One thing the program does: receives ``Q`` and answers ``A``.
-
-    Subclass it with the request and the reply, or a union of replies, as its parameters and
-    no fields. The class name is the business's name for the route; the server library kind
-    derives the address from it::
-
-        class Checkout(Route[PlaceOrder, OrderPaid | OrderDeclined]): ...
-
-    An instance is one answered request: ``request`` is what arrived and ``reply`` is what the
-    program made of it. The engine constructs the route like any other class, once the reply
-    exists, and that construction is the end of the run. A route exists once per run; the proof
-    refuses one whose reply would exist once per element.
-    """
-
-    model_config = PRODUCT
-    request: Q
-    """What arrived."""
-    reply: A
-    """What the program answered."""
-
-
-class Config(BaseSettings):
-    """The deployment: connections and settings, from the environment and ``.env``.
-
-    Subclass it, once per program, with one field per ``Connection`` and one ``Setting`` per
-    value the deployment sets directly. Nested fields are read with a double underscore:
-    ``PAYMENTS__URL``, ``PAYMENTS__KEY``. A ``.env`` file in the working directory is read with
-    the same names. A missing or malformed variable fails at startup with the field named::
-
-        class Deployment(Config):
-            catalog: Catalog
-            payments: Payments
-    """
-
-    model_config = SettingsConfigDict(
-        frozen=True,
-        strict=True,
-        extra="forbid",
-        validate_default=True,
-        use_attribute_docstrings=True,
-        env_nested_delimiter="__",
-        env_file=".env",
-    )

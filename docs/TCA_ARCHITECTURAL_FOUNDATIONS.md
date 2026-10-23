@@ -2,10 +2,12 @@
 
 ## A type-driven backend framework for outcome-directed execution across events, time, and failure
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Research date:** October 23, 2026  
-**Repository baseline:** `kylejtobin/tca`, branch `review`, commit `cd6f44f7fcc5ffcfd8077a3622528d0c0d1dee7a`  
-**Status:** Foundational target architecture and review standard. Proposed capabilities are distinguished from verified implementation.
+**Historical baseline inspected:** `kylejtobin/tca`, branch `review`, commit `cd6f44f7fcc5ffcfd8077a3622528d0c0d1dee7a`  
+**Cleanup baseline:** the same branch at commit `e06b207e4896ee039e0aca33332903664c65d50e`, the commit the teardown was applied to  
+**Status:** Foundational target architecture and review standard. Proposed capabilities are distinguished from verified implementation. The code described as the baseline in this document is historical: it was removed in the teardown and is not the implementation of this architecture.  
+**Related:** [`REFACTOR_ACCEPTANCE.md`](REFACTOR_ACCEPTANCE.md) lists the behavioral requirements a replacement must meet. They are requirements, not implemented or verified tests.
 
 ---
 
@@ -86,27 +88,26 @@ This document distinguishes four kinds of material:
 | Evidence category | Meaning |
 |---|---|
 | **Established product requirement** | Intent and constraints repeatedly stated in the project discussion. |
-| **Observed implementation** | Behavior or structure directly visible in the pinned repository source. |
+| **Historical source observation** | Behavior or structure visible in the baseline source at the pinned commit. That source is no longer in the tree and is available through Git. |
 | **External technical evidence** | Semantics documented by the technology’s maintainers or primary research. |
-| **Design decision** | The selected architecture derived from those requirements and evidence, still requiring implementation and verification. |
+| **Proposed design** | The target architecture derived from those requirements and evidence. It is unimplemented and unverified until a build demonstrates it. |
 
 Earlier assistant recommendations are not independent evidence of correctness. A review finding supported only by inspection or an isolated probe is not equivalent to a repository-level reproduction. A passing suite demonstrates its tested cases, not general architectural soundness.
 
-The older ADRs and developer skill were not used as architectural authorities in this research. Their reconciliation belongs after the design is established and implemented.
+The older decision records and developer skill were not used as architectural authorities in this research. They have been removed from the tree and remain in Git history. They are not reconciled with this document and are not to be restored as authorities.
 
-### 3.2 Current baseline
+### 3.2 Historical baseline
 
-The latest inspected commit is newer than the last implementation discussed in detail in the conversation. It introduces a goal-relative `Evaluator`, evaluates conditional dependencies before completing branches, constructs pure occurrences as demanded, and memoizes occurrence evaluation within a pass. The global pure-construction sweep and separate terminal re-traversal have been replaced. These are observed implementation changes, not merely claims inferred from the commit title. fileciteturn31file0L2-L2
+The inspected baseline was commit `cd6f44f`. It is historical code, not the post-cleanup implementation. Its engine package, command-line package, HTTP package and demo package no longer exist in the tree. They are available in Git at that commit and at the cleanup baseline for reference only.
 
-The runtime still starts with a fresh in-memory scope, accepts a `Request`, evaluates a `Route`, performs an effect frontier using `TaskGroup`, and admits the pass’s records after successful completion. Its exposed outcomes remain `Run` and `Blocked`; it does not yet expose a durable continuation and external-evidence admission lifecycle. fileciteturn32file0L2-L2
+Observed in the baseline source:
 
-The current world model provides Pydantic-backed values, facts, relations, computations, selections, actions, records, requests, replies, and deployment capabilities. `Route[Q, A]` explicitly represents receiving a request and constructing a reply. `Action[P, T]` declares its capability and returned record type. fileciteturn33file0L2-L2 fileciteturn34file0L2-L2
+- A goal-relative `Evaluator` evaluated conditional dependencies before completing branches, constructed pure occurrences as demanded, and memoized occurrence evaluation within a pass. (`packages/python/type-construction-engine`, removed.)
+- The runtime started with a fresh in-memory scope, accepted a `Request`, evaluated a `Route`, performed an effect frontier using `TaskGroup`, and admitted the pass's records after successful completion. Its exposed outcomes were `Run` and `Blocked`. It had no durable continuation and no external-evidence admission lifecycle. (`packages/python/type-construction-engine`, removed.)
+- The world model provided Pydantic-backed values, facts, relations, computations, selections, actions, records, requests, replies and deployment configuration. (`packages/python/type-construction-world/src/type_construction/world/__init__.py` at the baseline; the request, route, reply, action, connection and configuration kinds have since been removed from it.)
+- The repository targeted Python 3.14 and configured strict type checking, linting, import-boundary checks, security tooling and pytest. (`pyproject.toml` and `justfile` at the baseline; the import-boundary checks have since been removed.)
 
-The repository targets Python 3.14 and configures strict type checking, linting, import-boundary checks, security tooling, and pytest. Its TODO marks Tasks 1–4 done, Task 5 delivered for review, and CLI completion and final verification outstanding. These labels are project status, not an independent certification. fileciteturn36file0L2-L2 fileciteturn29file0L2-L2
-
-GitHub reports successful CI for the pinned commit. No fresh full-repository test run or durable-recovery experiment was performed during this research: the execution environment could not resolve GitHub for checkout. The architecture assessment below therefore rests on source inspection, reported CI, conversation evidence, and external research, not an invented production validation. fileciteturn35file0L2-L2
-
----
+CI was reported successful for the baseline commit. This research did not reproduce that run. No fresh full-repository test run or durable-recovery experiment was performed, because the execution environment could not resolve GitHub for checkout. The assessment of the baseline rests on source inspection, reported CI, project discussion and external research, not on an invented production validation.
 
 ## 4. Lessons that must survive the transition
 
@@ -116,7 +117,7 @@ The same class may appear in different orders, collection elements, branches, in
 
 Matching types, equal values, shared Python objects, or identical display paths do not establish that evidence belongs to the same execution relationship.
 
-The current implementation correctly distinguishes an available instance from the scope and source identity that hold it. That distinction must survive persistence, where Python object identity disappears. fileciteturn30file0L2-L2
+The baseline engine distinguished an available instance from the scope and source identity that held it (`packages/python/type-construction-engine`, removed). That distinction must survive persistence, where Python object identity disappears.
 
 ### 4.2 Type validity is not source authority
 
@@ -136,7 +137,7 @@ A downstream consumer can create demand for a result. It cannot weaken the actio
 
 The engine must establish all three properties at the effect boundary, rather than use one as a substitute for another.
 
-### 4.4 A successful route is not an authorization premise
+### 4.4 Necessity for a successful outcome is not an authorization premise
 
 Proving that an action is necessary for a successful reply does not establish that performing it now is justified.
 
@@ -223,20 +224,20 @@ It is not a claim that arbitrary Python is a proof assistant or that constructin
 
 ## 6. Selected reference architecture
 
-The architecture has one business interpreter and several execution and interface boundaries.
+The architecture has one business interpreter and several execution and interface boundaries. It is a proposal. None of it is implemented in the post-cleanup tree, and the names below describe responsibilities, not classes to be built.
 
 ```text
 Python and Pydantic business declarations
                     |
          Versioned construction graph
                     |
-       Structural proof and diagnostics
+       Static analysis and diagnostics
                     |
 Command / query / event --> Admission --> Invocation state
                                               |
-                                     Construction evaluator
+                                        Pure evaluation
                                               |
-                         Completed / frontier / waits / blocked
+                         Completed / actionable / waiting / blocked
                                               |
                                        Execution host
                                               |
@@ -263,9 +264,9 @@ Admission establishes its declared role, authenticated origin where applicable, 
 
 A message that can be parsed is not automatically admissible. An admissible message is not automatically relevant to every invocation.
 
-### 6.3 Construction evaluator
+### 6.3 Pure evaluation
 
-The evaluator operates on a program version, a goal, and an admitted state revision:
+Pure evaluation operates on a program version, a goal, and an admitted state revision. The signature below is illustrative:
 
 ```text
 advance(program, goal, state_revision)
@@ -312,7 +313,7 @@ If a conclusion requires `Allowed` and `Pinged`, and `Allowed` is obtained from 
 
 This remains true when there is no fallback reply for `Denied`. A single remaining branch is not an established branch.
 
-The current tests now encode this distinction and exercise non-exhaustive outcomes, guarded execution, substitutions, and effects followed by blocking. They are useful behavioral assets for the next architecture. fileciteturn38file0L2-L2
+The baseline engine tests encoded this distinction and exercised non-exhaustive outcomes, guarded execution, substitutions, and effects followed by blocking (`test_authority.py` in the removed engine package, at the cleanup baseline). They were removed with the engine. The behavior they covered is carried forward as requirements in `REFACTOR_ACCEPTANCE.md`.
 
 The rule is causal, not a universal prohibition on concurrency. Independent necessary observations and effects remain concurrent once their relevant prerequisites are established.
 
@@ -347,6 +348,8 @@ An uncertain external outcome is retained separately from a known failure. A tim
 
 These outcomes must carry structured reasons. Interfaces render those reasons; they do not classify them again.
 
+Failed and Cancelled are host-level outcomes. Whether pure evaluation itself needs more than three results to express completed, actionable, waiting and blocked conditions is a design question, listed in section 18.
+
 ### 7.6 Shared dependencies remain a graph
 
 A shared occurrence is evaluated and constructed once per relevant state revision, not once for every path reaching it.
@@ -369,7 +372,7 @@ A legitimate condition rejection remains distinct from malformed input, failed c
 
 ### 8.2 Static analysis is deliberately bounded
 
-The proof may interpret supported native constraints and trusted TCA primitive semantics. It must not strip arbitrary executable validators and treat the remaining schema as the full program.
+Static analysis may interpret supported native constraints and trusted TCA primitive semantics. It must not strip arbitrary executable validators and treat the remaining schema as the full program.
 
 Pydantic before, after, plain, and wrap validators have materially different behaviors; a wrap validator can bypass inner validation, and an after-validator can transform its output. The analysis must preserve those differences. ([docs.pydantic.dev](https://docs.pydantic.dev/latest/concepts/validators/))
 
@@ -413,6 +416,8 @@ CloudEvents specifies a `source` and `id` combination suitable for identifying d
 
 TCA also needs the receiving invocation or entrypoint, subject identity, relevant state version, and permitted source role.
 
+Correlation is more than matching field values. It checks the declared source, tenant, subject, version, and receiving relationship. Equal field values alone do not establish authority.
+
 Two deliveries of the same event do not create two new business facts. Two distinct events with identical payloads are not automatically duplicates.
 
 ### 9.2 Receives are declared, not invented by missing fields
@@ -424,6 +429,8 @@ It is not a procedural workflow step. It declares how an external premise can be
 An arbitrary absent field cannot silently become “wait forever for a matching event.” An incoming event cannot search all active invocations for any field with the same class.
 
 Event-triggered entrypoints and continuation receives are related but distinct. The former creates a new goal; the latter supplies an existing goal.
+
+A declared goal or reaction establishes intent. Merely holding an arriving input does not make its class an authorized entrypoint.
 
 ### 9.3 Early and out-of-order delivery are normal
 
@@ -470,6 +477,8 @@ The durable system records what cannot safely be regenerated:
 - Receive registrations, timers, and recorded environmental observations.
 - Effect intents, attempts, receipts, outcomes, and evidence-admission decisions.
 
+Durable history records effect intentions and execution uncertainty, not only admitted business evidence.
+
 Pure derived values may be reconstructed when their inputs and implementation are deterministic and version-pinned. Snapshots are an optimization, not an alternative source of business meaning.
 
 An execution journal is not a requirement to event-source the entire application database. Event sourcing is a separate domain-storage choice with substantial tradeoffs in concurrency, evolution, and querying. ([learn.microsoft.com](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing))
@@ -491,6 +500,8 @@ The durable model distinguishes:
 Retries retain effect identity and receive new attempt identities. A business decision to perform the operation again creates a new logical effect.
 
 Class names, list positions, object addresses, and payload hashes alone are insufficient durable identities. Element positions remain useful within immutable collection snapshots; evolving collections require membership identities that survive reordering.
+
+Scope lineage may be a derived index over durable execution history. The history is authoritative; a scope is not a second source of truth. How effect identity combines invocation, construction occurrence and logical repetition is a design question, listed in section 18.
 
 ### 10.3 Advance and commit form an explicit protocol
 
@@ -524,7 +535,7 @@ The execution host must reject stale state commits while retaining enough inform
 
 ### 10.6 Fresh values are recorded inputs
 
-The current `Instant` and `Identity` kinds use the clock and UUID generation during construction. Reconstructing them after a crash would otherwise change the program’s evidence. fileciteturn33file0L2-L2
+The baseline `Instant` and `Identity` kinds used the clock and UUID generation during construction. They have been removed from the world package. Reconstructing such values after a crash would change the program’s evidence.
 
 Their durable semantics must be “allocated once for this logical occurrence,” with the allocation recorded and reused.
 
@@ -534,7 +545,7 @@ The evaluator does not sample these implicitly. A trusted provider supplies them
 
 ### 10.7 Recovery is not ordinary response deserialization
 
-The current reply projection deliberately omits its supporting fact from serialized output. A client-facing representation is therefore not an execution snapshot. fileciteturn34file0L2-L2
+The baseline `Reply` projection deliberately omitted its supporting fact from serialized output. It has been removed. The lesson stands: a client-facing representation is not an execution snapshot.
 
 The durable codec preserves evidence identities and construction relationships. It must not blindly dump every model and revalidate that dump as if it were the original input: aliases, excluded fields, computed values, and transformations can make that incorrect. Pydantic explicitly supports customized serialization and field exclusion. ([docs.pydantic.dev](https://docs.pydantic.dev/latest/concepts/serialization/))
 
@@ -544,7 +555,7 @@ Arbitrary pickled object graphs are not the external admission or durable trust 
 
 ### 10.8 Business joins, execution batches, and transactions are different
 
-The existing whole-pass barrier prevents records from a failed pass entering construction. That is an established local execution contract, not proof that external effects are transactional. fileciteturn32file0L2-L2
+The baseline whole-pass barrier prevented records from a failed pass entering construction. That was a local execution contract of the removed engine, not proof that external effects are transactional.
 
 The durable target must not allow incidental worker batching to define business atomicity.
 
@@ -556,7 +567,7 @@ A fact requiring both `InventoryReserved` and `PaymentConfirmed` does not constr
 
 A finite admission cohort may preserve an intentional all-or-none publication contract. It must have a stable identity and recovery semantics, not exist accidentally because several tasks were scheduled together.
 
-This is an explicit refinement of the earlier pass contract. Existing barrier tests must remain as evidence of the old behavior until the new admission contract is implemented and verified. A failed sibling must never cause a completed external operation to be forgotten and blindly repeated.
+This replaces the earlier pass contract. The old pass-barrier tests need not remain executable during teardown; they were removed with the engine and remain in Git history. What must be preserved is the requirement that a completed external effect cannot be forgotten. A failed sibling must never cause a completed external operation to be forgotten and blindly repeated.
 
 ### 10.9 Versioning is part of correctness
 
@@ -569,6 +580,8 @@ Temporal and DBOS both treat changes to durable workflow execution as a versioni
 TCA requires equivalent discipline without a separately authored workflow: preserve the old program version, or perform an explicit, validated migration that carries forward evidence and already-issued effects.
 
 A migration cannot accidentally create a fresh identity for an effect that already happened.
+
+Program versions remain pinned. Migration need not be implemented in the first build.
 
 ---
 
@@ -625,6 +638,8 @@ Sensitive payload retention, encryption, access control, and deletion policies b
 ---
 
 ## 12. Developer experience and application shape
+
+The descriptions in this section are target behavior. The previous command-line and HTTP packages were removed in the teardown, and no replacement interface exists.
 
 ### 12.1 One business program across interfaces
 
@@ -709,7 +724,7 @@ The five business archetypes discussed during the project are useful test famili
 
 The engine should supply common construction and execution semantics. It should not contain five application-specific subsystems.
 
-Representative difficult cases include a shipment split after invoicing, an approval arriving after a policy change, concurrent inventory reservations, a duplicated payment callback, a late event changing an aggregate, and a blocked route following a completed external effect.
+Representative difficult cases include a shipment split after invoicing, an approval arriving after a policy change, concurrent inventory reservations, a duplicated payment callback, a late event changing an aggregate, and a blocked invocation following a completed external effect.
 
 The architecture succeeds when those cases can be modeled naturally without procedural duplication. It fails when the application must maintain a second workflow merely to connect declarations the engine already understands.
 
@@ -729,32 +744,24 @@ The architecture succeeds when those cases can be modeled naturally without proc
 
 No external framework is selected merely because it has “graph,” “event,” or “durable” in its description.
 
-The execution-host boundary is settled by this design. The concrete durable host remains an implementation selection subject to conformance testing. That is a bounded infrastructure choice, not permission to renegotiate business semantics.
+The execution-host boundary is proposed by this design. The concrete durable host remains an implementation selection subject to conformance testing. That is a bounded infrastructure choice, not permission to renegotiate business semantics.
 
 ---
 
-## 15. Disposition of the current engine
+## 15. Disposition of the previous implementation
 
-The current code is evidence and reusable material, not the architecture’s starting constraint.
+The teardown removed the previous engine and its interfaces and kept the independent value and computation primitives. The prior implementations remain in Git as reference material. They are not implementation candidates for the replacement.
 
-| Current component | Disposition under this design |
+| Component | Disposition |
 |---|---|
-| **Pydantic business kinds and computational admission** | Retain the role and demonstrated semantics. Correct purity, persistence, or identity assumptions where required. |
-| **Sealed `Construction` graph and direct source references** | Retain as the candidate relationship model; add stable versioned identity and receiving-source semantics. |
-| **Occurrence scopes and construction witnesses** | Preserve their distinctions; replace memory-only ownership as the durable identity mechanism. |
-| **Goal-relative `Evaluator`** | Use as the current implementation candidate for the construction kernel, not as accepted proof of the new lifecycle. Separate evaluation from effect execution and durable commits. |
-| **`Route[Request, Reply]` as execution root** | Generalize to typed entrypoints and goals. Keep request/reply as one projection. |
-| **Monolithic `constructed()` lifecycle** | Replace as the sole execution owner with advance, commit, dispatch, and admission boundaries. |
-| **Fresh clock and UUID factories** | Convert to recorded per-occurrence observations or allocations. |
-| **Action and record validation boundary** | Preserve native admission; add stable effect identity, recovery contracts, and delayed-result support. |
-| **Static proof** | Retain sound occurrence-bound analysis; remove any assumption that admissibility implies universal completion or that all evidence is already closed. |
-| **Whole-pass admission** | Preserve its tested safety meaning during transition; replace incidental scheduling-based atomicity with explicit admission semantics. |
-| **CLI** | Preserve interface derivation intent, consolidate schema interpretation, and expose invocation lifecycle. |
-| **Tracing and concurrency primitives** | Retain standards-based mechanisms while adapting their lifetime to worker activations and durable invocations. |
+| **Engine package** (compiler, proof, evaluator, scopes, occurrences, runtime, `answer()`, `ran()`, `constructed()`, pass-wide execution and admission, route-based completion) | Removed. Not retained as a candidate kernel. No compatibility wrapper. |
+| **Command-line, HTTP and demo packages** | Removed. |
+| **World kinds for request, route, reply, action, connection, configuration, JSON and Python results, and fresh time and identity** | Removed from the world package. |
+| **World primitives**: `Scalar`, `Setting`, `Value`, `Record`, `Fact`, `Duration`, the arithmetic, comparison and selection kinds, and their computation, constraint, interval and condition-refutation machinery | Retained as reusable components with their existing value-level behavior and tests. This is not a commitment to the previous engine or its public API. They may change or go if contract validation shows they obstruct the target semantics. |
+| **Decision catalog, architecture notes, developer and style skills, smell-check, narrative feature scenarios, import-linter contracts** | Removed. Not relocated or summarized into replacement documents. |
+| **Behavioral requirements of the removed tests** | Recorded as unverified requirements in `REFACTOR_ACCEPTANCE.md`. |
 
-The observed evaluator is materially closer to the desired kernel than earlier eager implementations. The durable architecture nevertheless requires new semantics, not simply wrapping the current coroutine in a queue.
-
-A full rewrite is warranted only if the existing representation obstructs those semantics more than replacing it would. The decision is made per coherent subsystem, with preservation of behavioral evidence, not by protecting previous effort.
+The previous implementations are available at commit `e06b207e4896ee039e0aca33332903664c65d50e`. The inspected state in section 3 is commit `cd6f44f`. Deleted abstractions are not restored to satisfy old APIs, tests or documentation. A replacement earns each mechanism from the requirements in this document and in `REFACTOR_ACCEPTANCE.md`.
 
 ---
 
@@ -804,7 +811,7 @@ Rejected because necessary distinctions must remain represented. Simplicity is t
 
 ## 17. Verification and acceptance
 
-Verification must challenge the semantic contract independently of the implementation’s helper functions.
+Verification must challenge the semantic contract independently of the implementation’s helper functions. The cases to be met are listed in [`REFACTOR_ACCEPTANCE.md`](REFACTOR_ACCEPTANCE.md). They are requirements for a replacement and none is implemented or verified yet.
 
 ### Core conformance
 
@@ -843,67 +850,78 @@ A review identifies the exact commit, reads the full affected path, executes rel
 
 Source inspection, isolated probes, repository tests, CI, fault injection, and production observations remain distinct evidence categories.
 
+Testing Pydantic behavior does not establish distributed recovery, correlation, or concurrency correctness. Those need their own tests against the execution host.
+
 A green suite is necessary but insufficient. An architectural objection must nevertheless be tied to a violated invariant or a demonstrably better representation, not an untested preference.
 
 ---
 
 ## 18. Coordinated completion plan
 
-The event-capable design changes the completion target. It is real work, not a terminology change or a deferred integration detail.
+The event-capable design changes the completion target. It is real work, not a terminology change or a deferred integration detail. Each stage below is complete only when observed to be, and a passing reduced primitive suite does not complete any architectural stage.
 
-The remaining work is organized into three coherent milestones rather than an expanding tree of patches.
+### Milestone 0: Teardown
 
-### Milestone 1: Complete the invocation and evidence runtime
+Remove the previous engine, interfaces, decision catalog, instruction skills, narrative scenarios and their tooling, as described in section 15. Keep the independent world primitives and their tests. Success is that the repository's `just` checks pass on the reduced tree and that nothing importable from the removed packages remains. It builds no replacement.
 
-The construction kernel gains stable logical identity, explicit receiving sources, evidence revisions, deterministic environmental inputs, and distinct completion, waiting, blocking, and failure outcomes.
+### Milestone 1: Contract validation
 
-The execution host owns durable acceptance, effect intent and outcome recording, recovery, and admission. A local host and one durable host demonstrate the same business semantics.
+Resolve the design questions below using concrete declarations and counterexamples, before building a runtime. Record each decision when it is made. A decision may supersede an earlier one explicitly. History is not rewritten to imply a decision was always current.
 
-This extends the substance of Task 5 and reworks earlier components where required. Previously accepted request-lifetime assumptions are not preserved merely because their tasks were marked done.
+### Milestone 2: A complete invocation vertical slice
 
-### Milestone 2: Complete the shared interface and capability contracts
+Pursue one declared outcome across delayed evidence, process termination, recovery and uncertain external success. The slice needs stable logical identity, an explicit receiving source, evidence admission, recorded environmental inputs, and distinct completion, waiting and blocking results. It also needs durable acceptance, effect intent and outcome recording, and recovery.
 
-CLI, API, event ingress, status, result retrieval, cancellation, and capability bindings expose the same invocation model.
+### Milestone 3: Equivalent local and durable hosts
 
-No interface owns another validation language or workflow. No durable provider requires the application author to restate the business program.
+Show that the same business declarations have the same business semantics under a local host and a durable host, with no second authored workflow. Durability guarantees may differ. Business construction and demand semantics may not. The concrete durable host is chosen by conformance and operational evidence.
 
-This generalizes Task 6 beyond an isolated command-line projection.
+### Milestone 4: Shared interfaces and extended conformance
 
-### Milestone 3: Demonstrate recoverable correctness and simplify
+Expose the same invocation model through command-line, API, event ingress, status, result retrieval and cancellation. No interface owns another validation language or workflow. Extend independent conformance tests to the business-pattern families, failure windows, concurrency, upgrades, evidence closure, security boundaries and performance. Reconcile documentation with demonstrated behavior.
 
-Independent conformance tests cover the five business-pattern families, failure windows, concurrency, upgrades, evidence closure, security boundaries, and performance.
+There is no production-readiness claim until durable recovery and operational boundaries are demonstrated.
 
-Superseded machinery is removed as replacements land, not left for a final cosmetic cleanup. Documentation is reconciled with demonstrated behavior.
+### Design questions to validate during the build
 
-This makes Task 7 an acceptance and consolidation milestone rather than the place where the application’s missing execution architecture is first discovered.
+These are open. They are not accepted implementation contracts.
 
-Each milestone produces an executable vertical slice. There is no production-readiness claim until durable recovery and operational boundaries are demonstrated.
+1. **One interaction kind.** Can one interaction kind express immediate responses, delayed responses, unsolicited receives and timers without erasing meaningful distinctions between them?
+2. **Pure evaluation results.** Do three pure evaluation results adequately express completed, actionable, waiting and blocked conditions with structured reasons?
+3. **Stable effect identity.** How does effect identity include the invocation, the construction occurrence and the logical repetition? Identical premises must not automatically collapse distinct intended operations.
+4. **Closed tuple admission.** How does admission of a closed tuple support evolving sources without making the host a second business interpreter? An evolving source needs an explicit closure contract before absence, uniqueness or aggregate finality is inferred.
 
 ---
 
 ## 19. Evidence and decision register
 
+Statuses separate what was observed in historical source from what is a proposal. No row records a test executed for this document.
+
 | ID | Status | Statement |
 |---|---|---|
 | **R1** | Established requirement | TCA is a general-purpose, type-driven backend framework; business declarations remain the program. |
 | **R2** | Established requirement | Correctness, expressiveness, developer experience, reliability, durability, security, and sufficient simplicity are joint design criteria. |
-| **O1** | Observed source | The pinned implementation has a goal-relative, memoized evaluator and occurrence-bound witnesses. It is no longer the earlier eager-action implementation. |
-| **O2** | Observed source | The exposed runtime still creates fresh in-memory scopes and completes a request/reply run; durable receiving and recovery are not established by that path. |
-| **O3** | Observed source | Fresh clock/identity construction and reply serialization require explicit treatment before durable reconstruction is sound. |
+| **O1** | Historical source observation | The baseline at `cd6f44f` had a goal-relative, memoized evaluator and occurrence-bound witnesses. That code is removed. |
+| **O2** | Historical source observation | The baseline runtime created fresh in-memory scopes and completed a request and reply run. Durable receiving and recovery were not established by that path. |
+| **O3** | Historical source observation | The baseline's fresh clock and identity construction and its reply serialization needed explicit treatment before durable reconstruction could be sound. Both kinds are removed. |
 | **E1** | External evidence | Durable delivery and durable execution are different mechanisms; execution histories preserve progress and external results. ([docs.temporal.io](https://docs.temporal.io/encyclopedia/event-history)) |
 | **E2** | External evidence | External success followed by local failure requires idempotency or reconciliation; replay alone cannot determine whether the side effect happened. ([docs.temporal.io](https://docs.temporal.io/activity-definition)) |
 | **E3** | External evidence | Progress and closure information matter when a result depends on whether further evidence can arrive. ([timelydataflow.github.io](https://timelydataflow.github.io/timely-dataflow/chapter_3/chapter_3_1.html)) |
-| **D1** | Selected design | Invocation lifetime is independent of transport lifetime; events are admitted inputs, not a replacement for declared intent. |
-| **D2** | Selected design | One construction evaluator serves local and durable hosts. Infrastructure does not become a second business interpreter. |
-| **D3** | Selected design | Stable evidence and effect identities survive recovery; program versions preserve interpretation. |
-| **D4** | Selected design | Demand, business eligibility, input authority, and worker execution rights remain distinct. |
-| **D5** | Selected design | Scheduling batches do not silently define business transactions; admission and joining semantics are explicit. |
-| **V1** | Verification outstanding | The latest evaluator satisfies the full causal-demand contract across the intended modeling language. |
+| **D1** | Proposed target, unimplemented | Invocation lifetime is independent of transport lifetime; events are admitted inputs, not a replacement for declared intent. |
+| **D2** | Proposed target, unimplemented | One pure evaluation serves local and durable hosts. Infrastructure does not become a second business interpreter. |
+| **D3** | Proposed target, unimplemented | Stable evidence and effect identities survive recovery; program versions preserve interpretation. |
+| **D4** | Proposed target, unimplemented | Demand, business eligibility, input authority, and worker execution rights remain distinct. |
+| **D5** | Proposed target, unimplemented | Scheduling batches do not silently define business transactions; admission and joining semantics are explicit. |
+| **Q1** | Design question | Whether one interaction kind expresses immediate responses, delayed responses, unsolicited receives and timers without erasing distinctions. |
+| **Q2** | Design question | Whether three pure evaluation results express completed, actionable, waiting and blocked conditions with structured reasons. |
+| **Q3** | Design question | How effect identity combines invocation, construction occurrence and logical repetition. |
+| **Q4** | Design question | How closed tuple admission supports evolving sources without making the host a second business interpreter. |
+| **V1** | Verification outstanding | A replacement evaluator satisfies the full causal-demand contract across the intended modeling language. |
 | **V2** | Verification outstanding | A durable host preserves identity, purity, admission, and authority across all specified failure windows. |
 | **V3** | Verification outstanding | The developer-facing receive and versioning vocabulary expresses the representative applications without workflow duplication. |
 | **V4** | Implementation selection | The concrete durable host is chosen by conformance and operational evidence, not brand preference or presumed architectural compatibility. |
 
-These unresolved items do not suspend the architectural direction. They identify the exact demonstrations needed before its implementation can be accepted.
+These unresolved items do not suspend the architectural direction. They identify the exact demonstrations needed before an implementation can be accepted.
 
 ---
 

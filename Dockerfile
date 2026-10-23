@@ -1,4 +1,4 @@
-# The full image, not slim, for git: the commit gate's test runs it in the service.
+# The full image, not slim, so that git is available in the container.
 FROM python:3.14.8@sha256:12d187a59ecdeb95df0a78cd6107a84398455365a66cc2183db2be42b6067d33
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /uvx /bin/
@@ -20,11 +20,7 @@ USER dev
 WORKDIR /workspace
 
 COPY --chown=dev:dev pyproject.toml uv.lock README.md ./
-COPY --chown=dev:dev packages/python/type-construction-demo/pyproject.toml packages/python/type-construction-demo/
-COPY --chown=dev:dev packages/python/type-construction-http/pyproject.toml packages/python/type-construction-http/
-COPY --chown=dev:dev packages/python/type-construction-cli/pyproject.toml packages/python/type-construction-cli/
 COPY --chown=dev:dev packages/python/type-construction-world/pyproject.toml packages/python/type-construction-world/
-COPY --chown=dev:dev packages/python/type-construction-engine/pyproject.toml packages/python/type-construction-engine/
 RUN --mount=type=cache,target=/home/dev/.cache/uv,uid=${UID},gid=${GID} \
     uv sync --frozen --all-packages --no-install-workspace
 

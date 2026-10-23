@@ -8,10 +8,10 @@ Usage: new-package <name> <description>
                    with hyphens as underscores, and the tests package type_construction_<name>.
     <description>  one sentence, for pyproject.toml and the README.
 
-It writes the package's files, copies the root LICENSE, adds the module to the import-linter
-root packages and the package's pyproject.toml to the Dockerfile, and prints what it wrote. It
-refuses if the package directory exists. Dependencies start empty: `uv add` them afterwards, then
-`just lock`.
+It writes the package's files, copies the root LICENSE, adds the package's pyproject.toml to
+the Dockerfile, and prints what it wrote. The root workspace glob picks the package up without
+an edit. It refuses if the package directory exists. Dependencies start empty: `uv add` them
+afterwards, then `just lock`.
 """
 
 import re
@@ -91,14 +91,9 @@ def main(argv: list[str]) -> None:
         fail(f"{package.relative_to(ROOT)} exists")
 
     license_text = (ROOT / "LICENSE").read_text()
-    root_pyproject = ROOT / "pyproject.toml"
     dockerfile = ROOT / "Dockerfile"
-    root_text = root_pyproject.read_text()
     docker_text = dockerfile.read_text()
 
-    roots = re.search(r"^root_packages = \[(.*)\]$", root_text, flags=re.MULTILINE)
-    if roots is None:
-        fail("pyproject.toml has no root_packages line under [tool.importlinter]")
     copies = list(re.finditer(r"^COPY --chown=dev:dev packages/python/.*?/pyproject\.toml .*\n", docker_text, flags=re.MULTILINE))
     if not copies:
         fail("Dockerfile has no package pyproject.toml COPY line to insert after")
@@ -115,18 +110,12 @@ def main(argv: list[str]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    members = [m.strip() for m in roots.group(1).split(",") if m.strip()]
-    members.append(f'"{module}"')
-    root_text = root_text[: roots.start(1)] + ", ".join(members) + root_text[roots.end(1) :]
-    root_pyproject.write_text(root_text)
-
     last = copies[-1]
     docker_text = docker_text[: last.end()] + DOCKER_COPY.format(distribution=distribution) + docker_text[last.end() :]
     dockerfile.write_text(docker_text)
 
     for path in files:
         print(path.relative_to(ROOT))
-    print(f"pyproject.toml: {module} added to root_packages")
     print(f"Dockerfile: {distribution}/pyproject.toml copied for the build")
     print("next: uv add what it depends on, then just lock")
 

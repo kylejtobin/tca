@@ -13,7 +13,6 @@ from type_construction.world import (
     Beyond,
     Equal,
     Fact,
-    Request,
     Scalar,
     Sum,
     Times,
@@ -52,8 +51,8 @@ class Line(Value):
     quantity: Quantity
 
 
-class Order(Request):
-    """What arrives: the lines."""
+class Order(Value):
+    """The lines of an order, with no computed result of their own."""
 
     lines: tuple[Line, ...]
 

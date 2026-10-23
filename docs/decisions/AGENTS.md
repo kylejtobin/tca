@@ -1,9 +1,0 @@
-# Decision records
-
-One record per decision, numbered for identity, not for time. Each has five sections and no others: Context, what in the business or the engine made a decision necessary; Rejected, every approach that was tried or considered and why it lost; Decision, what is so, named by the classes, fields, calls, values and error types that make it so; Evidence, a run on the pinned Pydantic that shows it, with the exact values, messages and locations observed; Consequences, what is now unwritable, and what observation would refute the decision.
-
-A record states the current decision only, as if it had always been the decision. When the system changes, the record is rewritten whole so that every sentence is true of the system as it is now; the approach that was replaced moves into Rejected, with the reason it lost, and that is the only place history lives. There is no status trail, no "superseded by", no "updated to", no "later", "next session" or "the loop will decide". Numbering and the index in `README.md` are identity; a record is never retired by a newer number when its decision is still in force.
-
-This differs from the usual architecture decision record, which is immutable and accumulates a chain of supersessions. Here the set of records is always the current design, readable in one pass by someone who was not there, and every change triggers a pass over every record that the change could have made false.
-
-Evidence is observed, never predicted: a number, a message or a location in a record was produced by a run of the code at that revision, in the program the tests are, never in a program named for a business. A claim without a run is not a decision. A record is written before the code it decides is reported, and a commit that touches `packages/python` names the records it implements or amends.
