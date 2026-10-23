@@ -20,10 +20,11 @@ A ``Program`` is a goal, the input it accepts, its interactions, and the binding
 premises that the classes alone do not determine. Constructing one compiles the goal into a
 graph of construction relationships, ``Node``: where a value is found, which source says it,
 what it is made from, which alternatives it has, and which collection it is one construction
-per element of. A class is not an occurrence: two places that obtain a class the same way are
-one node, and two places that obtain it differently are two. A premise the declarations obtain
-no way, or more than one way, is refused when the program is constructed, naming the places and
-the declaration that would tell them apart.
+per element of. A request is compiled where its receive is demanded, so one operation demanded
+under two collections is two request nodes. A class is not an occurrence: two places that obtain
+a class the same way are one node, and two places that obtain it differently are two. A premise
+the declarations obtain no way, or more than one way, is refused when the program is
+constructed, naming the places and the declaration that would tell them apart.
 """
 
 import types
@@ -35,7 +36,7 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.fields import FieldInfo
 
-from type_construction.world import Record, Refutable, Scalar
+from type_construction.world import Computation, Record, Refutable, Scalar
 
 DECLARATION = ConfigDict(
     frozen=True,
@@ -158,6 +159,23 @@ def premises(kind: type[BaseModel]) -> Iterator[tuple[str, Any]]:
 def constant(kind: type[BaseModel]) -> bool:
     """Whether the class constructs from nothing: no required field."""
     return not any(True for _ in premises(kind))
+
+
+def fallible(kind: type[BaseModel]) -> bool:
+    """Whether constructing the class from validated premises may refuse: a declared refutable
+    condition, a validator the class declares, or a computed field. The compiler does not
+    interpret a validator's body (foundations §8.2), so any of these makes the construction
+    undecided until it happens; a class with none constructs from valid premises."""
+    if issubclass(kind, Refutable):
+        return True
+    decorators = kind.__pydantic_decorators__
+    if decorators.model_validators or decorators.field_validators or decorators.validators:
+        return True
+    return any(
+        isinstance(metadata, Computation)
+        for info in kind.model_fields.values()
+        for metadata in info.metadata
+    )
 
 
 def resolve(kind: type[BaseModel], path: str) -> object:
@@ -412,9 +430,9 @@ class Graph:
 
     root: Node
     sent: dict[str, Interaction]
-    requests: dict[str, Node]
     varies: dict[Node, frozenset[Collection]]
     refutable: dict[Node, bool]
+    """Per node, whether evidence still to come, or the construction itself, may refuse it."""
 
 
 @dataclass(frozen=True)
@@ -503,6 +521,8 @@ class Program(BaseModel):
         for binding in self.bound:
             resolve(self.goal, binding.premise)
             resolve(self.accepts, binding.subject)
+        for interaction in self.interactions:
+            self.element_collection(interaction)
         varies = self.graph.varies[self.graph.root]
         if varies:
             over = " and ".join(sorted(str(c) for c in varies))
@@ -539,14 +559,6 @@ class Program(BaseModel):
             raise ValueError(msg)
         return next(iter(entered), None)
 
-    def varying(self, interaction: Interaction) -> bool:
-        """Whether a receive is one per element: its request, or the element its correlation
-        selects, varies over a collection."""
-        if interaction.sends is not None:
-            node = self.graph.requests.get(qualified(interaction.sends))
-            return bool(node is not None and self.graph.varies[node])
-        return self.element_collection(interaction) is not None
-
     @cached_property
     def graph(self) -> Graph:
         """The compiled construction graph; raises ``ValueError`` for a premise the program
@@ -580,14 +592,13 @@ class Compiler:
         self.program = program
         self.varies: dict[Node, frozenset[Collection]] = {}
         self.refutable: dict[Node, bool] = {}
-        self.requests: dict[str, Node] = {}
 
     def compiled(self) -> Graph:
         program = self.program
         sent = {qualified(i.sends): i for i in program.interactions if i.sends is not None}
         walk = Walk(tuple((steps(b.premise), b.subject) for b in program.bound))
         root = self.compile(program.goal, (), program.goal.__name__, walk)
-        return Graph(root, sent, self.requests, self.varies, self.refutable)
+        return Graph(root, sent, self.varies, self.refutable)
 
     def record(self, node: Node, varies: frozenset[Collection], *, refutable: bool) -> Node:
         self.varies[node] = varies
@@ -663,19 +674,15 @@ class Compiler:
         request: Node | None = None
         varies: frozenset[Collection] = frozenset()
         refutable = len(interaction.receives) > 1
+        over = self.program.element_collection(interaction)
+        if over is not None:
+            varies = frozenset({over})
         if interaction.sends is not None:
             sends = interaction.sends
-            request = self.requests.get(qualified(sends))
-            if request is None:
-                rooted = walk.rooted(interaction.bound)
-                request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
-                self.requests[qualified(sends)] = request
-            varies = self.varies[request]
+            rooted = walk.rooted(interaction.bound)
+            request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
+            varies = varies | self.varies[request]
             refutable = refutable or self.refutable[request]
-        else:
-            over = self.program.element_collection(interaction)
-            if over is not None:
-                varies = frozenset({over})
         if interaction.many:
             varies = varies | {Collection(kind, ())}
         return self.record(Heard(interaction, kind, request), varies, refutable=refutable)
@@ -783,7 +790,11 @@ class Compiler:
             raise ValueError(msg)
         closing = self.compile(closer, (*at, closer.__name__), f"{path}.closed_by", walk)
         node = All(interaction, kind, closing)
-        self.record(node, self.varies[closing], refutable=self.refutable[closing])
+        varies = self.varies[closing]
+        over = self.program.element_collection(interaction)
+        if over is not None:
+            varies = varies | {over}
+        self.record(node, varies, refutable=self.refutable[closing])
         return node
 
     def one(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
@@ -826,5 +837,5 @@ class Compiler:
         )
         node = Made(kind, compiled)
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-        refutable = issubclass(kind, Refutable) or any(self.refutable[n] for _, n in compiled)
+        refutable = fallible(kind) or any(self.refutable[n] for _, n in compiled)
         return self.record(node, varies, refutable=refutable)

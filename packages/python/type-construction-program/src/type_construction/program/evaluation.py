@@ -64,6 +64,7 @@ from .declaration import (
     Program,
     Source,
     constant,
+    fallible,
     qualified,
 )
 from .invocation import (
@@ -80,6 +81,7 @@ from .invocation import (
     Occurrence,
     Site,
     Uncertain,
+    closed_by,
 )
 
 RESULT = ConfigDict(frozen=True, strict=True, extra="forbid", validate_default=True)
@@ -602,15 +604,15 @@ class Evaluator:
         if closer is None:
             msg = f"{path}: a collection from {interaction.source.root} has no closure"
             raise TypeError(msg)
-        said = self.invocation.said(interaction)
-        closing = [e for e in self.invocation.evidence if isinstance(e.value, closer)]
-        if closing:
+        element = self._element(interaction, scope)
+        said = self._said(interaction, element)
+        if closed_by(self.invocation, interaction, element) is not None:
             values = tuple(e.value for e in said)
             return Available(values, Elements(of=tuple(Site(evidence=e.id) for e in said)))
         how = Unclosed(element=node.kind, source=interaction.source, closing=closer, held=len(said))
         match self.construct(node.closer, f"{path}.closed_by", scope):
             case Open() as outcome:
-                merged = conjoined([(path, outcome), (path, awaiting(interaction, how, None))])
+                merged = conjoined([(path, outcome), (path, awaiting(interaction, how, element))])
                 if merged is None:
                     msg = f"{path}: open premises combined to nothing"
                     raise RuntimeError(msg)
@@ -621,12 +623,19 @@ class Evaluator:
             case Refuted() | Stuck() as outcome:
                 return outcome
 
+    def _said(self, interaction: Interaction, element: Site | None) -> tuple[Evidence, ...]:
+        """What a collection source has said for one element of the input, or for the
+        invocation when its correlation enters no collection."""
+        return tuple(e for e in self.invocation.said(interaction) if e.element == element)
+
     def _elements(self, node: Each, path: str, scope: Scope) -> Outcome:
         """The elements of the collection a tuple follows, with their sites: the records a
-        collection source has said so far, or a tuple found in the input or in a record."""
+        collection source has said so far for this element, or a tuple found in the input or in
+        a record."""
         over = node.over
         if node.closure is not None:
-            said = self.invocation.said(node.closure.interaction)
+            interaction = node.closure.interaction
+            said = self._said(interaction, self._element(interaction, scope))
             values = tuple(e.value for e in said)
             return Available(values, Elements(of=tuple(Site(evidence=e.id) for e in said)))
         return self._located(Found(Location(over.container, over.path), node.holder), path, scope)
@@ -699,8 +708,9 @@ class Evaluator:
         return Available(value, site)
 
     def _composed(self, node: Made, path: str, scope: Scope) -> Outcome:
-        """A class constructed from its premises through Pydantic. A refutable class over an
-        open premise is undecided: the condition may not hold once the premise is."""
+        """A class constructed from its premises through Pydantic. A class whose construction may
+        refuse, over an open premise, is undecided: the condition, validator or computation may
+        not hold once the premise is, and the compiler does not read its body to know."""
         kind = node.kind
         if constant(kind):
             return Available(kind(), Built(kind=qualified(kind)))
@@ -714,7 +724,7 @@ class Evaluator:
                 given[name] = outcome.value
                 occurrences.append((name, outcome.occurrence))
         pending = conjoined(parts)
-        if isinstance(pending, Open) and issubclass(kind, Refutable):
+        if isinstance(pending, Open) and fallible(kind):
             return undecided(pending, path)
         if pending is not None:
             return pending
@@ -724,11 +734,13 @@ class Evaluator:
     def _validated(
         self, kind: type[BaseModel], given: dict[str, object], occurrence: Built, path: str
     ) -> Outcome:
-        """The class validated by Pydantic over its constructed premises: available, refuted by
+        """The class validated by Pydantic over its constructed premises, supplied by field name
+        since they are the fields' values and not a party's payload, so a field's alias keeps
+        its native meaning at the boundary and does not bar construction: available, refuted by
         its own declared condition, or malformed."""
         refusals = Refusals()
         try:
-            value = kind.model_validate(given, context=refusals)
+            value = kind.model_validate(given, context=refusals, by_name=True)
         except ValidationError as refusal:
             messages = tuple(e["msg"] for e in refusal.errors())
             if issubclass(kind, Refutable) and kind.refuted(refusal, refusals):

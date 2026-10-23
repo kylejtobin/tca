@@ -31,7 +31,7 @@ from type_construction.program import (
 )
 
 from . import decisions, fulfillment
-from .drive import delivered, frontier, only, performing
+from .drive import delivered, frontier, performing
 
 ALLOWED = '{"applicant": "ada"}'
 DENIED = '{"applicant": "ada", "reason": "no vacancy"}'
@@ -184,8 +184,8 @@ def test_a_consumer_added_cannot_weaken_what_the_request_requires() -> None:
 
 
 def test_a_deciding_request_that_needs_another_result_has_that_result_obtained_first() -> None:
-    """Deferral cannot deadlock: the ping is needed to decide, so it is dispatched, though the
-    goal needs it only alongside the allowance."""
+    """In this case deferral does not stall: the ping is needed to decide, so it is dispatched,
+    though the goal needs it only alongside the allowance."""
     program = decisions.VETTING
     invocation = accept(program, InvocationId("vet"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
@@ -245,4 +245,3 @@ def test_a_justified_effect_stays_in_the_history_when_later_work_blocks() -> Non
     assert set(invocation.intents) == {check.identity, screen.identity}
     assert [type(e.value) for e in invocation.evidence] == [decisions.Allowed, decisions.Flagged]
     assert len(invocation.attempts(check.identity)) == 1
-    assert only is not None

@@ -175,8 +175,8 @@ def test_equal_elements_make_an_element_correlation_ambiguous_not_guessed() -> N
     reason = refusal.value.reason
     assert isinstance(reason, Ambiguous)
     assert reason.elements == (
-        Site(evidence=0, path=("order", "lines", 0, "sku")),
-        Site(evidence=0, path=("order", "lines", 1, "sku")),
+        Site(evidence=0, path=("order", "lines", 0)),
+        Site(evidence=0, path=("order", "lines", 1)),
     )
 
 

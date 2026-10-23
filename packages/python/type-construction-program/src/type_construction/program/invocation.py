@@ -520,10 +520,12 @@ def correlated(
     program: Program, invocation: Invocation, interaction: Interaction, value: BaseModel
 ) -> Site | None:
     """Check each declared equality between the received value and the accepted input, and
-    return the one input element the record is tied to when a subject path enters a collection.
-    Equality at no element is uncorrelated; at more than one, ambiguous: the declaration does
-    not tell those elements apart."""
-    element: Site | None = None
+    return the one input element the record is tied to when subject paths enter a collection:
+    the element at which every declared equality holds together. The equalities are one
+    relationship; one of them may hold at several elements as long as all of them hold at one.
+    No such element is uncorrelated; more than one is ambiguous: the declaration does not tell
+    those elements apart."""
+    common: set[Site] | None = None
     for correlation in interaction.correlated:
         found = at(value, correlation.received)
         candidates = everywhere(invocation.input, Site(evidence=0), steps(correlation.subject))
@@ -539,20 +541,18 @@ def correlated(
             )
         if not program.subject_collections(correlation):
             continue
-        if len(matching) > 1:
-            kinds = (type(value),)
-            raise Refusal(
-                Ambiguous(source=interaction.source, admitted=kinds, elements=tuple(matching))
-            )
-        (site,) = matching
-        chosen = Site(evidence=0, path=site.path[: steps(correlation.subject).index(EACH) + 1])
-        if element is not None and element != chosen:
-            kinds = (type(value),)
-            raise Refusal(
-                Ambiguous(source=interaction.source, admitted=kinds, elements=(element, chosen))
-            )
-        element = chosen
-    return element
+        depth = steps(correlation.subject).index(EACH) + 1
+        elements = {Site(evidence=0, path=site.path[:depth]) for site in matching}
+        common = elements if common is None else common & elements
+    if common is None:
+        return None
+    if not common:
+        raise Refusal(Uncorrelated(received=type(value), correlation=None))
+    if len(common) > 1:
+        kinds = (type(value),)
+        ordered = tuple(sorted(common, key=lambda s: s.path))
+        raise Refusal(Ambiguous(source=interaction.source, admitted=kinds, elements=ordered))
+    return next(iter(common))
 
 
 def requested(
@@ -560,19 +560,21 @@ def requested(
 ) -> EffectIdentity:
     """The one committed, unanswered request of an interaction that a claim correlated to
     ``element`` could answer. None is ``Unrequested``: the source said it, this program did not
-    ask. More than one is ``Ambiguous``: the declaration ties the claim to no one of them. When
-    every request it could answer is answered, the claim is for the answered one, and closure
-    judges it as a second answer."""
+    ask. More than one is ``Ambiguous``: the declaration ties the claim to no one of them. A
+    claim that correlates to no element, when this invocation's requests of the interaction are
+    per element, is ``Uncorrelated``: it could be for any of them. When every request it could
+    answer is answered, the claim is for the answered one, and closure judges it as a second
+    answer."""
     sends = interaction.sends
     if sends is None:
         msg = "an unsolicited receive answers no request"
         raise TypeError(msg)
-    mine = [
-        i.identity
-        for i in invocation.committed
-        if program.sending(i.identity.operation) is interaction
-        and (element is None or element in i.elements)
+    committed = [
+        i for i in invocation.committed if program.sending(i.identity.operation) is interaction
     ]
+    if element is None and any(i.elements for i in committed):
+        raise Refusal(Uncorrelated(received=interaction.receives[0], correlation=None))
+    mine = [i.identity for i in committed if element is None or element in i.elements]
     candidates = [identity for identity in mine if invocation.answered(identity) is None]
     if not candidates and mine:
         return mine[-1]
@@ -585,6 +587,21 @@ def requested(
     return candidates[0]
 
 
+def closed_by(
+    invocation: Invocation, interaction: Interaction, element: Site | None
+) -> Evidence | None:
+    """The admitted closing evidence of a collection source for one element of the input, if
+    any: a closer correlated to that element, or one correlated to no element, which closes the
+    source for the whole invocation."""
+    closer = interaction.closed_by
+    if closer is None:
+        return None
+    for e in invocation.evidence:
+        if isinstance(e.value, closer) and e.element in (None, element):
+            return e
+    return None
+
+
 def closed(invocation: Invocation, interaction: Interaction, arriving: Evidence) -> Evidence | None:
     """Refuse a receive that says nothing more, or return the earlier evidence a claim repeats.
 
@@ -595,9 +612,9 @@ def closed(invocation: Invocation, interaction: Interaction, arriving: Evidence)
     invocation."""
     kind = type(arriving.value)
     if interaction.closed_by is not None:
-        closing = [e for e in invocation.evidence if isinstance(e.value, interaction.closed_by)]
-        if closing:
-            raise Refusal(Closed(received=kind, by=closing[0].id))
+        closing = closed_by(invocation, interaction, arriving.element)
+        if closing is not None:
+            raise Refusal(Closed(received=kind, by=closing.id))
         return None
     if interaction.sends is not None:
         prior = invocation.answered(arriving.answers) if arriving.answers is not None else None
@@ -664,7 +681,7 @@ def admissible(program: Program, invocation: Invocation, claim: Claim) -> Eviden
     """
     interaction, value = selected(program, invocation, claim)
     for prior in invocation.evidence:
-        if prior.origin == claim.origin:
+        if prior.source == claim.source and prior.origin == claim.origin:
             if prior.value == value:
                 return prior
             raise Refusal(Conflict(delivery=claim.origin, prior=prior.id))
@@ -672,8 +689,6 @@ def admissible(program: Program, invocation: Invocation, claim: Claim) -> Eviden
     answers = claim.answers
     if interaction.sends is not None:
         if answers is None:
-            if program.varying(interaction) and element is None:
-                raise Refusal(Uncorrelated(received=type(value), correlation=None))
             answers = requested(program, invocation, interaction, element)
         elif element is not None and element not in invocation.intended(answers).elements:
             raise Refusal(
