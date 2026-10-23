@@ -30,6 +30,7 @@ from type_construction.engine import (
     Scope,
     Unfilled,
     answer,
+    conditions,
     config,
     construct,
     models,
@@ -122,14 +123,12 @@ def described(construction: Construction) -> tuple[object, ...]:
             for name, refs in construction.premises.items()
         },
         {
-            name: (
-                c.site,
-                tuple((type(r).__name__, r.site, r.cls) for r in c.elements),
-                c.positions,
+            name: tuple(
+                (c.site, tuple((type(r).__name__, r.site, r.cls) for r in c.elements), c.positions)
+                for c in candidates
             )
-            for name, c in construction.collections.items()
+            for name, candidates in construction.collections.items()
         },
-        construction.because,
     )
 
 
@@ -150,23 +149,23 @@ def test_one_class_constructs_at_every_site_its_premises_bind() -> None:
 
 def test_separate_collections_of_one_element_class_stay_separate() -> None:
     found = placed()
-    cart = found[CartTotal, ()].collections["of"]
+    (cart,) = found[CartTotal, ()].collections["of"]
     assert (cart.site, cart.name, cart.positions) == (("request", "cart", "lines"), "lines", None)
     assert cart.holder == InputRef((), ("request", "cart"), program.Cart)
     assert cart.elements == (ConstructedRef(found[LineTotal, CART]),)
-    gifts = found[GiftTotal, ()].collections["of"]
+    (gifts,) = found[GiftTotal, ()].collections["of"]
     assert gifts.site == ("request", "gifts", "lines")
     assert gifts.holder == InputRef((), ("request", "gifts"), program.Gifts)
     assert gifts.elements == (ConstructedRef(found[LineTotal, GIFT]),)
-    pair = found[PairTotal, ()].collections["of"]
+    (pair,) = found[PairTotal, ()].collections["of"]
     assert (pair.site, pair.positions) == (("request", "pair", "lines"), 2)
     assert pair.elements == (
         ConstructedRef(found[LineTotal, FIRST]),
         ConstructedRef(found[LineTotal, SECOND]),
     )
-    solo = found[SoloTotal, ()].collections["of"]
+    (solo,) = found[SoloTotal, ()].collections["of"]
     assert (solo.elements, solo.positions) == ((ConstructedRef(found[LineTotal, SOLO]),), 1)
-    shares = found[CartShares, ()].collections["shares"]
+    (shares,) = found[CartShares, ()].collections["shares"]
     assert shares.site == ("request", "cart", "lines")
     assert shares.holder == cart.holder
     assert shares.elements == (ConstructedRef(found[Share, CART]),)
@@ -324,8 +323,17 @@ def test_conditional_evidence_stays_conditional_through_a_chain_of_constructions
     assert (error["type"], error["loc"]) == ("conditional", ("Checkout",))
     placed = {c.cls: c for c in symbolic(optional.Checkout, models(optional)).constructions}
     assert placed[optional.Discount].premises["coupon"] == (
-        HeardRef(placed[optional.Quote], optional.Quoted, ("coupon",), optional.Coupon),
+        HeardRef(
+            placed[optional.Quote],
+            optional.Quoted,
+            ("coupon",),
+            optional.Coupon,
+            because=(("Quote", "heard", "coupon"),),
+        ),
     )
+    assert conditions(placed[optional.Discount]) == (("Quote", "heard", "coupon"),)
+    assert conditions(placed[optional.Checkout]) == (("Quote", "heard", "coupon"),)
+    assert conditions(placed[optional.Quote]) == ()
     assert placed[optional.Discounted].premises["discount"] == (
         ConstructedRef(placed[optional.Discount]),
     )

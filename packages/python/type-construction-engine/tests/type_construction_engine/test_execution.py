@@ -512,7 +512,7 @@ async def test_a_construction_that_is_not_refutable_refusing_is_a_failure_not_th
         fixed.Both,
         (),
         premises={"cart": (cart,)},
-        collections={"totals": Collected(cart, "lines", (ConstructedRef(line_total),), None)},
+        collections={"totals": (Collected(cart, "lines", (ConstructedRef(line_total),), None),)},
     )
     paired = Construction(
         fixed.Checkout, fixed.Paired, (), premises={"of": (ConstructedRef(both),)}
@@ -720,7 +720,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             stalls.Low,
             ELEMENT,
             premises={
-                "value": (heard.held(stalls.Amount, "amount"),),
+                "value": (heard.held(stalls.Amount, "amount", optional=False),),
                 "bound": (InputRef((), ("Limit",), stalls.Limit),),
             },
         ),
@@ -763,10 +763,11 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             valued.Operation,
             valued.Largest,
             ELEMENT,
-            collections={"of": Collected(record, "parts", (ConstructedRef(portion),), None)},
+            collections={"of": (Collected(record, "parts", (ConstructedRef(portion),), None),)},
         ),
     )
-    assert largest.construction.collections["of"].site == (*ELEMENT, "Asked", "heard", "parts")
+    (of,) = largest.construction.collections["of"]
+    assert of.site == (*ELEMENT, "Asked", "heard", "parts")
     refuted = construct(largest, {"of": ()})
     assert isinstance(refuted, ValidationError)
     assert [(e["type"], e["loc"], e.get("ctx")) for e in refuted.errors()] == [
@@ -797,7 +798,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             program.SoloTotal,
             (),
             premises={"solo": (solo_,)},
-            collections={"of": Collected(solo_, "lines", (ConstructedRef(line_total),), 1)},
+            collections={"of": (Collected(solo_, "lines", (ConstructedRef(line_total),), 1),)},
         ),
     )
     assert only.path == ("SoloTotal",)
@@ -961,7 +962,7 @@ async def test_one_resolver_serves_construction_and_explanation_and_only_a_block
         for c in proof.constructs(route)
         for refs in (
             *c.premises.values(),
-            *((col.holder, *col.elements) for col in c.collections.values()),
+            *((col.holder, *col.elements) for cols in c.collections.values() for col in cols),
         )
         for r in refs
     }

@@ -36,6 +36,7 @@ from type_construction.engine import (
     Unknown,
     clash,
     comparisons,
+    conditions,
     config,
     exclusions,
     joint,
@@ -46,7 +47,6 @@ from type_construction.engine import (
     resolve,
     scopes,
     symbolic,
-    ways,
 )
 from type_construction.world import (
     COMPUTED,
@@ -56,6 +56,7 @@ from type_construction.world import (
     Comparison,
     Config,
     Connection,
+    Equal,
     Fact,
     Json,
     Only,
@@ -71,7 +72,7 @@ from type_construction.world import (
     Value,
 )
 
-from . import occurrences, test_engine
+from . import occurrences, stalls, test_engine
 
 
 class Name(Scalar[str]):
@@ -248,18 +249,29 @@ def agreeing(proof: Proof, root: Scope) -> None:
     for e in proof.exclusions:
         if not e.established:
             continue
-        gathered = e.field in e.construction.collections
-        template = e.left.scope if gathered else e.construction.scope
+        template = e.construction.scope
+        if not isinstance(e.left, Collected) and e.field in e.construction.collections:
+            template = e.left.scope
         for scope in scopes(root):
             if scope.site != template:
                 continue
-            both = [r for r in (e.left, e.right) if isinstance(resolve(r, scope), Available)]
+            both = [s for s in (e.left, e.right) if present_in(s, scope)]
             assert len(both) <= 1, (e.construction, e.field, scope.path)
     for x in proof.existences:
         if x.contradicted:
             assert not any(
                 isinstance(s.made.get(x.construction), Constructed) for s in scopes(root)
             ), x.construction
+
+
+def present_in(source: Ref | Collected, scope: Scope) -> bool:
+    """Whether a source is available from a scope: a reference that resolves to evidence; a
+    collection whose holder does and that the scope sees."""
+    if isinstance(source, Collected):
+        return isinstance(resolve(source.holder, scope), Available) and (
+            scope.collection(source.key) is not None
+        )
+    return isinstance(resolve(source, scope), Available)
 
 
 def made_in(root: Scope, cls: type[object]) -> dict[tuple[str, ...], Constructed | Refuted]:
@@ -273,9 +285,14 @@ def made_in(root: Scope, cls: type[object]) -> dict[tuple[str, ...], Constructed
     }
 
 
-def sites(refs: Iterable[Ref]) -> set[tuple[str, ...]]:
-    """The declared sites of references."""
-    return {r.site for r in refs}
+def sites(sources: Iterable[Ref | Collected]) -> set[tuple[str, ...]]:
+    """The declared sites of sources."""
+    return {s.site for s in sources}
+
+
+def classed(source: Ref | Collected) -> type[object]:
+    """The class a source stands for: a reference's, or a collection's holder's."""
+    return source.holder.cls if isinstance(source, Collected) else source.cls
 
 
 def over(cls: type[BaseModel], value: Ref, bound: Ref) -> ConstructedRef:
@@ -292,7 +309,9 @@ def test_two_occurrences_of_one_action_in_unrelated_scopes_are_two_sources() -> 
     proof = proven(occurrences)
     found = placed(proof, occurrences.Checkout)
     assert len([c for (cls, _), c in found.items() if cls is occurrences.Quote]) == 5
-    assert not any(occurrences.Price in (e.left.cls, e.right.cls) for e in proof.exclusions)
+    assert not any(
+        occurrences.Price in (classed(e.left), classed(e.right)) for e in proof.exclusions
+    )
     screen = found[occurrences.Screen, ()]
     clear = HeardRef(screen, occurrences.Clear, (), occurrences.Clear)
     flagged = HeardRef(screen, occurrences.Flagged, (), occurrences.Flagged)
@@ -381,10 +400,8 @@ def test_competing_producers_are_accepted_only_where_both_are_never_available() 
     faults = faults_of(LOOSE)
     assert set(faults) == {("ambiguous", ("Loose", "which"))}
     assert faults["ambiguous", ("Loose", "which")] == (
-        "Loose.which holds Cheap | Other, and the proof cannot show that at most one holds: at"
-        " request.each.[], Cheap at request.each.[].Cheap and Other at request.each.[].Other"
-        " are both available with Low at request.each.[].Low holding; write members a record or"
-        " a relation tells apart"
+        "Loose.which at request.each.[] may hold both Cheap at request.each.[].Cheap and Other at"
+        " request.each.[].Other; with Low at request.each.[].Low holding, nothing excludes either"
     )
 
 
@@ -402,8 +419,8 @@ async def test_the_run_finds_both_where_the_proof_found_them_both_available(
     (valued,) = done.route.reply.of.valued
     (element,) = (s for s in scopes(done.root) if s.site == ELEMENT)
     assert type(valued.which) is Other
-    assert isinstance(resolve(cheap, element), Available)
-    assert isinstance(resolve(other, element), Available)
+    assert present_in(cheap, element)
+    assert present_in(other, element)
     assert done.passes == 2
     claimed = Exclusion(which.construction, which.field, cheap, other, Joint((cheap, other), ()))
     assert claimed.established
@@ -596,10 +613,10 @@ async def test_different_elements_cannot_exchange_evidence(
 ) -> None:
     proof = proven(TOLD_APART)
     found = placed(proof, Operation)
-    for world in ways((ConstructedRef(found[Cheap, ELEMENT]),)):
-        assert all(r.scope in {(), ELEMENT} for r in world)
-    (collection,) = ways((ConstructedRef(found[Concluded, ()]),))
-    assert sites(collection) == {("Concluded",), ("request",)}
+    (world,) = joint((ConstructedRef(found[Cheap, ELEMENT]),)).open
+    assert all(isinstance(r, Collected) or r.scope in {(), ELEMENT} for r in world)
+    (collection,) = joint((ConstructedRef(found[Concluded, ()]),)).open
+    assert sites(collection) == {("Concluded",), ("request",), ("request", "each")}
     party({"a": "5", "b": "50"})
     done = await ran(Operation, requested("a", "b"), config(TOLD_APART)(), proof)
     assert isinstance(done, Run)
@@ -773,14 +790,29 @@ async def test_collections_keep_their_cardinality_and_their_own_source(
     monkeypatch.chdir(tmp_path)
     proof = unproven(PICKED, PickOperation)
     found = by_class(proof)
-    (pair,) = ways((ConstructedRef(found[PairPrices]),))
-    assert sites(pair) == {("PairPrices",), ("request", "pair"), *((*p, "price") for p in PAIR)}
-    (solo,) = ways((ConstructedRef(found[SoloPrice]),))
-    assert sites(solo) == {("SoloPrice",), ("request", "solo"), (*SOLO, "price")}
-    (cart,) = ways((ConstructedRef(found[CartPrices]),))
-    assert sites(cart) == {("CartPrices",), ("request", "cart")}
-    (several,) = ways((ConstructedRef(found[SeveralPrices]),))
-    assert sites(several) == {("SeveralPrices",), ("request", "cart")}
+    (pair,) = joint((ConstructedRef(found[PairPrices]),)).open
+    assert sites(pair) == {
+        ("PairPrices",),
+        ("request", "pair"),
+        ("request", "pair", "lines"),
+        *((*p, "price") for p in PAIR),
+    }
+    (solo,) = joint((ConstructedRef(found[SoloPrice]),)).open
+    assert sites(solo) == {
+        ("SoloPrice",),
+        ("request", "solo"),
+        ("request", "solo", "lines"),
+        (*SOLO, "price"),
+    }
+    (cart,) = joint((ConstructedRef(found[CartPrices]),)).open
+    assert sites(cart) == {("CartPrices",), ("request", "cart"), ("request", "cart", "lines")}
+    (several,) = joint((ConstructedRef(found[SeveralPrices]),)).open
+    assert sites(several) == {
+        ("SeveralPrices",),
+        ("request", "cart"),
+        ("request", "cart", "lines"),
+        (*CART, "price"),
+    }
     assert set(faults_of(PICKED)) == {("ambiguous", ("Picked", "which"))}
     with pytest.raises(ValidationError) as both:
         await ran(PickOperation, ordered_lines(2), Shop(), proof)
@@ -812,17 +844,19 @@ def test_two_selections_over_one_collection_with_no_count_in_common_are_exclusiv
     price = InputRef(CART, ("price",), Price)
     lines = Collected(cart, "lines", (price,), None)
     one = ConstructedRef(
-        Construction(PickOperation, SoloPrice, (), {"solo": (solo,)}, {"of": lines})
+        Construction(PickOperation, SoloPrice, (), {"solo": (solo,)}, {"of": (lines,)})
     )
     many = ConstructedRef(
-        Construction(PickOperation, SeveralPrices, (), {"cart": (cart,)}, {"of": lines})
+        Construction(PickOperation, SeveralPrices, (), {"cart": (cart,)}, {"of": (lines,)})
     )
-    assert clash(frozenset({one, many, cart, solo})) == Clash("count", (many, one))
+    assert clash(frozenset({one, many, cart, solo, lines})) == Clash("count", (many, one))
+    assert joint((one, many)).impossible
     other = Collected(solo, "lines", (price,), None)
     apart = ConstructedRef(
-        Construction(PickOperation, SoloPrice, (), {"solo": (solo,)}, {"of": other})
+        Construction(PickOperation, SoloPrice, (), {"solo": (solo,)}, {"of": (other,)})
     )
-    assert clash(frozenset({apart, many, cart, solo})) is None
+    assert clash(frozenset({apart, many, cart, solo, lines, other})) is None
+    assert not joint((apart, many)).impossible
 
 
 # --- 8. optional evidence stays conditional -----------------------------------------------
@@ -909,19 +943,31 @@ OFFERED = program_of(
 
 def test_optional_evidence_cannot_become_guaranteed_or_exclusive() -> None:
     faults = faults_of(OFFERED)
-    assert set(faults) == {("ambiguous", ("Offered", "which")), ("conditional", ("Offer",))}
+    assert set(faults) == {("ambiguous", ("Offered", "which"))}
     proof = unproven(OFFERED, Offer)
     found = by_class(proof)
     coupon = (*ELEMENT, "AskQuoted", "heard", "coupon")
-    assert found[Discount].because == (coupon,)
-    assert found[Offered].because == (coupon,)
-    assert found[Plain].because == ()
+    (coupon_ref,) = found[Discount].premises["coupon"]
+    assert isinstance(coupon_ref, HeardRef)
+    assert coupon_ref.because == (coupon,)
+    assert conditions(found[Discount]) == (coupon,)
+    assert conditions(found[Offered]) == ()
+    assert conditions(found[Plain]) == ()
+    assert conditions(found[Offer]) == ()
     assert not exclusion_at(proof, Offered, "which").established
     assert not joint((ConstructedRef(found[Discount]),)).impossible
     assert not joint((ConstructedRef(found[Plain]),)).impossible
-    assert faults["conditional", ("Offer",)].startswith(
-        "Offer answers only when request.each.[].AskQuoted.heard.coupon arrives"
+    only = program_of(
+        *(c for c in OFFERED.__dict__.values() if isinstance(c, type) and c is not Plain)
     )
+    assert faults_of(only) == {
+        ("conditional", ("Offer",)): (
+            "Offer answers only when request.each.[].AskQuoted.heard.coupon arrives, and what"
+            " declares it admits its absence; an absence the business concludes from is a class"
+        )
+    }
+    (route,) = (c for c in unproven(only, Offer).constructions if c.cls is Offer)
+    assert conditions(route) == (coupon,)
 
 
 # --- 9. alternatives keep separate assumptions ----------------------------------------------
@@ -970,11 +1016,10 @@ def test_alternative_branches_keep_their_separate_assumptions() -> None:
     low, high = ConstructedRef(found[Low]), ConstructedRef(found[High])
     assert found[Mixed].premises["tier"] == (low, high)
     which = exclusion_at(proof, Mingled, "which").joint
-    assert len(which.ways) == 2
-    assert which.open == tuple(w for w, _ in which.ways)
-    assert [(low in w, high in w) for w, _ in which.ways] == [(True, False), (False, True)]
-    merged = frozenset[Ref]().union(*which.open)
-    assert clash(merged) == Clash("ordering", (high, low))
+    (world,) = which.open
+    assert which.ways == ((world, None),)
+    assert (low in world, high in world) == (True, False)
+    assert clash(world | {high}) == Clash("ordering", (high, low))
     assert exclusion_at(proof, Mixed, "tier").established
     assert not joint((ConstructedRef(found[Mixed]),)).impossible
 
@@ -1075,8 +1120,8 @@ def test_equivalent_routes_over_different_connection_implementations_prove_alike
 
     by_name = {c.__name__: c for c in RENAMED}
 
-    def site_of(ref: Ref) -> tuple[str, ...]:
-        return tuple(named(by_name[s]) if s in by_name else s for s in ref.site)
+    def site_of(source: Ref | Collected) -> tuple[str, ...]:
+        return tuple(named(by_name[s]) if s in by_name else s for s in source.site)
 
     def projected(proof: Proof) -> list[object]:
         return [
@@ -1085,8 +1130,8 @@ def test_equivalent_routes_over_different_connection_implementations_prove_alike
                     named(e.construction.cls),
                     e.construction.scope,
                     e.field,
-                    named(e.left.cls),
-                    named(e.right.cls),
+                    named(classed(e.left)),
+                    named(classed(e.right)),
                     e.established,
                     [(c.why, tuple(site_of(r) for r in c.among)) for c in e.joint.clashes],
                     [tuple(sorted(site_of(r) for r in w)) for w in e.joint.open],
@@ -1161,3 +1206,311 @@ def test_the_proof_keeps_each_conclusion_with_its_ways_and_clashes() -> None:
         ("deployment", "party"),
     }
     assert which.joint.open == ()
+
+
+# --- 3, 8. candidates of one class at two sites, and competing collections -------------------
+
+
+class Yes(Record):
+    """The party's yes about an element, with an amount."""
+
+    status: Literal["yes"]
+    amount: Amount
+    prices: tuple[Price, ...]
+
+
+class No(Record):
+    """The party's no about an element, with an amount of its own."""
+
+    status: Literal["no"]
+    amount: Amount
+    prices: tuple[Price, ...]
+
+
+class Judge(Action[Party, Yes | No]):
+    """Ask the party to judge one element: it answers the object under the element's name."""
+
+    element: Element
+
+    @override
+    async def perform(self) -> Json:
+        answers: dict[str, object] = json.loads(self.party.says.root)
+        return Json(json.dumps(answers[self.element.name.root]))
+
+
+class Judged(Fact):
+    """An element with the amount the party judged it at, whichever way: ``Amount`` is visible
+    at two sites, under each record, and the one action hears one of them."""
+
+    element: Element
+    amount: Amount
+
+
+class Listed(Fact):
+    """An element with the prices the party listed, whichever way: two collections, under each
+    record, and the one action hears one of them."""
+
+    element: Element
+    prices: tuple[Price, ...]
+
+
+class Judgements(Fact):
+    """Every element judged and listed."""
+
+    judged: tuple[Judged, ...]
+    listed: tuple[Listed, ...]
+
+
+class JudgementsReply(Reply[Judgements]):
+    """What leaves."""
+
+
+class JudgeOperation(Route[Elements, JudgementsReply]):
+    """Judge each element."""
+
+
+JUDGED = program_of(
+    Name,
+    Element,
+    Elements,
+    Said,
+    Party,
+    Amount,
+    Price,
+    Yes,
+    No,
+    Judge,
+    Judged,
+    Listed,
+    Judgements,
+    JudgementsReply,
+    JudgeOperation,
+    Deployment,
+)
+"""A sound program the earlier binding refused: one class at two sites, and one element class
+collected by two collections, each pair exclusive through the one record the action hears."""
+
+YES: dict[str, object] = {"status": "yes", "amount": "5", "prices": ["1", "2"]}
+NO: dict[str, object] = {"status": "no", "amount": "50", "prices": []}
+"""What the party may say about an element."""
+
+
+@pytest.mark.asyncio
+async def test_candidates_of_one_class_at_two_sites_are_accepted_when_one_record_is_heard(
+    party: Callable[[dict[str, str]], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proof = proven(JUDGED)
+    found = placed(proof, JudgeOperation)
+    judge = found[Judge, ELEMENT]
+    yes = HeardRef(judge, Yes, ("amount",), Amount)
+    no = HeardRef(judge, No, ("amount",), Amount)
+    assert found[Judged, ELEMENT].premises["amount"] == (yes, no)
+    amount = exclusion_at(proof, Judged, "amount")
+    assert (amount.left, amount.right, amount.established) == (yes, no, True)
+    assert amount.joint.clashes[0].why == "heard"
+    prices = exclusion_at(proof, Listed, "prices")
+    assert isinstance(prices.left, Collected)
+    assert isinstance(prices.right, Collected)
+    assert (prices.left.holder, prices.right.holder) == (
+        HeardRef(judge, Yes, (), Yes),
+        HeardRef(judge, No, (), No),
+    )
+    assert prices.established
+    assert prices.joint.clashes[0].why == "heard"
+    monkeypatch.setenv("PARTY__SAYS", json.dumps({"a": YES, "b": NO}))
+    done = await ran(JudgeOperation, requested("a", "b"), config(JUDGED)(), proof)
+    assert isinstance(done, Run)
+    first, second = done.route.reply.of.judged
+    assert (first.amount.root, second.amount.root) == (Decimal(5), Decimal(50))
+    listed_a, listed_b = done.route.reply.of.listed
+    assert [p.root for p in listed_a.prices] == [Decimal(1), Decimal(2)]
+    assert listed_b.prices == ()
+    agreeing(proof, done.root)
+
+
+class Everything(Fact):
+    """Every price, from whichever collection: three hold prices, and nothing says which."""
+
+    prices: tuple[Price, ...]
+
+
+class Everythings(Fact):
+    """What was gathered."""
+
+    everything: Everything
+
+
+class EverythingReply(Reply[Everythings]):
+    """What leaves."""
+
+
+class EverythingOperation(Route[Order, EverythingReply]):
+    """Gather every price."""
+
+
+GATHERED = program_of(
+    Price,
+    Line,
+    Cart,
+    Pair,
+    Solo,
+    Order,
+    Everything,
+    Everythings,
+    EverythingReply,
+    EverythingOperation,
+    Shop,
+)
+"""A program whose tuple field three collections of one element class may fill."""
+
+
+@pytest.mark.asyncio
+async def test_competing_collections_are_refused_where_nothing_tells_them_apart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    faults = faults_of(GATHERED)
+    assert set(faults) == {("ambiguous", ("Everything", "prices"))}
+    assert faults["ambiguous", ("Everything", "prices")] == (
+        "Everything.prices at the root may hold both Price in Cart.lines at request.cart.lines"
+        " and Price in Pair.lines at request.pair.lines; nothing available with them excludes"
+        " either"
+    )
+    proof = unproven(GATHERED, EverythingOperation)
+    found = by_class(proof)
+    assert [c.site for c in found[Everything].collections["prices"]] == [
+        ("request", "cart", "lines"),
+        ("request", "pair", "lines"),
+        ("request", "solo", "lines"),
+    ]
+    assert len([e for e in proof.exclusions if e.construction.cls is Everything]) == 3
+    with pytest.raises(ValidationError) as three:
+        await ran(EverythingOperation, ordered_lines(2), Shop(), proof)
+    assert [e["msg"] for e in three.value.errors()] == [
+        "Everything.prices found 3 collections where the proof bound one"
+    ]
+
+
+# --- the proof stays practical as a program branches ---------------------------------------
+
+
+class Exactly(Equal[Amount, Limit]):
+    """An amount equal to the limit."""
+
+
+class Tier(Fact):
+    """An element under the limit or at it: two alternatives, exclusive by their orderings."""
+
+    element: Element
+    tier: BelowLimit | Exactly
+
+
+def tiered(count: int) -> ModuleType:
+    """A program whose one fact holds ``count`` tiers, each a binary choice, beside a fact over
+    the ceiling: a choice between the two the proof settles without visiting the ``2**count``
+    combinations, since what every combination shares already clashes."""
+    tiers = [
+        type(
+            f"Tier{index}",
+            (Tier,),
+            {"__module__": __name__, "__doc__": f"Tier {index}."},
+        )
+        for index in range(count)
+    ]
+    many = type(
+        "Many",
+        (Fact,),
+        {
+            "__annotations__": {"element": Element, **{f"t{i}": t for i, t in enumerate(tiers)}},
+            "__module__": __name__,
+            "__doc__": "Every tier of an element.",
+        },
+    )
+    either = type(
+        "Either",
+        (Fact,),
+        {
+            "__annotations__": {"element": Element, "which": many | Luxury},
+            "__module__": __name__,
+            "__doc__": "Many tiers, or a luxury.",
+        },
+    )
+    eithers = type(
+        "Eithers",
+        (Fact,),
+        {
+            "__annotations__": {"eithers": tuple[either, ...]},  # type: ignore[valid-type]
+            "__module__": __name__,
+            "__doc__": "Every element, either way.",
+        },
+    )
+    reply = type("EithersReply", (Reply[eithers],), {"__module__": __name__, "__doc__": "Out."})  # type: ignore[valid-type]
+    route = type(
+        "EithersOperation",
+        (Route[Elements, reply],),  # type: ignore[valid-type]
+        {"__module__": __name__, "__doc__": "Tier each element."},
+    )
+    return program_of(
+        *CORE,
+        Deployment,
+        Ceiling,
+        BelowLimit,
+        Exactly,
+        AboveCeiling,
+        Luxury,
+        *tiers,
+        many,
+        either,
+        eithers,
+        reply,
+        route,
+    )
+
+
+def test_a_branching_program_proves_without_visiting_every_combination() -> None:
+    for count in (1, 4, 8, 12):
+        proof = proven(tiered(count))
+        (either,) = (e for e in proof.exclusions if e.construction.cls.__name__ == "Either")
+        assert either.established
+        assert len(either.joint.ways) == 2
+        assert {c.why for c in either.joint.clashes} == {"bounds"}
+        (many,) = (x for x in proof.existences if x.construction.cls.__name__ == "Many")
+        assert not many.contradicted
+        assert len(many.joint.ways) == 1
+        tiers = [e for e in proof.exclusions if e.field == "tier"]
+        assert len(tiers) == count
+        assert all(e.established and len(e.joint.ways) == 1 for e in tiers)
+
+
+# --- previously valid declarations stay valid --------------------------------------------
+
+
+def test_previously_valid_programs_prove_without_further_modeling() -> None:
+    for program in (test_engine.PROGRAM, occurrences, stalls, TOLD_APART, TIERED, JUDGED):
+        proof = proven(program)
+        assert proof.faulted == ()
+        assert all(e.established for e in proof.exclusions)
+        assert not any(x.contradicted for x in proof.existences)
+
+
+@pytest.mark.asyncio
+async def test_the_screened_order_runs_agree_with_every_established_exclusion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CATALOG__PRICES", '{"tea": "2.50", "mug": "4", "pot": "10"}')
+    proof = proven(occurrences)
+    order = occurrences.PlaceOrder.model_validate_json(
+        '{"cart": {"lines": [{"sku": "tea", "quantity": 2}]}, "gifts": {"lines": []},'
+        ' "pair": {"lines": [{"sku": "tea", "quantity": 1}, {"sku": "mug", "quantity": 3}]},'
+        ' "solo": {"lines": [{"sku": "pot", "quantity": 1}]}}'
+    )
+    for said, expected in (
+        ('{"status": "clear"}', occurrences.OrderPaid),
+        ('{"status": "flagged", "reason": "odd"}', occurrences.OrderDeclined),
+    ):
+        monkeypatch.setenv("FRAUD__SAYS", said)
+        done = await ran(occurrences.Checkout, order, config(occurrences)(), proof)
+        assert isinstance(done, Run)
+        assert type(done.route.reply) is expected
+        agreeing(proof, done.root)

@@ -17,16 +17,16 @@ occurrences, whatever their values; one occurrence bound into several holders st
 scope opens at a root and at every element of a tuple, owns the occurrences declared or built
 there, and sees its ancestors'; a product field opens no scope.
 
-Binding is read from the declarations and nothing else. A single field binds to the occurrences
-of its classes visible in the scope; a class with two visible sites is ambiguous, and the
-consuming field is refused, not the reuse of the class. A tuple field gathers one collection:
-the collections reached through the class's bound premises, by their product fields, or, for a
-class whose premises reach none, the collections the scope itself holds; a collection is a
-candidate when every element's scope holds one of the field's classes, and two candidates are
-ambiguous at that field. A class is constructed in each scope that owns one of its bound
-premises or holds the collection it gathers; a class with neither is constructed once, at the
-root. Nothing chooses by field name, by declaration order, by trial validation, or by what
-arrived first.
+Binding is read from the declarations and nothing else. A single field binds to every
+occurrence of its classes visible in the scope, alternatives among them. A tuple field binds to
+every collection whose every element's scope holds one of the field's classes, among the
+collections reached through the class's bound premises, by their product fields, or, for a
+class whose premises reach none, the collections the scope itself holds, alternatives among
+them. Whether two alternatives at one field can both be available is the proof's question,
+answered from what each needs; a run that finds both refuses to choose. A class is constructed
+in each scope that owns one of its candidates or holds a collection it may gather; a class with
+neither is constructed once, at the root. Nothing chooses by field name, by declaration order,
+by trial validation, or by what arrived first.
 
 The proof constructs each route symbolically from its own request, the deployment and the
 constants: the declared tree of the request and the deployment is the tree of symbols, the
@@ -37,29 +37,35 @@ constructions, what was left waiting and the faults; its validator refuses the p
 ``ValidationError`` naming every fault: ``missing``, a field no occurrence fills; ``collects``,
 a tuple over a class no collection's elements hold; ``unplaceable``, a class whose fields are
 never visible from one scope; ``cycle``, classes that wait on each other; ``route``, a route
-whose reply exists per element; ``ambiguous``, a field with two candidates of one class, or two
-alternatives at one field not proven never both available; ``unreached``, a class the reply of
-no route leads to; ``unmodeled``, a field that names no kind; ``boundary``, a request that
-holds what does not arrive; ``config``, no one deployment; ``never``, a relation its operands'
-intervals make certain or impossible, or a construction whose premises are never all available
-together; ``undiscriminated``, two records one action hears that no field tells apart;
-``undecided``, an action performed when one alternative of a choice is available and never
-when the other is, whose own premises do not exclude the other.
+whose reply exists per element; ``conditional``, a route that answers only when an optional
+field arrives; ``ambiguous``, two alternatives at one field not proven never both available;
+``unreached``, a class the reply of no route leads to; ``unmodeled``, a field that names no
+kind; ``boundary``, a request that holds what does not arrive; ``config``, no one deployment;
+``never``, a relation its operands' intervals make certain or impossible, or a construction
+whose premises are never all available together; ``undiscriminated``, two records one action
+hears that no field tells apart; ``undecided``, an action performed when one alternative of a
+choice is available and never when the other is, whose own premises do not exclude the other.
 
 What the proof concludes of the constructions it reads from their references and nothing else.
-A world is one way several references are all available in one scope: what arrives is there,
-what is heard brings its action, what is constructed brings one alternative of each premise,
-the holder of each collection and, for a fixed collection, each position's element; a variable
-collection may be empty and brings no element. A world clashes when one action occurrence
-would have heard two records, two relations over the same operand references admit no ordering
-in common, a selection admits no count its collection can have, or the intervals of what
-supplies each number and the orderings of the relations over them have no solution together,
-where an unknown interval constrains nothing. Two alternatives at one field are never both
+A world is one way several sources are all available in one scope: what arrives is there, what
+is heard brings its action, what is constructed brings one alternative of each premise and one
+collection of each tuple field, and a collection brings its holder and, for a fixed collection,
+each position's element, or one element standing for any when the field admits no fewer than
+one; a variable collection may otherwise be empty and brings no element. A world clashes when
+one action occurrence would have heard two records, two relations over the same operand
+references admit no ordering in common, a selection admits no count its collection can have,
+or the intervals of what supplies each number and the orderings of the relations over them
+have no solution together, where an unknown interval constrains nothing. The worlds are
+searched depth first, one alternative at a time: a world that clashes is not extended, since
+every extension clashes too, and the first world completed without a clash ends the search,
+since one is all an open obligation reports. Two alternatives at one field are never both
 available when every way both are clashes, which a run that found both would refuse to choose
 between; a construction never constructs when every way its premises are all available
 clashes. A way nothing refutes is open and establishes nothing: evidence of the same class at
 another site is another occurrence, a default is a default, and bounds that overlap do not say
-a run exists. ``Proof`` keeps each exclusion and each existence with its ways and clashes.
+a run exists. A reference to a member an optional field declares carries the sites it is
+conditional on, and a route is conditional when every way it constructs is. ``Proof`` keeps
+each exclusion and each existence with its ways and clashes.
 
 A construction binds each premise to references the proof retains from the declarations, one per
 candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrence the run
@@ -102,7 +108,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import Enum
-from itertools import combinations, product
+from itertools import combinations
 from math import isnan
 from types import MappingProxyType, ModuleType, NoneType, UnionType
 from typing import (
@@ -174,6 +180,7 @@ __all__ = [
     "Run",
     "Scope",
     "Site",
+    "Source",
     "Unknown",
     "Waiting",
     "World",
@@ -182,6 +189,7 @@ __all__ = [
     "clash",
     "classes",
     "collects",
+    "conditions",
     "config",
     "configs",
     "exclusions",
@@ -198,7 +206,6 @@ __all__ = [
     "produces",
     "proven",
     "ran",
-    "ways",
 ]
 
 type Site = tuple[str, ...]
@@ -241,19 +248,20 @@ class Construction:
     """One class a route constructs, in the scope at a site template: the one record of how it
     constructs, which the proof, the run and the explanation of a run all read. Each premise
     field binds to the references of its candidate sources, alternatives among them; each
-    tuple field to the collection it gathers; ``because`` is the optional sites it exists only
-    when they arrive. Everything else about the class, its fresh fields, its computed fields,
-    its shape, is read from the class itself. The analysis assembles the graph with these
-    objects, binds each once more against the whole tree at its fixed point, and seals them
-    before the proof publishes them: a sealed construction refuses every assignment, and a
-    reference to one is a reference to this object, never to a name or a path."""
+    tuple field to the collections it may gather, alternatives among them. Everything else
+    about the class, its fresh fields, its computed fields, its shape, is read from the class
+    itself. The analysis assembles the graph with these objects, binds each once more against
+    the whole tree at its fixed point, and seals them before the proof publishes them: a sealed
+    construction refuses every assignment, and a reference to one is a reference to this
+    object, never to a name or a path."""
 
     route: type[BaseModel]
     cls: type[BaseModel]
     scope: Site
     premises: Mapping[str, tuple[Ref, ...]] = field(default_factory=dict[str, tuple["Ref", ...]])
-    collections: Mapping[str, Collected] = field(default_factory=dict[str, "Collected"])
-    because: tuple[Site, ...] = ()
+    collections: Mapping[str, tuple[Collected, ...]] = field(
+        default_factory=dict[str, tuple["Collected", ...]]
+    )
     sealed: bool = field(default=False, init=False)
 
     def __repr__(self) -> str:
@@ -272,11 +280,7 @@ class Construction:
 
     def rebound(self, found: Construction) -> None:
         """The binding against the whole tree, in place of the first."""
-        self.premises, self.collections, self.because = (
-            found.premises,
-            found.collections,
-            found.because,
-        )
+        self.premises, self.collections = found.premises, found.collections
 
     def seal(self) -> None:
         """Published: the binding becomes read-only mappings and nothing assigns here again."""
@@ -289,11 +293,14 @@ class Construction:
 class InputRef:
     """A reference to what arrives: the request, the deployment, a constant, or a member of
     one, in the scope at a site, of a class. It dereferences to what the scope chain holds for
-    it, present from the start or never."""
+    it, present from the start or never. ``because`` is the sites of the optional fields on the
+    way to it: what declares each admits its absence, so this may not arrive though its holder
+    did, and nothing that needs it is present in every invocation."""
 
     scope: Site
     member: Site
     cls: type[BaseModel]
+    because: tuple[Site, ...] = ()
 
     @property
     def site(self) -> Site:
@@ -305,13 +312,13 @@ class InputRef:
         """What a scope holds it under: no origin, and its site."""
         return (None, self.site)
 
-    def held(self, cls: type[BaseModel], name: str) -> InputRef:
+    def held(self, cls: type[BaseModel], name: str, *, optional: bool) -> InputRef:
         """The reference to what a single field of this holds."""
-        return InputRef(scope=self.scope, member=(*self.member, name), cls=cls)
+        return InputRef(self.scope, (*self.member, name), cls, conditioned(self, name, optional))
 
-    def element(self, cls: type[BaseModel], name: str, step: str) -> InputRef:
+    def element(self, cls: type[BaseModel], name: str, step: str, *, optional: bool) -> InputRef:
         """The reference to an element of a tuple field of this, in the element's own scope."""
-        return InputRef(scope=(*self.site, name, step), member=(), cls=cls)
+        return InputRef((*self.site, name, step), (), cls, conditioned(self, name, optional))
 
 
 @dataclass(frozen=True)
@@ -342,17 +349,25 @@ class HeardRef:
     """A reference to what an action heard: the action's construction, the record among those
     it declares, and the member path under the record, of a class. It dereferences to what the
     action heard in the scope chain: pending while the action is, the record named, another
-    record, or the record named without the member."""
+    record, or the record named without the member. ``because`` as an ``InputRef`` carries
+    it."""
 
     action: Construction
     record: type[BaseModel]
     member: Site
     cls: type[BaseModel]
+    because: tuple[Site, ...] = ()
 
     @property
     def scope(self) -> Site:
-        """The scope template the action is placed at, where its record enters."""
-        return self.action.scope
+        """The scope template the reference is placed at: the action's, where its record
+        enters; for an element of a tuple the record declares, or a member of one, that
+        element's scope, the site through the innermost position, which the run opens under
+        the record as the analysis does."""
+        steps = [index for index, part in enumerate(self.member) if part.startswith("[")]
+        if not steps:
+            return self.action.scope
+        return (*self.action.site, HEARD, *self.member[: steps[-1] + 1])
 
     @property
     def site(self) -> Site:
@@ -364,18 +379,35 @@ class HeardRef:
         """What a scope holds it under: the action, and the member path."""
         return (self.action, self.member)
 
-    def held(self, cls: type[BaseModel], name: str) -> HeardRef:
+    def held(self, cls: type[BaseModel], name: str, *, optional: bool) -> HeardRef:
         """The reference to what a single field of this holds."""
-        return HeardRef(self.action, self.record, (*self.member, name), cls)
+        return HeardRef(
+            self.action, self.record, (*self.member, name), cls, conditioned(self, name, optional)
+        )
 
-    def element(self, cls: type[BaseModel], name: str, step: str) -> HeardRef:
+    def element(self, cls: type[BaseModel], name: str, step: str, *, optional: bool) -> HeardRef:
         """The reference to an element of a tuple field of this, in the element's own scope."""
-        return HeardRef(self.action, self.record, (*self.member, name, step), cls)
+        return HeardRef(
+            self.action,
+            self.record,
+            (*self.member, name, step),
+            cls,
+            conditioned(self, name, optional),
+        )
+
+
+def conditioned(holder: InputRef | HeardRef, name: str, optional: bool) -> tuple[Site, ...]:  # noqa: FBT001
+    """What a member of a holder is conditional on: the holder's sites, and the field's own
+    when what it declares admits ``None``."""
+    return (*holder.because, (*holder.site, name)) if optional else holder.because
 
 
 type Ref = InputRef | ConstructedRef | HeardRef
 """Where a bound premise comes from, retained from the declarations: the one thing a run
 dereferences to construct, and to explain what it could not."""
+
+type Group = tuple[Ref | Collected, ...]
+"""The alternatives for one thing a source needs: any one of them available suffices."""
 
 type Key = tuple[Construction | None, Site]
 """What a scope holds an arrived instance or a collection under: its origin, the action that
@@ -385,16 +417,18 @@ arrives."""
 
 @dataclass(frozen=True)
 class Collected:
-    """Where a construction's tuple field gathers: the reference to the occurrence that holds
-    the collection, the tuple field's name, the references to the elements it takes, one per
+    """One collection a construction's tuple field may gather: the reference to the occurrence
+    that holds it, the tuple field's name, the references to the elements it takes, one per
     element class, each in the element's scope, ``"[]"`` for every element of a variable tuple
-    and a position for each of a fixed one, and the positions the holder declares, ``None``
-    for ``tuple[E, ...]``."""
+    and a position for each of a fixed one, the positions the holder declares, ``None`` for
+    ``tuple[E, ...]``, and the fewest elements the gathering field admits, from its compiled
+    schema: a selection admits no fewer than one, and so needs an element."""
 
     holder: InputRef | HeardRef
     name: str
     elements: tuple[Ref, ...]
     positions: int | None
+    least: int = 0
 
     @property
     def site(self) -> Site:
@@ -406,6 +440,25 @@ class Collected:
         """What a scope holds the collection under: the holder's origin, and the field."""
         origin, member = self.holder.key
         return (origin, (*member, self.name))
+
+    @property
+    def every(self) -> tuple[str, ...]:
+        """The element scopes, as steps under the site: each position of a fixed collection,
+        the one element standing for any of a variable one."""
+        if self.positions is None:
+            return ("[]",)
+        return tuple(f"[{index}]" for index in range(self.positions))
+
+    @property
+    def steps(self) -> tuple[str, ...]:
+        """The element scopes a construction over this needs available: each position of a
+        fixed collection; the one element, for a variable collection the field admits no fewer
+        than one of; none for a variable collection that may be empty."""
+        return self.every if self.positions is not None or self.least else ()
+
+    def placed(self, step: str) -> Group:
+        """The element references in one element scope, alternatives among them."""
+        return tuple(r for r in self.elements if r.scope == (*self.site, step))
 
 
 def is_model(cls: object) -> TypeIs[type[BaseModel]]:
@@ -1453,14 +1506,14 @@ class Gathered:
         """The element contexts, in order, each once."""
         return tuple(dict.fromkeys(e.context for e in self.elements))
 
-    def collected(self, elements: Iterable[Symbol]) -> Collected:
+    def collected(self, elements: Iterable[Symbol], least: int) -> Collected:
         """The collection as a construction gathers it: by references."""
         holder = self.holder.ref
         if isinstance(holder, ConstructedRef):
             held_by_construction = f"{'.'.join(self.site)} is held by a construction"
             raise TypeError(held_by_construction)
         return Collected(
-            holder, self.name, tuple(dict.fromkeys(e.ref for e in elements)), self.positions
+            holder, self.name, tuple(dict.fromkeys(e.ref for e in elements)), self.positions, least
         )
 
 
@@ -1475,10 +1528,6 @@ class Symbol:
     context: Context
     held: dict[str, tuple[Symbol, ...]] = field(default_factory=dict[str, tuple["Symbol", ...]])
     collected: dict[str, Gathered] = field(default_factory=dict[str, Gathered])
-    because: tuple[Site, ...] = ()
-    """The sites of the optional fields this occurrence exists only when they arrive: its own,
-    when what declares it admits ``None``, and its holder's or its premises'. An occurrence
-    with none is present in every invocation."""
 
     @property
     def site(self) -> Site:
@@ -1487,19 +1536,16 @@ class Symbol:
 
 
 def declared_symbol(
-    ref: InputRef | HeardRef,
-    context: Context,
-    lineage: frozenset[type[BaseModel]],
-    because: tuple[Site, ...] = (),
+    ref: InputRef | HeardRef, context: Context, lineage: frozenset[type[BaseModel]]
 ) -> Symbol:
     """The symbol of a class that arrives or is heard, at the reference's site, with the
     symbols of everything it declares: each single field's classes at the field's site, as
     alternatives, and each tuple field's element classes in element contexts under this one,
     one for ``tuple[E, ...]``, one per position for a fixed tuple, each a reference to a member
-    of this one. What a field admitting ``None`` holds exists only when it arrives, and so does
-    everything under it. A class already on the lineage is not descended into."""
+    of this one, conditional on the field when what it declares admits ``None``. A class
+    already on the lineage is not descended into."""
     cls, site = ref.cls, ref.site
-    symbol = context.own(Symbol(cls, ref, context, because=because))
+    symbol = context.own(Symbol(cls, ref, context))
     if cls in lineage:
         return symbol
     lineage = lineage | {cls}
@@ -1510,42 +1556,31 @@ def declared_symbol(
                 step = f.step(index)
                 child = context.opened((*site, f.name, step), many=not f.fixed)
                 found.extend(
-                    declared_symbol(ref.element(c, f.name, step), child, lineage, because)
+                    declared_symbol(
+                        ref.element(c, f.name, step, optional=f.admits_none), child, lineage
+                    )
                     for c in classes_
                 )
             symbol.collected[f.name] = Gathered(symbol, f.name, tuple(found), f.positions)
         else:
-            held = (*because, (*site, f.name)) if f.admits_none else because
             symbol.held[f.name] = tuple(
-                declared_symbol(ref.held(c, f.name), context, lineage, held) for c in f.classes
+                declared_symbol(ref.held(c, f.name, optional=f.admits_none), context, lineage)
+                for c in f.classes
             )
     return symbol
 
 
-class Ambiguity(NamedTuple):
-    """A field with more than one candidate: what the proof refuses at the consuming field."""
-
-    field: str
-    message: str
-
-
-def single(name: str, classes_: Options, context: Context) -> tuple[Symbol, ...] | Ambiguity | None:
-    """The visible symbols of a single field's classes: one site per class, else ambiguous;
-    ``None`` while none is visible."""
-    found = [s for c in classes_ for s in context.visible(c)]
-    for cls in classes_:
-        sites = list(dict.fromkeys(s.site for s in found if s.cls is cls))
-        if len(sites) > 1:
-            where = ", ".join(".".join(s) for s in sites)
-            return Ambiguity(name, f"{cls.__name__} is at {len(sites)} sites here: {where}")
-    return tuple(found) or None
+def single(classes_: Options, context: Context) -> tuple[Symbol, ...]:
+    """Every visible symbol of a single field's classes: the candidates, which compete at that
+    field and nowhere else; empty while none is visible."""
+    return tuple(s for c in classes_ for s in context.visible(c))
 
 
-def reached_from(symbols: Iterable[Symbol], context: Context) -> dict[Site, Gathered]:
-    """Every collection reached from symbols through product fields, by site: what a bound
+def reached_from(symbols: Iterable[Symbol], context: Context) -> list[Gathered]:
+    """Every collection reached from symbols through product fields, each once: what a bound
     premise holds, and what that holds in turn; through a constructed premise, what its
-    construction gathers and what its premises hold."""
-    found: dict[Site, Gathered] = {}
+    construction may gather and what its premises hold."""
+    found: dict[Gathered, None] = {}
     seen: set[Ref] = set()
     todo = [s.ref for s in symbols]
     while todo:
@@ -1554,20 +1589,21 @@ def reached_from(symbols: Iterable[Symbol], context: Context) -> dict[Site, Gath
             continue
         seen.add(ref)
         if isinstance(ref, ConstructedRef):
-            for collected in ref.construction.collections.values():
-                holder = context.symbols[collected.holder]
-                found[collected.site] = holder.collected[collected.name]
+            for candidates in ref.construction.collections.values():
+                for collected in candidates:
+                    holder = context.symbols[collected.holder]
+                    found[holder.collected[collected.name]] = None
             todo.extend(r for refs in ref.construction.premises.values() for r in refs)
         else:
             symbol = context.symbols[ref]
-            found.update({g.site: g for g in symbol.collected.values()})
+            found.update(dict.fromkeys(symbol.collected.values()))
             todo.extend(s.ref for alternatives in symbol.held.values() for s in alternatives)
-    return found
+    return list(found)
 
 
-def held_by(context: Context) -> dict[Site, Gathered]:
-    """Every collection the context's own symbols hold, by site."""
-    return {g.site: g for s in context.owned for g in s.collected.values()}
+def held_by(context: Context) -> list[Gathered]:
+    """Every collection the context's own symbols hold."""
+    return [g for s in context.owned for g in s.collected.values()]
 
 
 def chosen(classes_: Options, context: Context) -> list[Symbol]:
@@ -1584,80 +1620,57 @@ def compatible(cls: type[BaseModel], name: str, source: Gathered) -> bool:
 
 
 def gather(
-    cls: type[BaseModel], name: str, classes_: Options, pool: Mapping[Site, Gathered]
-) -> Collected | Ambiguity | None:
-    """The one collection among a pool, of a shape the field may gather, whose every element
-    context owns one of the field's classes, with those elements gathered in order; ambiguous
-    with two such collections, or an element context owning a class at two sites; ``None``
-    while there is none."""
-    complete = [
-        g
-        for g in pool.values()
+    cls: type[BaseModel], name: str, classes_: Options, pool: Iterable[Gathered]
+) -> tuple[Collected, ...]:
+    """Every collection among a pool of a shape the field may gather whose every element
+    context owns one of the field's classes, with those elements gathered in order,
+    alternatives among them, and the fewest elements the field admits; empty while there is
+    none."""
+    length = declared(cls, name).length
+    least = 0 if isinstance(length, Unknown) else length[0]
+    return tuple(
+        g.collected([s for element in g.contexts for s in chosen(classes_, element)], least)
+        for g in pool
         if compatible(cls, name, g) and all(chosen(classes_, c) for c in g.contexts)
-    ]
-    if len(complete) > 1:
-        where = ", ".join(".".join(g.site) for g in complete)
-        return Ambiguity(name, f"{names(classes_)} is collected by {len(complete)}: {where}")
-    if not complete:
-        return None
-    (found,) = complete
-    picked: list[Symbol] = []
-    for element in found.contexts:
-        own = chosen(classes_, element)
-        for member in classes_:
-            sites = list(dict.fromkeys(s.site for s in own if s.cls is member))
-            if len(sites) > 1:
-                where = ", ".join(".".join(s) for s in sites)
-                return Ambiguity(
-                    name, f"{member.__name__} is at {len(sites)} sites per element: {where}"
-                )
-        picked.extend(own)
-    return found.collected(picked)
+    )
 
 
-def bound_in(
-    route: type[BaseModel], cls: type[BaseModel], context: Context
-) -> Construction | Ambiguity | None:
+def bound_in(route: type[BaseModel], cls: type[BaseModel], context: Context) -> Construction | None:
     """How a class constructs in a context, read from its fields: each required single field
-    bound to the visible symbols of its classes, each tuple field to one collection reached
+    bound to the visible symbols of its classes, each tuple field to the collections reached
     through the bound premises or, when they reach none, held by the context; ``None`` while
-    a field has nothing; the ambiguity of the first field with more than one candidate."""
+    a field has nothing."""
     singles: dict[str, tuple[Symbol, ...]] = {}
     for name, classes_ in premises(cls).items():
-        found = single(name, classes_, context)
-        if found is None or isinstance(found, Ambiguity):
-            return found
+        found = single(classes_, context)
+        if not found:
+            return None
         singles[name] = found
     pool = reached_from((s for found in singles.values() for s in found), context) or held_by(
         context
     )
-    collections: dict[str, Collected] = {}
+    collections: dict[str, tuple[Collected, ...]] = {}
     for name, classes_ in collects(cls).items():
         gathered = gather(cls, name, classes_, pool)
-        if gathered is None or isinstance(gathered, Ambiguity):
-            return gathered
+        if not gathered:
+            return None
         collections[name] = gathered
-    sources = (
-        *(s for found in singles.values() for s in found),
-        *(context.symbols[e] for g in collections.values() for e in g.elements),
-    )
     return Construction(
         route,
         cls,
         context.site,
         {n: tuple(dict.fromkeys(s.ref for s in found)) for n, found in singles.items()},
         collections,
-        tuple(dict.fromkeys(site for s in sources for site in s.because)),
     )
 
 
 def anchored(construction: Construction, context: Context) -> bool:
-    """Whether the context owns one of the construction's premises or holds a collection it
-    gathers, so the class is constructed here; a class with neither is constructed at the
+    """Whether the context owns one of the construction's candidates or holds a collection it
+    may gather, so the class is constructed here; a class with neither is constructed at the
     root."""
     anchors = [
         *(r for refs in construction.premises.values() for r in refs),
-        *(c.holder for c in construction.collections.values()),
+        *(c.holder for candidates in construction.collections.values() for c in candidates),
     ]
     if not anchors:
         return context.parent is None
@@ -1680,15 +1693,10 @@ def symbolized(construction: Construction, context: Context) -> Symbol:
     """The symbol of a construction in its context, under the construction's own reference. An
     action's records enter the context as alternatives at the action's ``heard`` site, with
     everything they declare."""
-    symbol = context.own(
-        Symbol(
-            construction.cls, ConstructedRef(construction), context, because=construction.because
-        )
-    )
+    symbol = context.own(Symbol(construction.cls, ConstructedRef(construction), context))
     if is_action(construction.cls):
         for record in heard(construction.cls):
-            ref = HeardRef(construction, record, (), record)
-            declared_symbol(ref, context, frozenset(), construction.because)
+            declared_symbol(HeardRef(construction, record, (), record), context, frozenset())
     return symbol
 
 
@@ -1707,7 +1715,7 @@ class Fault(BaseModel):
     """A fault the passes found, kept until the proof reports it with the rest."""
 
     model_config = ConfigDict(frozen=True, strict=True)
-    code: Literal["missing", "collects", "unplaceable", "route", "ambiguous", "conditional"]
+    code: Literal["missing", "collects", "unplaceable", "route"]
     loc: tuple[str, ...]
     message: str
 
@@ -1792,50 +1800,23 @@ def symbolic[Q: Request, A: Reply[Fact]](
                 if cls in done.setdefault(context, set()):
                     continue
                 found = bound_in(route, cls, context)
-                if isinstance(found, Construction) and anchored(found, context):
+                if found is not None and anchored(found, context):
                     symbolized(found, context)
                     constructed.append((found, context))
                     done[context].add(cls)
                     moved = True
     faulted: list[Fault] = []
     for construction, context in constructed:
-        cls = construction.cls
-        found = bound_in(route, cls, context)
-        if isinstance(found, Construction):
+        found = bound_in(route, construction.cls, context)
+        if found is not None:
             construction.rebound(found)
-        elif isinstance(found, Ambiguity):
-            faulted.append(ambiguity(cls, found))
-        if is_route(cls) and context.parent is not None:
-            faulted.append(misrouted(cls, context))
-        if is_route(cls) and isinstance(found, Construction) and found.because:
-            faulted.append(conditional(cls, found.because))
+        if is_route(construction.cls) and context.parent is not None:
+            faulted.append(misrouted(construction.cls, context))
     never_built = [c for c in asked_for if not any(c is b.cls for b, _ in constructed)]
     waiting, faults = unexplained(route, never_built, classes_, root)
     for construction, _ in constructed:
         construction.seal()
     return Symbolic([c for c, _ in constructed], waiting, [*faulted, *faults])
-
-
-def ambiguity(cls: type[BaseModel], found: Ambiguity) -> Fault:
-    """The fault of a field with more than one candidate."""
-    return Fault(
-        code="ambiguous",
-        loc=(cls.__name__, found.field),
-        message=f"{cls.__name__}.{found.field} has two sources: {found.message}; hold what"
-        " tells them apart",
-    )
-
-
-def conditional(cls: type[BaseModel], because: tuple[Site, ...]) -> Fault:
-    """The fault of a route that answers only when an optional field arrives: an absence is
-    not evidence, and a request the route admits may carry the absence."""
-    sites = ", ".join(".".join(site) for site in because)
-    return Fault(
-        code="conditional",
-        loc=(cls.__name__,),
-        message=f"{cls.__name__} answers only when {sites} arrives, and what declares it admits"
-        " its absence; an absence the business concludes from is a class",
-    )
 
 
 def misrouted(cls: type[BaseModel], context: Context) -> Fault:
@@ -1899,19 +1880,15 @@ def unexplained(
     every: tuple[type[BaseModel], ...],
     root: Context,
 ) -> tuple[list[Waiting], list[Fault]]:
-    """Why each class the passes never constructed was not: a context that finds a field
-    ambiguous is that fault; a field whose classes occur nowhere waits on the never-built
-    classes that would bring them, and with none is ``missing``; a tuple field no collection's
-    elements fill waits the same way, and with none is ``collects``; a class whose every field
-    has a candidate somewhere but never all from one scope is ``unplaceable``, or ``route`` for
-    a route whose reply is under an element. ``cycle`` is left to the proof."""
+    """Why each class the passes never constructed was not: a field whose classes occur
+    nowhere waits on the never-built classes that would bring them, and with none is
+    ``missing``; a tuple field no collection's elements fill waits the same way, and with none
+    is ``collects``; a class whose every field has a candidate somewhere but never all from one
+    scope is ``unplaceable``, or ``route`` for a route whose reply is under an element.
+    ``cycle`` is left to the proof."""
     waiting: list[Waiting] = []
     faults: list[Fault] = []
     for cls in never_built:
-        found = [bound_in(route, cls, c) for c in contexts(root)]
-        if any(isinstance(f, Ambiguity) for f in found):
-            faults.extend(ambiguity(cls, f) for f in found if isinstance(f, Ambiguity))
-            continue
         blocked = False
         for name, classes_ in premises(cls).items():
             if anywhere(root, classes_):
@@ -2039,6 +2016,7 @@ class Proof(BaseModel):
             *unmodeled(self),
             *boundary(self),
             *deployment(self),
+            *conditional(self),
             *certain(self),
             *impossible(self),
             *ambiguous(self),
@@ -2246,7 +2224,10 @@ def interval_at(
         return Unknown("recursion", (cls.__name__,))
     operands = {
         **{n: gathered(refs, seen | {cls}) for n, refs in construction.premises.items()},
-        **{n: gathered(c.elements, seen | {cls}) for n, c in construction.collections.items()},
+        **{
+            n: gathered((r for c in candidates for r in c.elements), seen | {cls})
+            for n, candidates in construction.collections.items()
+        },
     }
     found = root.outputs(seen, Inputs(operands=operands))
     return found.numbers if isinstance(found, Known) else found
@@ -2393,15 +2374,18 @@ def certain(proof: Proof) -> list[InitErrorDetails]:
     ]
 
 
-type World = frozenset[Ref]
-"""One way several references are all available in one scope: every reference available with
-them, one alternative chosen for each premise of each construction among them, so no world
-holds two alternatives of one premise."""
+type Source = Ref | Collected
+"""What a construction draws on: a reference, or a collection it may gather."""
+
+type World = frozenset[Source]
+"""One way several sources are all available in one scope: every source available with them,
+one alternative chosen for each premise and each tuple field of each construction among them,
+so no world holds two alternatives of one field."""
 
 
 @dataclass(frozen=True)
 class Clash:
-    """Why one world is impossible: the kind of incompatibility, and the references responsible.
+    """Why one world is impossible: the kind of incompatibility, and the sources responsible.
     ``heard``, two records of one action occurrence, which hears one; ``ordering``, two
     relations over the same operand references admitting no ordering in common; ``count``, a
     selection over a collection of a number of positions it admits no count of, or two over one
@@ -2409,27 +2393,27 @@ class Clash:
     numbers and orderings of the relations over them with no solution together."""
 
     why: Literal["heard", "ordering", "count", "bounds"]
-    among: tuple[Ref, ...]
+    among: tuple[Source, ...]
 
 
 @dataclass(frozen=True)
 class Joint:
-    """Whether several references can be available together in one scope: every way they can,
-    each with the clash that refutes it, or ``None`` for a way nothing refutes. Impossible when
-    every way clashes, which the clashes establish; a way nothing refutes is open, and
+    """Whether several sources can be available together in one scope: the ways searched, each
+    with the clash that refutes it, or ``None`` for the one way nothing refutes. Impossible
+    when every way clashes, which the clashes establish; a way nothing refutes is open, and
     establishes nothing, since bounds that overlap do not say a run exists."""
 
-    refs: tuple[Ref, ...]
+    refs: tuple[Source, ...]
     ways: tuple[tuple[World, Clash | None], ...]
 
     @property
     def impossible(self) -> bool:
-        """Whether every way clashes: the references are never all available together."""
+        """Whether every way clashes: the sources are never all available together."""
         return all(c is not None for _, c in self.ways)
 
     @property
     def open(self) -> tuple[World, ...]:
-        """The ways nothing refutes."""
+        """The way nothing refutes, if the search found one."""
         return tuple(w for w, c in self.ways if c is None)
 
     @property
@@ -2443,12 +2427,12 @@ class Exclusion:
     """What the proof must establish of two alternatives bound at one field of one construction:
     that they are never both available in the scope the field resolves them from, since a run
     that finds both refuses to choose. Established when their joint is impossible; open
-    otherwise, with the ways both could be available."""
+    otherwise, with a way both could be available."""
 
     construction: Construction
     field: str
-    left: Ref
-    right: Ref
+    left: Source
+    right: Source
     joint: Joint
 
     @property
@@ -2472,58 +2456,64 @@ class Existence:
         return self.joint.impossible
 
 
-def required(construction: Construction) -> list[tuple[Ref, ...]]:
-    """What a construction needs available to construct, one group of alternatives each: each
-    premise field's references; each collection's holder; for a fixed collection, each
-    position's references in that position's scope. A variable collection may be empty, so
-    its elements are nothing the construction needs."""
-    groups = list(construction.premises.values())
-    for collected in construction.collections.values():
-        groups.append((collected.holder,))
-        groups.extend(
-            tuple(r for r in collected.elements if r.scope == (*collected.site, f"[{index}]"))
-            for index in range(collected.positions or 0)
-        )
-    return [g for g in groups if g]
-
-
-def worlds(todo: list[Ref], world: World) -> Iterator[World]:
-    """Every world the references still to place complete, from one being built: a reference
-    already placed adds nothing; what arrives adds itself; what is heard adds its action; what
-    is constructed adds, for each group of alternatives it needs, one of them, each choice a
-    world of its own."""
-    if not todo:
-        yield world
-        return
-    ref, rest = todo[0], todo[1:]
-    if ref in world:
-        yield from worlds(rest, world)
-        return
-    world = world | {ref}
-    match ref:
+def needs(source: Source) -> list[Group]:
+    """What a source needs available with it, one group of alternatives each: nothing, for what
+    arrives; its action, for what is heard; for a collection, its holder and the element
+    references of each scope it needs, by position for a fixed collection, one element
+    standing for any when the field admits no fewer than one, none for a collection that may
+    be empty; for a construction, each premise field's references and each tuple field's
+    collections."""
+    match source:
         case InputRef():
-            yield from worlds(rest, world)
+            return []
         case HeardRef():
-            yield from worlds([ConstructedRef(ref.action), *rest], world)
+            return [(ConstructedRef(source.action),)]
+        case Collected():
+            return [(source.holder,), *(g for step in source.steps if (g := source.placed(step)))]
         case ConstructedRef(construction):
-            for choice in product(*required(construction)):
-                yield from worlds([*choice, *rest], world)
+            return [*construction.premises.values(), *construction.collections.values()]
 
 
-def ways(refs: Iterable[Ref]) -> tuple[World, ...]:
-    """Every way several references are all available in one scope, each once."""
-    return tuple(dict.fromkeys(worlds(list(refs), frozenset())))
+def joint(sources: Iterable[Source]) -> Joint:
+    """Whether several sources can be available together: a depth-first search over the groups
+    of alternatives they need, one alternative per group, the group with the fewest alternatives
+    first, so what every way shares is placed before any way branches and a clash among it ends
+    the search at once; a world that clashes is not extended, since every extension clashes
+    too, and the first world completed without a clash ends the search, since one open way is
+    all an open obligation reports. Each way searched is kept with its clash."""
+    sources = tuple(sources)
+    ways: list[tuple[World, Clash | None]] = []
+
+    def search(todo: list[Group], world: World) -> bool:
+        found = clash(world)
+        if found is not None:
+            ways.append((world, found))
+            return False
+        if not todo:
+            ways.append((world, None))
+            return True
+        index = min(range(len(todo)), key=lambda i: len(todo[i]))
+        group, rest = todo[index], [*todo[:index], *todo[index + 1 :]]
+        return any(
+            search(rest, world)
+            if source in world
+            else search([*needs(source), *rest], world | {source})
+            for source in group
+        )
+
+    search([(source,) for source in sources], frozenset())
+    return Joint(sources, tuple(ways))
 
 
-def joint(refs: Iterable[Ref]) -> Joint:
-    """Whether several references can be available together: each way, with its clash."""
-    refs = tuple(refs)
-    return Joint(refs, tuple((w, clash(w)) for w in ways(refs)))
+def label(source: Source) -> tuple[Site, str, str]:
+    """A source's place in one order: its site, its kind and its class or field."""
+    name = source.name if isinstance(source, Collected) else source.cls.__name__
+    return (source.site, type(source).__name__, name)
 
 
-def ordered(world: World) -> list[Ref]:
-    """A world's references in one order: by site, kind and class."""
-    return sorted(world, key=lambda r: (r.site, type(r).__name__, r.cls.__name__))
+def ordered(world: World) -> list[Source]:
+    """A world's sources in one order: by site, kind and name."""
+    return sorted(world, key=label)
 
 
 def clash(world: World) -> Clash | None:
@@ -2533,24 +2523,24 @@ def clash(world: World) -> Clash | None:
     common; or the bounds of what supplies each number and the orderings of the relations over
     them with no solution together. An unknown interval bounds nothing, and so refutes
     nothing."""
-    refs = ordered(world)
-    heard_ = [r for r in refs if isinstance(r, HeardRef)]
+    sources = ordered(world)
+    heard_ = [r for r in sources if isinstance(r, HeardRef)]
     for x, y in combinations(heard_, 2):
         if x.action is y.action and x.record is not y.record:
             return Clash("heard", (x, y))
-    made = [r for r in refs if isinstance(r, ConstructedRef)]
+    made = [r for r in sources if isinstance(r, ConstructedRef)]
     relations = [r for r in made if is_relation(r.cls)]
     for x, y in combinations(relations, 2):
         if contradicts(x.construction, y.construction, world):
             return Clash("ordering", (x, y))
     gathering = [r for r in made if r.construction.collections]
     for s in gathering:
-        if miscounted(s.construction):
+        if miscounted(s.construction, world):
             return Clash("count", (s,))
     for x, y in combinations(gathering, 2):
-        if exclusive(x.construction, y.construction):
+        if exclusive(x.construction, y.construction, world):
             return Clash("count", (x, y))
-    bounds = {r: found for r in refs if (found := edges(r))}
+    bounds = {r: found for r in sources if not isinstance(r, Collected) and (found := edges(r))}
     constraints = [
         *(e for found in bounds.values() for e in found),
         *(e for r in relations for e in constrained(r.construction, world)),
@@ -2575,10 +2565,10 @@ def edges(ref: Ref) -> list[Edge]:
     return constraints
 
 
-def picked(refs: Iterable[Ref], world: World) -> Ref | None:
-    """The one reference among alternatives a world holds; ``None`` for none or for two, which
+def picked[S: Source](sources: Iterable[S], world: World) -> S | None:
+    """The one alternative among a group a world holds; ``None`` for none or for two, which
     the exclusion at that field reports."""
-    found = [r for r in refs if r in world]
+    found = [s for s in sources if s in world]
     return found[0] if len(found) == 1 else None
 
 
@@ -2637,13 +2627,20 @@ def contradicts(a: Construction, b: Construction, world: World) -> bool:
     return False
 
 
-def exclusive(a: Construction, b: Construction) -> bool:
-    """Whether two constructions gather one collection, the same holder and elements, as tuple
-    fields admitting no count in common; not when either count is unknown."""
-    for name, collected in a.collections.items():
-        for name_, collected_ in b.collections.items():
+def exclusive(a: Construction, b: Construction, world: World) -> bool:
+    """Whether two constructions gather one collection in a world, the same holder and
+    elements, as tuple fields admitting no count in common; not when either count is
+    unknown."""
+    for name, candidates in a.collections.items():
+        collected = picked(candidates, world)
+        for name_, candidates_ in b.collections.items():
             first, second = declared(a.cls, name).length, declared(b.cls, name_).length
-            if collected != collected_ or isinstance(first, Unknown) or isinstance(second, Unknown):
+            if (
+                collected is None
+                or collected != picked(candidates_, world)
+                or isinstance(first, Unknown)
+                or isinstance(second, Unknown)
+            ):
                 continue
             (low, high), (low_, high_) = first, second
             if (high is not None and low_ > high) or (high_ is not None and low > high_):
@@ -2651,12 +2648,13 @@ def exclusive(a: Construction, b: Construction) -> bool:
     return False
 
 
-def miscounted(construction: Construction) -> bool:
-    """Whether a construction gathers a fixed collection whose number of positions its tuple
-    field admits no count of: a selection of one over a pair."""
-    for name, collected in construction.collections.items():
+def miscounted(construction: Construction, world: World) -> bool:
+    """Whether a construction gathers, in a world, a fixed collection whose number of positions
+    its tuple field admits no count of: a selection of one over a pair."""
+    for name, candidates in construction.collections.items():
+        collected = picked(candidates, world)
         length = declared(construction.cls, name).length
-        if collected.positions is None or isinstance(length, Unknown):
+        if collected is None or collected.positions is None or isinstance(length, Unknown):
             continue
         low, high = length
         if collected.positions < low or (high is not None and collected.positions > high):
@@ -2686,20 +2684,21 @@ def feasible(constraints: Iterable[Edge]) -> bool:
 def exclusions(constructions: Iterable[Construction]) -> tuple[Exclusion, ...]:
     """The alternatives bound at each field of each construction, pairwise, each with whether
     they are ever both available where the field resolves them: a premise's references, from
-    the construction's scope; a collection's element references, those placed in one element's
-    scope from that scope."""
+    the construction's scope; a tuple field's collections, from the construction's scope; a
+    collection's element references, those placed in one element's scope from that scope."""
     found: list[Exclusion] = []
     for c in constructions:
-        groups = list(c.premises.items())
-        for name, collected in c.collections.items():
-            by_scope: dict[Site, list[Ref]] = {}
-            for r in collected.elements:
-                by_scope.setdefault(r.scope, []).append(r)
-            groups.extend((name, tuple(refs)) for refs in by_scope.values())
+        groups: list[tuple[str, Group]] = [*c.premises.items(), *c.collections.items()]
+        for name, candidates in c.collections.items():
+            for collected in candidates:
+                by_scope: dict[Site, list[Source]] = {}
+                for r in collected.elements:
+                    by_scope.setdefault(r.scope, []).append(r)
+                groups.extend((name, tuple(refs)) for refs in by_scope.values())
         found.extend(
             Exclusion(c, name, left, right, joint((left, right)))
-            for name, refs in groups
-            for left, right in combinations(refs, 2)
+            for name, sources in groups
+            for left, right in combinations(sources, 2)
         )
     return tuple(found)
 
@@ -2712,18 +2711,72 @@ def existences(constructions: Iterable[Construction]) -> tuple[Existence, ...]:
 def inherited(construction: Construction) -> bool:
     """Whether a construction's impossibility is one of its premises' own: some group of
     alternatives it needs has none possible alone, and that premise is where it is reported."""
-    return any(all(joint((r,)).impossible for r in group) for group in required(construction))
+    return any(
+        all(joint((s,)).impossible for s in group) for group in needs(ConstructedRef(construction))
+    )
 
 
-def performers(ref: Ref) -> list[Construction]:
-    """The action constructions performed in some way a reference is available, by site."""
-    found = {
-        r.construction
-        for w in ways((ref,))
-        for r in w
-        if isinstance(r, ConstructedRef) and is_action(r.cls)
-    }
+def performers(source: Source) -> list[Construction]:
+    """The action constructions some way a source is available performs: every one reached
+    through what it needs, by any alternative, by site."""
+    found: list[Construction] = []
+    seen: set[Source] = set()
+    todo: list[Source] = [source]
+    while todo:
+        s = todo.pop()
+        if s in seen:
+            continue
+        seen.add(s)
+        if isinstance(s, ConstructedRef) and is_action(s.cls):
+            found.append(s.construction)
+        todo.extend(alternative for group in needs(s) for alternative in group)
     return sorted(found, key=lambda c: c.site)
+
+
+def needed(source: Source, seen: frozenset[Source]) -> frozenset[Site]:
+    """The sites of optional fields every way a source is available depends on: what a
+    reference is conditional on; for each group it needs, what every alternative depends on;
+    for a collection, what every element's depends on too, since a run with elements needs
+    each. A source reached again through what it needs adds nothing."""
+    if source in seen:
+        return frozenset()
+    seen = seen | {source}
+    own: frozenset[Site] = frozenset()
+    groups = needs(source)
+    if isinstance(source, (InputRef, HeardRef)):
+        own = frozenset(source.because)
+    elif isinstance(source, Collected):
+        groups = [(source.holder,), *(g for step in source.every if (g := source.placed(step)))]
+    for group in groups:
+        shared: frozenset[Site] | None = None
+        for alternative in group:
+            found = needed(alternative, seen)
+            shared = found if shared is None else shared & found
+        own |= shared or frozenset()
+    return own
+
+
+def conditions(construction: Construction) -> tuple[Site, ...]:
+    """The sites of the optional fields a construction exists only when they arrive: those
+    every way it constructs depends on, in order."""
+    return tuple(sorted(needed(ConstructedRef(construction), frozenset())))
+
+
+def conditional(proof: Proof) -> list[InitErrorDetails]:
+    """One ``conditional`` error per route that answers only when an optional field arrives: an
+    absence is not evidence, and a request the route admits may carry the absence."""
+    return [
+        fault(
+            "conditional",
+            "{cls} answers only when {sites} arrives, and what declares it admits its absence;"
+            " an absence the business concludes from is a class",
+            (c.cls.__name__,),
+            cls=c.cls.__name__,
+            sites=", ".join(".".join(site) for site in found),
+        )
+        for c in proof.constructions
+        if is_route(c.cls) and (found := conditions(c))
+    ]
 
 
 def where(scope: Site) -> str:
@@ -2731,21 +2784,29 @@ def where(scope: Site) -> str:
     return ".".join(scope) or "the root"
 
 
-def at(ref: Ref) -> str:
-    """A reference for a message: its class at its site."""
-    return f"{ref.cls.__name__} at {'.'.join(ref.site)}"
+def at(source: Source) -> str:
+    """A source for a message: a reference's class at its site; a collection's element
+    classes, the holder's field, and its site."""
+    if isinstance(source, Collected):
+        held = names(dict.fromkeys(r.cls for r in source.elements))
+        holder = f"{source.holder.cls.__name__}.{source.name}"
+        return f"{held} in {holder} at {'.'.join(source.site)}"
+    return f"{source.cls.__name__} at {'.'.join(source.site)}"
 
 
 def assumed(world: World) -> str:
-    """The conditions a world takes as holding, for a message: each refutable construction and
-    each record heard in it."""
+    """Why an open way excludes neither alternative, for a message: the conditions it takes
+    as holding, each refutable construction and each record heard in it, or that nothing
+    available with them does."""
     found = [
         at(r)
         for r in ordered(world)
         if (isinstance(r, ConstructedRef) and refutable(r.cls))
         or (isinstance(r, HeardRef) and not r.member)
     ]
-    return ", ".join(found) or "nothing between them"
+    if not found:
+        return "nothing available with them excludes either"
+    return f"with {', '.join(found)} holding, nothing excludes either"
 
 
 def because_of(clash: Clash) -> str:
@@ -2758,7 +2819,10 @@ def because_of(clash: Clash) -> str:
             return f"{at(x)} and {at(y)} admit no ordering in common over the same operands"
         case Clash("count", (ConstructedRef(construction) as x,)):
             positions = ", ".join(
-                str(c.positions) for c in construction.collections.values() if c.positions
+                str(c.positions)
+                for candidates in construction.collections.values()
+                for c in candidates
+                if c.positions
             )
             return f"{at(x)} admits no count of {positions} elements"
         case Clash("count", (x, y)):
@@ -2791,18 +2855,14 @@ def ambiguous(proof: Proof) -> list[InitErrorDetails]:
     return [
         fault(
             "ambiguous",
-            "{cls}.{name} holds {a} | {b}, and the proof cannot show that at most one holds: at"
-            " {scope}, {left} and {right} are both available with {held} holding; write members"
-            " a record or a relation tells apart",
+            "{cls}.{name} at {scope} may hold both {left} and {right}; {why}",
             (e.construction.cls.__name__, e.field),
             cls=e.construction.cls.__name__,
             name=e.field,
-            a=e.left.cls.__name__,
-            b=e.right.cls.__name__,
             scope=where(e.construction.scope),
             left=at(e.left),
             right=at(e.right),
-            held=assumed(e.joint.open[0]),
+            why=assumed(e.joint.open[0]),
         )
         for e in proof.exclusions
         if not e.established
@@ -2822,8 +2882,8 @@ def undecided(proof: Proof) -> list[InitErrorDetails]:
             action=action.cls.__name__,
             cls=e.construction.cls.__name__,
             name=e.field,
-            chosen=chosen_.cls.__name__,
-            other=other.cls.__name__,
+            chosen=at(chosen_),
+            other=at(other),
         )
         for e in proof.exclusions
         if e.established
@@ -3088,7 +3148,8 @@ def resolve(ref: Ref, scope: Scope) -> State:
     """One reference dereferenced from a scope, the same way in a pass and in the explanation of
     a run that ended: what arrives is held by the chain or absent; what is constructed is made,
     refuted or pending in the scope at its template; what is heard is pending while its action
-    is, else held by the chain under the action, or the action heard otherwise."""
+    is, else held by the chain under the action once the action heard the record named, or the
+    action heard otherwise: a member of another record, keyed alike, is not this one."""
     match ref:
         case InputRef():
             holder = scope.holding(ref.key)
@@ -3104,15 +3165,16 @@ def resolve(ref: Ref, scope: Scope) -> State:
                 return Rejected(occurrence, made)
             return Pending(occurrence)
         case HeardRef():
-            occurrence = Occurrence(scope.within(ref.scope), ref.action)
+            occurrence = Occurrence(scope.within(ref.action.scope), ref.action)
             if occurrence.made is None:
                 return Pending(occurrence)
-            holder = scope.holding(ref.key)
+            record = occurrence.scope.arrived.get((ref.action, ()))
+            holder = scope.holding(ref.key) if type(record) is ref.record else None
             found = None if holder is None else holder.arrived[ref.key]
             return (
                 Available(holder.at(ref.site), found)
                 if holder is not None and is_exactly(found, ref.cls)
-                else Heard(occurrence, occurrence.scope.arrived.get((ref.action, ())))
+                else Heard(occurrence, record)
             )
 
 
@@ -3138,8 +3200,8 @@ class Bound(NamedTuple):
     unfilled: dict[Premise, tuple[tuple[Ref, State], ...]]
 
 
-def present(found: list[Available], cls: type[BaseModel], name: str) -> Available | None:
-    """The one instance found for a field; ``None`` for none; a failure for more than one, which
+def one[T](found: list[T], cls: type[BaseModel], name: str, what: LiteralString) -> T | None:
+    """The one thing found for a field; ``None`` for none; a failure for more than one, which
     the proof excludes and the run refuses to choose among."""
     if len(found) > 1:
         raise ValidationError.from_exception_data(
@@ -3147,11 +3209,12 @@ def present(found: list[Available], cls: type[BaseModel], name: str) -> Availabl
             [
                 fault(
                     "ambiguous",
-                    "{cls}.{name} found {n} instances where the proof bound one",
+                    "{cls}.{name} found {n} {what} where the proof bound one",
                     (cls.__name__, name),
                     cls=cls.__name__,
                     name=name,
                     n=len(found),
+                    what=what,
                 )
             ],
         )
@@ -3170,36 +3233,45 @@ def available(states: Iterable[tuple[Ref, State]]) -> list[Available]:
 
 def bound(construction: Construction, scope: Scope) -> Bound:
     """A construction's references dereferenced in a scope: the instance at each premise
-    field's reference, and for each tuple field every element scope's instance at the element
-    references placed in that element's scope, its position's for a fixed tuple, in element
-    order; for each premise nothing fills, what its references dereferenced to."""
+    field's reference; for each tuple field the one collection among its candidates whose
+    holder is available with it, and every element scope's instance at the element references
+    placed in that element's scope, its position's for a fixed tuple, in element order; for
+    each premise nothing fills, what its references dereferenced to."""
     given: Given = {}
     provenance: Provenance = {}
     unfilled: dict[Premise, tuple[tuple[Ref, State], ...]] = {}
     cls = construction.cls
     for name, refs in construction.premises.items():
         states = observed(refs, scope)
-        found = present(available(states), cls, name)
+        found = one(available(states), cls, name, "instances")
         if found is None:
             unfilled[name, None] = states
         else:
             provenance[name], given[name] = (found.path,), found.instance
-    for name, collected in construction.collections.items():
-        elements = scope.collection(collected.key)
-        if elements is None:
-            unfilled[name, None] = observed((collected.holder,), scope)
+    for name, candidates in construction.collections.items():
+        states = observed((c.holder for c in candidates), scope)
+        held = [
+            (c, elements)
+            for c, (_, state) in zip(candidates, states, strict=True)
+            if isinstance(state, Available) and (elements := scope.collection(c.key)) is not None
+        ]
+        collected = one(held, cls, name, "collections")
+        if collected is None:
+            unfilled[name, None] = states
             continue
-        picked: list[Available] = []
-        for index, element in enumerate(elements):
-            states = observed((r for r in collected.elements if r.scope == element.site), element)
-            found = present(available(states), cls, name)
+        picked_: list[Available] = []
+        for index, element in enumerate(collected[1]):
+            at_element = observed(
+                (r for r in collected[0].elements if r.scope == element.site), element
+            )
+            found = one(available(at_element), cls, name, "instances")
             if found is None:
-                unfilled[name, index] = states
+                unfilled[name, index] = at_element
             else:
-                picked.append(found)
-        if len(picked) == len(elements):
-            provenance[name] = tuple(f.path for f in picked)
-            given[name] = tuple(f.instance for f in picked)
+                picked_.append(found)
+        if len(picked_) == len(collected[1]):
+            provenance[name] = tuple(f.path for f in picked_)
+            given[name] = tuple(f.instance for f in picked_)
     return Bound(given, provenance, unfilled)
 
 

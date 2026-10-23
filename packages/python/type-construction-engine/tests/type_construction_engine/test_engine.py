@@ -40,6 +40,7 @@ from pydantic import (
 from pydantic_core import PydanticSerializationError
 
 from type_construction.engine import (
+    Collected,
     Constructed,
     ConstructedRef,
     Construction,
@@ -345,7 +346,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         (Operation, ()),
     }
     heard_ = HeardRef(placed[Asked, ELEMENT], Heard, (), Heard)
-    amount = heard_.held(Amount, "amount")
+    amount = heard_.held(Amount, "amount", optional=False)
     assert amount.site == (*ELEMENT, "Asked", "heard", "amount")
     assert placed[Asked, ELEMENT].premises == {
         "party": (InputRef((), ("deployment", "party"), Party),),
@@ -356,18 +357,22 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         "bound": (InputRef((), ("Limit",), Limit),),
     }
     assert placed[Portion, PART].premises == {
-        "left": (heard_.element(Part, "parts", "[]").held(Share, "share"),),
+        "left": (
+            heard_.element(Part, "parts", "[]", optional=False).held(
+                Share, "share", optional=False
+            ),
+        ),
         "right": (amount,),
     }
     assert placed[Portion, PART].premises["left"][0].site == (*PART, "share")
-    portions = placed[Portions, ELEMENT].collections["of"]
+    (portions,) = placed[Portions, ELEMENT].collections["of"]
     assert (portions.site, portions.name, portions.positions) == (PART[:-1], "parts", None)
     assert portions.holder == heard_
     assert portions.elements == (ConstructedRef(placed[Portion, PART]),)
     assert placed[Dear, ELEMENT].premises["noted"] == (
         HeardRef(placed[Notify, ELEMENT], Noted, (), Noted),
     )
-    total = placed[Total, ()].collections["of"]
+    (total,) = placed[Total, ()].collections["of"]
     assert total.site == ("request", "each")
     assert total.holder == InputRef((), ("request",), Elements)
     assert total.elements == (amount,)
@@ -375,9 +380,10 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
     assert concluded.premises == {"total": (ConstructedRef(placed[Total, ()]),)}
     assert [f.name for f in fields(Concluded) if f.fresh] == ["at"]
     assert declared(Concluded, "at").classes == (Instant,)
-    assert concluded.collections["valued"].site == ("request", "each")
-    assert concluded.collections["valued"].holder == total.holder
-    assert concluded.collections["valued"].elements == (
+    (valued,) = concluded.collections["valued"]
+    assert valued.site == ("request", "each")
+    assert valued.holder == total.holder
+    assert valued.elements == (
         ConstructedRef(placed[Cheap, ELEMENT]),
         ConstructedRef(placed[Dear, ELEMENT]),
     )
@@ -385,7 +391,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         "request": (InputRef((), ("request",), Elements),),
         "reply": (ConstructedRef(placed[Answered, ()]),),
     }
-    (cheap, _) = concluded.collections["valued"].elements
+    (cheap, _) = valued.elements
     assert isinstance(cheap, ConstructedRef)
     assert cheap.construction is placed[Cheap, ELEMENT]
     refs = [
@@ -393,7 +399,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         for c in placed.values()
         for refs in (
             *c.premises.values(),
-            *((col.holder, *col.elements) for col in c.collections.values()),
+            *((col.holder, *col.elements) for cols in c.collections.values() for col in cols),
         )
         for r in refs
     ]
@@ -655,7 +661,11 @@ def test_two_facts_told_apart_by_complementary_relations_are_proven_exclusive(
     )
     assert all(e.contradicted is False for e in proof.existences)
     faults = symbolic(FAULTS.Operation, models(FAULTS))
-    either = {(e.left.cls, e.right.cls): e for e in exclusions(faults.constructions)}
+    either = {
+        (e.left.cls, e.right.cls): e
+        for e in exclusions(faults.constructions)
+        if not isinstance(e.left, Collected) and not isinstance(e.right, Collected)
+    }
     assert not either[FAULTS.AtOrUnder, FAULTS.Exactly].established
     assert either[FAULTS.Priced, FAULTS.Free].established
 
@@ -689,16 +699,16 @@ def test_the_proof_refuses_every_fault_at_once() -> None:
         ("undecided", ("Charge",)),
     }
     assert found["ambiguous", ("Named", "name")] == (
-        "Named.name has two sources: Name is at 2 sites here: request.each.[].name,"
-        " request.each.[].Asked.heard.name; hold what tells them apart"
+        "Named.name at request.each.[] may hold both Name at request.each.[].name and Name at"
+        " request.each.[].Asked.heard.name; nothing available with them excludes either"
     )
     assert found["ambiguous", ("Spared", "party")] == (
-        "Spared.party has two sources: Spare is at 2 sites here: deployment.spare,"
-        " deployment.standby; hold what tells them apart"
+        "Spared.party at request.each.[] may hold both Spare at deployment.spare and Spare at"
+        " deployment.standby; nothing available with them excludes either"
     )
     assert found["ambiguous", ("Total", "of")] == (
-        "Total.of has two sources: Amount is collected by 2: request.each, request.others; hold"
-        " what tells them apart"
+        "Total.of at the root may hold both Amount in Elements.each at request.each and Amount"
+        " in Elements.others at request.others; nothing available with them excludes either"
     )
     assert found["unplaceable", ("Twin",)] == (
         "Twin.element, Twin.second are never visible from one scope; a class over two sibling"
