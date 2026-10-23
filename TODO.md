@@ -21,49 +21,47 @@ Preserve occurrence identity, provenance, diagnostics, and OpenTelemetry context
 
 ### Task 4: Route-Local Proof and Construction Soundness - Not Done
 
-Make symbolic proof and runtime construction agree on what can be constructed, from which premises, and under which conditions.
+Replace class-global proof reasoning with **occurrence-bound proof over the existing `Construction` graph**.
 
-Proof must derive its conclusions from the same Pydantic declarations and binding semantics used by runtime. Preserve collection cardinality, alternatives, conditional evidence, and occurrence-specific dependencies.
+- Prove required premises jointly, alternatives exclusively, and collections within their actual element scopes and cardinalities.
+- Bind conditions and constraints to their actual source references. Preserve conditional evidence without inventing facts from absence or refutation.
+- Derive proof conclusions from Pydantic's validated type semantics and occurrence-specific knowledge. Distinguish established, contradicted, and unproven.
+- Make symbolic proof and runtime construction agree. Remove class-global coexistence, reachability, and duplicated proof interpretations.
 
-Eliminate class-global assumptions, false ambiguities, invented evidence, and duplicated proof logic.
-
-Verify that proof depends only on the program's declarations and their type semantics, not on specific connection implementations, transports, or infrastructure providers.
-
-**Outcome:** Route-local proof accurately represents the construction possibilities and constraints of each route.
+**Outcome:** Each route has a sound proof of its construction possibilities, dependencies, and conditions, independent of infrastructure implementations.
 
 ### Task 5: Occurrence-Bound Effect Authorization - Not Done
 
-Ensure every executable effect is authorized by valid evidence belonging to the correct occurrence.
+**Derive effect authorization from Task 4's proven construction relationships.** Do not introduce a separate policy model.
 
-Use the occurrence identity and provenance established in Task 1 and the proof semantics verified in Task 4. Authorization must remain correct across repeated entities, conditional facts, mutually exclusive outcomes, and alternative construction paths.
+- Establish each action's required evidence and branch conditions from its declared premises.
+- Reject actions whose declarations do not establish why that effect is authorized, including actions missing the evidence that distinguishes mutually exclusive outcomes.
+- At runtime, authorize against the actual occurrence's admitted evidence and provenance. Evidence from another scope, invocation, or refuted condition cannot authorize an effect.
+- Preserve Pydantic validation, structured concurrency, and atomic pass-level evidence admission.
 
-Prevent unrelated, missing, or refuted evidence from authorizing an effect. Keep authorization declarative rather than introducing a procedural policy engine.
+**Outcome:** An effect executes only when the correct occurrence's actual evidence satisfies its proven authorization requirements.
 
-**Outcome:** Effects execute only when their actual premises establish the required authority.
+### Task 6: Declarative CLI Projection - Not Done
 
-### Task 6: Complete Declarative CLI Projection - Not Done
+**Project the CLI directly from Pydantic declarations.** No independent CLI schema, validation language, or construction semantics.
 
-Derive the CLI from the program's Pydantic declarations without introducing a parallel input schema.
+- Support scalar, vocabulary, nested value, union, collection, optional, and defaulted inputs.
+- Preserve native Pydantic admission, aliases, errors, and Python/JSON equivalence.
+- Keep computed values non-writable and infrastructure configuration separate from business inputs.
+- Render structured replies and diagnostics without reinterpreting their meaning.
 
-Support the relevant scalar, vocabulary, value, union, collection, optional, and nested structures. Preserve Pydantic validation, meaningful errors, and consistent Python, JSON, and CLI semantics.
-
-Ensure computed values remain non-writable and execution-specific details remain properly separated from developer-facing inputs.
-
-**Outcome:** A complete, type-driven CLI that faithfully exposes the program's declared interface.
+**Outcome:** The CLI faithfully exposes the declared program without introducing another model of it.
 
 ### Task 7: End-to-End Verification and Engine Simplification - Not Done
 
-Verify the complete framework across construction, proof, execution, effects, interfaces, and failure paths.
+**Prove that declarations, symbolic proof, runtime construction, effect authorization, and external interfaces implement one coherent program.**
 
-Test repeated and nested occurrences, conditional evidence, invalid inputs, computation, concurrency, cancellation, partial resource initialization, and cleanup.
+- Compare proof conclusions against actual construction using exhaustive bounded cases and adversarial generated programs.
+- Verify repeated occurrences, alternatives, conditional evidence, collections, unknown semantics, effects, cancellation, resources, provenance, and telemetry.
+- Substitute concrete capability implementations without changing proof, construction, or authorization.
+- Remove superseded abstractions, duplicate interpretations, compatibility machinery, and dead code. Reconcile documentation with the verified design.
 
-Verify occurrence provenance, actionable diagnostics, OpenTelemetry trace continuity, and optional Logfire interoperability across ordinary Python execution and Pydantic validation.
-
-Remove superseded abstractions, compatibility machinery, duplicate validation paths, dead code, and obsolete tests. Reconcile architecture documentation with the final design.
-
-Verify infrastructure independence by substituting concrete implementations of typed capabilities without modifying engine construction, proof, or effect authorization. Preserve the ability to project programs onto different interfaces and execution infrastructure without introducing a plugin registry or parallel execution model.
-
-**Outcome:** A coherent, production-ready type-construction engine with one authoritative declarative model and minimal necessary machinery.
+**Outcome:** A production-ready, irreducible type-construction engine whose correctness follows from one authoritative declarative model.
 
 ## Next
 
