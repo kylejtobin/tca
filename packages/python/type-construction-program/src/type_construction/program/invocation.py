@@ -5,31 +5,40 @@ accepted input, each piece of admitted evidence, each effect intent committed be
 and each attempt's outcome. The position of an entry in the history is its identity within the
 invocation; the evaluator reads the history and nothing else.
 
+An occurrence is where a value comes from, not what class it has. A ``Site`` is a value found
+in the history: the evidence it is in and the path to it, element indices included, so the two
+lines of one order are two occurrences however equal their content. A ``Built`` is a value
+constructed from premises: the class and the occurrence of each premise. ``Elements`` is a
+collection of occurrences. An ``EffectIdentity`` is one logical external operation: the
+invocation, the request class sent, and the occurrence of the request. It is derived, so the
+same history yields the same identity; it is recorded, because dispatch follows the record.
+Attempts of one identity are numbered; a retry is a new attempt, not a new identity. A request
+built from a different element, or from different evidence, is a different operation; a request
+built from the same occurrences is the same one, however many premises hold it.
+
 The functions here are the host protocol in its smallest form. ``accept`` opens an invocation.
 ``admit`` validates a delivery against the program's declared receives, ties it to the invocation
 by the declared correlation or by the intent it answers, refuses what is closed, duplicated or
-conflicting, and records it as evidence. ``intend`` commits the evaluator's proposed dispatches
-before anything is sent. ``perform``, ``acknowledge``, ``failed`` and ``uncertain`` record what
-one attempt produced, as the capability reports it: the result, which becomes evidence in the
-same step; a receipt, which does not; a failure that did not happen; or an outcome that is not
-known. Which of these came back is the capability's report, not an inference from the payload's
-shape: a receipt may have the shape of a result. Nothing here calls an external
-system, reads a clock, or decides a business branch.
-
-An ``EffectIdentity`` is one logical external operation: the invocation, the request class
-sent, and the evidence the request was constructed from. It is derived, so the same history
-yields the same identity; it is recorded, because dispatch follows the record. Attempts of one
-identity are numbered; a retry is a new attempt, not a new identity.
+conflicting, and records it as evidence. A correlation whose subject enters a collection ties the
+delivery to the one element whose value is equal, recorded as the evidence's ``element``.
+``intend`` commits the evaluator's proposed dispatches before anything is sent. ``perform``,
+``acknowledge``, ``failed`` and ``uncertain`` record what one attempt produced, as the capability
+reports it: the result, which becomes evidence in the same step; a receipt, which does not; a
+failure that did not happen; or an outcome that is not known. Which of these came back is the
+capability's report, not an inference from the payload's shape: a receipt may have the shape of a
+result. Nothing here calls an external system, reads a clock, or decides a business branch.
 
 These are in-memory records for contract experiments. They are not a durable codec, and nothing
 here demonstrates recovery, concurrency or worker ownership.
 """
 
+from typing import cast
+
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, TypeAdapter, ValidationError
 
 from type_construction.world import Scalar
 
-from .declaration import Correlation, Interaction, Program, Source, at
+from .declaration import EACH, Correlation, Interaction, Program, Source, steps
 
 RECORDED = ConfigDict(frozen=True, strict=True, extra="forbid", validate_default=True)
 """Configuration for a recorded entry: strict, frozen, no undeclared fields."""
@@ -48,14 +57,59 @@ class DeliveryId(Scalar[str]):
     root: str = Field(min_length=1)
 
 
+class Site(BaseModel):
+    """A value found in the history: the evidence it is in and the path to it, with field names
+    and element indices. Two elements of one collection are two sites."""
+
+    model_config = RECORDED
+
+    evidence: int
+    path: tuple[str | int, ...] = ()
+
+    def __hash__(self) -> int:
+        return hash((self.evidence, self.path))
+
+    def within(self, *more: str | int) -> Site:
+        """The site further along the path."""
+        return Site(evidence=self.evidence, path=(*self.path, *more))
+
+
+class Built(BaseModel):
+    """A value constructed from premises: the class and the occurrence of each premise, in
+    field order. A constant, constructed from nothing, has no parts."""
+
+    model_config = RECORDED
+
+    kind: str
+    parts: tuple[tuple[str, "Occurrence"], ...] = ()
+
+    def __hash__(self) -> int:
+        return hash((self.kind, self.parts))
+
+
+class Elements(BaseModel):
+    """A collection of occurrences, in element order."""
+
+    model_config = RECORDED
+
+    of: tuple["Occurrence", ...]
+
+    def __hash__(self) -> int:
+        return hash(self.of)
+
+
+type Occurrence = Site | Built | Elements
+"""Where a value comes from: found at a site, built from premises, or a collection of them."""
+
+
 class EffectIdentity(BaseModel):
     """One logical external operation of one invocation.
 
     The invocation keeps two invocations' operations apart. The request class keeps two
-    intended operations apart when their request bodies are equal. The premises, the history
-    positions of the evidence the request was constructed from, make a request constructed
-    from new evidence a new operation. Nothing about the request's payload, or any attempt, is
-    part of it.
+    intended operations apart when their request bodies are equal. The occurrence of the
+    request keeps apart two requests built from different elements or different evidence,
+    equal or not in content, and makes one of two requests built from the same occurrences.
+    Nothing about the request's payload, or any attempt, is part of it.
     """
 
     model_config = RECORDED
@@ -63,12 +117,11 @@ class EffectIdentity(BaseModel):
     invocation: InvocationId
     operation: str
     """The durable name of the request class sent."""
-    premises: tuple[int, ...]
-    """The history positions of the evidence the request was constructed from, ascending."""
+    occurrence: Occurrence
+    """How the request was constructed: the occurrence of each premise."""
 
     def __hash__(self) -> int:
-        """Hashable by its three parts, so that it keys the intents and attempts it names."""
-        return hash((self.invocation.root, self.operation, self.premises))
+        return hash((self.invocation.root, self.operation, self.occurrence))
 
 
 class Delivery(BaseModel):
@@ -102,8 +155,9 @@ class Returned(BaseModel):
 
 
 class Evidence(BaseModel):
-    """An admitted record: the value, its source, where it came from, and the intent it
-    answers when it answers one. Its ``id`` is its position in the history."""
+    """An admitted record: the value, its source, where it came from, the intent it answers when
+    it answers one, and the input element it correlates to when its correlation enters a
+    collection. Its ``id`` is its position in the history."""
 
     model_config = RECORDED
 
@@ -112,6 +166,7 @@ class Evidence(BaseModel):
     value: SerializeAsAny[BaseModel]
     origin: Delivered | Returned
     answers: EffectIdentity | None = None
+    element: Site | None = None
 
 
 class Accepted(BaseModel):
@@ -262,25 +317,27 @@ class Unmatched(BaseModel):
 
 
 class Ambiguous(BaseModel):
-    """More than one declared receive of the source admits the payload."""
+    """More than one declared receive of the source admits the payload, or more than one element
+    of the input matches its correlation."""
 
     model_config = RECORDED
 
     source: Source
     admitted: tuple[type[BaseModel], ...]
+    elements: tuple[Site, ...] = ()
 
 
 class Uncorrelated(BaseModel):
-    """The delivery is not tied to this invocation: a declared equality does not hold, or the
-    payload is what a solicited receive with no field correlation says and the delivery names
-    no intent."""
+    """The delivery is not tied to this invocation: a declared equality does not hold at any
+    element, or the payload is what a solicited receive says, the receive has no field
+    correlation or varies per element, and the delivery names no intent."""
 
     model_config = RECORDED
 
     received: type[BaseModel]
     correlation: Correlation | None
     found: SerializeAsAny[BaseModel] | None = None
-    expected: SerializeAsAny[BaseModel] | None = None
+    expected: tuple[SerializeAsAny[BaseModel], ...] = ()
 
 
 class UnknownIntent(BaseModel):
@@ -386,34 +443,96 @@ def validated(
     return admitted, tuple(errors)
 
 
-def correlated(invocation: Invocation, interaction: Interaction, value: BaseModel) -> None:
-    """Check each declared equality between the received value and the accepted input."""
+def at(value: object, path: str) -> object:
+    """The value at a dotted field path that enters no collection."""
+    for name in steps(path):
+        value = getattr(value, name)
+    return value
+
+
+def everywhere(value: object, site: Site, path: tuple[str, ...]) -> list[tuple[object, Site]]:
+    """Every value at a path that may enter collections, each with its site."""
+    if not path:
+        return [(value, site)]
+    name, *rest = path
+    if name == EACH:
+        if not isinstance(value, tuple):
+            msg = f"{site!r}: {EACH} enters a collection, and this is not one"
+            raise TypeError(msg)
+        elements: list[tuple[object, Site]] = []
+        for index, item in enumerate(cast("tuple[object, ...]", value)):
+            elements.extend(everywhere(item, site.within(index), tuple(rest)))
+        return elements
+    return everywhere(getattr(value, name), site.within(name), tuple(rest))
+
+
+def correlated(
+    program: Program, invocation: Invocation, interaction: Interaction, value: BaseModel
+) -> Site | None:
+    """Check each declared equality between the received value and the accepted input, and
+    return the one input element the record is tied to when a subject path enters a collection.
+    Equality at no element is uncorrelated; at more than one, ambiguous: the declaration does
+    not tell those elements apart."""
+    element: Site | None = None
     for correlation in interaction.correlated:
         found = at(value, correlation.received)
-        expected = at(invocation.input, correlation.subject)
-        if found != expected:
+        candidates = everywhere(invocation.input, Site(evidence=0), steps(correlation.subject))
+        matching = [site for expected, site in candidates if expected == found]
+        if not matching:
             raise Refusal(
                 Uncorrelated(
                     received=type(value),
                     correlation=correlation,
                     found=found if isinstance(found, BaseModel) else None,
-                    expected=expected if isinstance(expected, BaseModel) else None,
+                    expected=tuple(e for e, _ in candidates if isinstance(e, BaseModel)),
                 )
             )
+        if not program.subject_collections(correlation):
+            continue
+        if len(matching) > 1:
+            kinds = (type(value),)
+            raise Refusal(
+                Ambiguous(source=interaction.source, admitted=kinds, elements=tuple(matching))
+            )
+        (site,) = matching
+        chosen = Site(evidence=0, path=site.path[: steps(correlation.subject).index(EACH) + 1])
+        if element is not None and element != chosen:
+            kinds = (type(value),)
+            raise Refusal(
+                Ambiguous(source=interaction.source, admitted=kinds, elements=(element, chosen))
+            )
+        element = chosen
+    return element
+
+
+def varying(program: Program, interaction: Interaction) -> bool:
+    """Whether a receive is one per element: its request, or the element its correlation
+    selects, varies over a collection."""
+    if interaction.sends is not None:
+        return bool(program.analysis.walked(interaction.sends))
+    return program.element_collection(interaction) is not None
 
 
 def closed(
-    program: Program, invocation: Invocation, interaction: Interaction, kind: type[BaseModel]
+    program: Program, invocation: Invocation, interaction: Interaction, arriving: Evidence
 ) -> None:
-    """Refuse a receive that says nothing more: one held as a single record and already said,
-    or one whose declared closing evidence is admitted."""
-    said = invocation.said(interaction)
-    if program.analysis.held.get(kind, None) is None and said:
-        raise Refusal(Closed(received=kind, by=said[0].id))
+    """Refuse a receive that says nothing more: one whose declared closing evidence is admitted,
+    or one held as a single record whose same occurrence was already said. For a receive that
+    is one per element, the same occurrence is the same intent answered or the same element
+    correlated to; for one that is one per invocation, any record the source said."""
+    kind = type(arriving.value)
     if interaction.closed_by is not None:
         closing = [e for e in invocation.evidence if isinstance(e.value, interaction.closed_by)]
         if closing:
             raise Refusal(Closed(received=kind, by=closing[0].id))
+        return
+    said = invocation.said(interaction)
+    if varying(program, interaction):
+        said = tuple(
+            e for e in said if e.answers == arriving.answers and e.element == arriving.element
+        )
+    if said:
+        raise Refusal(Closed(received=kind, by=said[0].id))
 
 
 def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invocation:
@@ -426,7 +545,8 @@ def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invoc
     receives and its solicited receives with a field correlation; it must validate as exactly
     one of what they say. A delivery already admitted under its identity is one claim: the same
     payload changes nothing, a different one is a conflict. Every declared correlation must
-    hold, and a receive that says nothing more refuses.
+    hold, at exactly one element where the subject is in a collection, and a receive that says
+    nothing more refuses.
     """
     at_source = [i for i in program.interactions if i.source == delivery.source]
     if delivery.answers is not None:
@@ -460,15 +580,18 @@ def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invoc
             if prior.value == value:
                 return invocation
             raise Refusal(Conflict(delivery=delivery.id, prior=prior.id))
-    correlated(invocation, interaction, value)
-    closed(program, invocation, interaction, type(value))
+    element = correlated(program, invocation, interaction, value)
+    if delivery.answers is None and interaction.sends is not None and varying(program, interaction):
+        raise Refusal(Uncorrelated(received=type(value), correlation=None))
     evidence = Evidence(
         id=invocation.revision,
         source=delivery.source,
         value=value,
         origin=Delivered(delivery=delivery.id),
         answers=delivery.answers,
+        element=element,
     )
+    closed(program, invocation, interaction, evidence)
     return invocation._with(Admitted(evidence=evidence))  # pyright: ignore[reportPrivateUsage]
 
 

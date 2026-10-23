@@ -121,8 +121,8 @@ def test_closure_is_declared_or_the_program_is_refused() -> None:
         )
     message = str(refusal.value)
     assert "Hammered.highest.of" in message
-    assert "Bid" in message
-    assert "declares no closure" in message
+    assert "there is one, not many" in message
+    assert "declares what closes it" in message
 
 
 def test_a_tuple_supplied_in_the_input_is_closed_at_acceptance() -> None:

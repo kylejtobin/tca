@@ -2,7 +2,8 @@
 
 Approvals arrive from reviewers over time, and the reviewers say when the review is closed.
 ``Sole`` is ``Only`` over every approval: exactly one. With none, or with two, the case is not
-decided this way, and the program declares no other way.
+decided this way, and the program declares no other way. ``Acknowledged`` instead thanks each
+reviewer whose approval arrived: one ``Thanks`` per approval, each with its own send.
 """
 
 from pydantic import Field
@@ -47,6 +48,33 @@ class Decided(Fact):
     approval: Sole
 
 
+class ThankRequest(Value):
+    """What the program sends the reviewers: thanks for one approval."""
+
+    approval: Approval
+
+
+class Thanked(Record):
+    """The reviewers' word that one reviewer was thanked."""
+
+    case: CaseId = Field(alias="case_id")
+    reviewer: Reviewer
+
+
+class Thanks(Fact):
+    """One approval and the thanks sent for it."""
+
+    approval: Approval
+    sent: Thanked
+
+
+class Acknowledged(Fact):
+    """The outcome: every approval received before the review closed, each thanked."""
+
+    case: Case
+    thanks: tuple[Thanks, ...]
+
+
 REVIEWERS = Source("reviewers")
 BY_CASE = (Correlation(received="case", subject="case.id"),)
 
@@ -55,6 +83,11 @@ APPROVALS = Interaction(
 )
 CLOSING = Interaction(source=REVIEWERS, receives=(ReviewClosed,), correlated=BY_CASE)
 
+THANKS = Interaction(source=REVIEWERS, sends=ThankRequest, receives=(Thanked,))
+
 REVIEW = Program(goal=Decided, accepts=ReviewCase, interactions=(APPROVALS, CLOSING))
+GRATITUDE = Program(
+    goal=Acknowledged, accepts=ReviewCase, interactions=(APPROVALS, CLOSING, THANKS)
+)
 
 CASE = ReviewCase(case=Case(id=CaseId("case-3")))

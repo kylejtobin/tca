@@ -17,6 +17,7 @@ from type_construction.program import (
     Acknowledged,
     Attempted,
     Blocked,
+    Built,
     Completed,
     Correlation,
     Delivered,
@@ -26,6 +27,7 @@ from type_construction.program import (
     Program,
     Refusal,
     Returned,
+    Site,
     Solicited,
     Unclosed,
     Uncorrelated,
@@ -151,7 +153,7 @@ def test_a_deadline_is_a_send_to_the_clock_and_a_receive_from_it() -> None:
     assert any(isinstance(a, Unclosed) and a.held == 0 for a in opening.awaiting)
 
     invocation, read = performing(program, invocation, NOW)
-    assert read.identity.premises == ()
+    assert read.identity.occurrence == Built(kind="type_construction_program.auction.ReadClock")
     (reading,) = invocation.evidence
     assert reading.value == auction.Now(at=auction.Instant(NOON))
 
@@ -161,7 +163,8 @@ def test_a_deadline_is_a_send_to_the_clock_and_a_receive_from_it() -> None:
     )
     assert isinstance(deadline.request, auction.Deadline)
     assert deadline.request.grace.root == timedelta(hours=1)
-    assert deadline.identity.premises == (reading.id,)
+    assert isinstance(deadline.identity.occurrence, Built)
+    assert dict(deadline.identity.occurrence.parts)["since"] == Site(evidence=reading.id)
     invocation = acknowledge(program, invocation, deadline.identity, TIMER_SET)
 
     waiting = frontier(evaluate(program, invocation))
@@ -228,7 +231,7 @@ def test_a_timer_answer_naming_no_intent_cannot_be_tied_to_the_invocation() -> N
     foreign = EffectIdentity(
         invocation=InvocationId("other"),
         operation="type_construction_program.auction.Deadline",
-        premises=(1,),
+        occurrence=Site(evidence=1),
     )
     with pytest.raises(Refusal):
         admit(program, invocation, delivered(auction.CLOCK, "t-9", ELAPSED, answers=foreign))

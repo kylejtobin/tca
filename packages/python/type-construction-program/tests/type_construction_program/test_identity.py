@@ -5,18 +5,21 @@ operations?
 The hypothesis under test is the simplest durable identity: a hash of the request as sent. The
 second experiment breaks it: two intended operations of one invocation have byte-equal request
 bodies and must not share an identity. The identity that repairs it is the invocation, the request
-class, and the history positions of the evidence the request was constructed from. It is derived
-from the history, so it is reconstructed rather than allocated; it is also recorded, because
-dispatch follows the record.
+class, and the occurrence of the request: the site of each premise, element indices included, or
+how it was built. It is derived from the history, so it is reconstructed rather than allocated; it
+is also recorded, because dispatch follows the record. ``test_occurrences`` carries the case that
+the coarser identity by evidence alone fails: two equal lines of one order.
 """
 
 import pytest
 
 from type_construction.program import (
+    Built,
     EffectIdentity,
     Intended,
     InvocationId,
     Refusal,
+    Site,
     UnknownIntent,
     accept,
     admit,
@@ -54,7 +57,9 @@ def test_two_operations_with_equal_request_bodies_have_different_identities() ->
     assert isinstance(charge.request, fulfillment.ChargeRequest)
     assert isinstance(hold.request, fulfillment.HoldRequest)
     assert hold.request.model_dump_json() == charge.request.model_dump_json()
-    assert hold.identity.premises == charge.identity.premises == (0,)
+    assert isinstance(hold.identity.occurrence, Built)
+    assert isinstance(charge.identity.occurrence, Built)
+    assert hold.identity.occurrence.parts == charge.identity.occurrence.parts
     assert hold.identity != charge.identity
 
 
@@ -84,7 +89,13 @@ def test_an_identity_is_reconstructed_from_the_history_not_allocated() -> None:
     assert before.dispatch[0].identity == EffectIdentity(
         invocation=InvocationId("inv"),
         operation="type_construction_program.fulfillment.ChargeRequest",
-        premises=(0,),
+        occurrence=Built(
+            kind="type_construction_program.fulfillment.ChargeRequest",
+            parts=(
+                ("order", Site(evidence=0, path=("order", "id"))),
+                ("amount", Site(evidence=0, path=("order", "total"))),
+            ),
+        ),
     )
 
 
@@ -95,8 +106,18 @@ def test_a_request_built_from_later_evidence_names_that_evidence() -> None:
     invocation = admit(program, invocation, delivered(fulfillment.APPROVALS, "ap-1", APPROVED))
     captured, approved = invocation.evidence
     (ship,) = frontier(evaluate(program, invocation)).dispatch
-    assert ship.identity.premises == (0, captured.id, approved.id)
-    assert charge.identity.premises == (0,)
+    assert isinstance(ship.identity.occurrence, Built)
+    parts = dict(ship.identity.occurrence.parts)
+    assert parts["approval"] == Site(evidence=approved.id)
+    assert isinstance(parts["authority"], Built)
+    authority = dict(parts["authority"].parts)
+    assert authority["payment"] == Site(evidence=captured.id)
+    assert authority["order"] == Site(evidence=0, path=("order",))
+    assert isinstance(charge.identity.occurrence, Built)
+    assert {s for _, s in charge.identity.occurrence.parts} == {
+        Site(evidence=0, path=("order", "id")),
+        Site(evidence=0, path=("order", "total")),
+    }
     assert captured.answers == charge.identity
 
 

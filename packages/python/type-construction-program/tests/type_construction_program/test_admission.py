@@ -53,7 +53,7 @@ def test_equal_field_values_do_not_correlate_without_the_declared_relationship()
     assert reason.received is fulfillment.Captured
     assert reason.correlation == fulfillment.BY_ORDER[0]
     assert reason.found == fulfillment.OrderId("o-2")
-    assert reason.expected == fulfillment.OrderId("o-1")
+    assert reason.expected == (fulfillment.OrderId("o-1"),)
 
 
 def test_a_record_is_admitted_only_from_the_source_declared_for_it() -> None:
