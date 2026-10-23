@@ -5,7 +5,7 @@ when the answer failed, when a close raises and when a cancellation lands during
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -78,8 +78,8 @@ QUOTES = (
     "request.cart.lines.[0].Quote, request.cart.lines.[1].Quote, request.gifts.lines.[0].Quote,"
     " request.pair.lines.[0].Quote, request.pair.lines.[1].Quote"
 )
-"""The five quotes cancelled when the solo line's fails, in the order they were constructed;
-the screening, constructed at the root before them, comes first when it is cancelled too."""
+"""The five quotes cancelled when the solo line's fails, in the order they were constructed:
+the second pass's, after the screening's record was admitted in the first."""
 
 
 class Flight:
@@ -136,12 +136,12 @@ def quoting(flight: Flight, *, breaking: str | None = None) -> Perform[Quote, Js
     return perform
 
 
-def screening(flight: Flight) -> Perform[Screen, Json]:
-    """A screening's ``perform`` that waits at the flight's gate."""
+def screening() -> Perform[Screen, Json]:
+    """A screening's ``perform`` that notes its party: the screening is the first pass's one
+    action, since the totals complete an order the screening decides."""
 
     async def perform(self: Screen) -> Json:
         HELD.append(id(self.party))
-        await flight.held("screen")
         return Json(self.party.says.root)
 
     return perform
@@ -236,9 +236,9 @@ async def test_a_close_that_raises_after_a_failed_answer_closes_the_rest_and_kee
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recording(monkeypatch, program.Fraud, broken=True)
-    flight = Flight(6)
+    flight = Flight(5)
     monkeypatch.setattr(Quote, "perform", quoting(flight, breaking="boom"))
-    monkeypatch.setattr(Screen, "perform", screening(flight))
+    monkeypatch.setattr(Screen, "perform", screening())
     deployment = config(program)()
     request = PlaceOrder.model_validate_json(ORDER.replace('"pot"', '"boom"'))
     with pytest.raises(OSError, match="socket already gone") as failed:
@@ -250,8 +250,8 @@ async def test_a_close_that_raises_after_a_failed_answer_closes_the_rest_and_kee
     (down,) = group.exceptions
     assert isinstance(down, ConnectionError)
     assert down.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.__notes__ == [f"heard none; cancelled Screen, {QUOTES}; admitted none"]
-    assert sorted(flight.cancelled) == ["mug", "mug", "screen", "tea", "tea", "tea"]
+    assert group.__notes__ == [f"heard none; cancelled {QUOTES}; admitted none"]
+    assert sorted(flight.cancelled) == ["mug", "mug", "tea", "tea", "tea"]
 
 
 @pytest.mark.asyncio
@@ -261,9 +261,9 @@ async def test_a_cancellation_that_lands_during_shutdown_does_not_keep_the_rest_
 ) -> None:
     closing = asyncio.Event()
     recording(monkeypatch, program.Fraud, closing=closing)
-    flight = Flight(7)
+    flight = Flight(6)
     monkeypatch.setattr(Quote, "perform", quoting(flight))
-    monkeypatch.setattr(Screen, "perform", screening(flight))
+    monkeypatch.setattr(Screen, "perform", screening())
     deployment = config(program)()
     request = PlaceOrder.model_validate_json(ORDER)
 
@@ -279,7 +279,7 @@ async def test_a_cancellation_that_lands_during_shutdown_does_not_keep_the_rest_
     with pytest.raises(asyncio.CancelledError):
         await server
     assert LOG == ["open:Catalog", "open:Fraud", "close:Fraud", "close:Catalog"]
-    assert len(flight.cancelled) == 7
+    assert len(flight.cancelled) == 6
     assert flight.waiting == 0
 
 
@@ -289,9 +289,9 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     exporter = exporting()
-    flight = Flight(7)
+    flight = Flight(6)
     monkeypatch.setattr(Quote, "perform", quoting(flight))
-    monkeypatch.setattr(Screen, "perform", screening(flight))
+    monkeypatch.setattr(Screen, "perform", screening())
     deployment = config(program)()
     assert isinstance(deployment, program.Deployment)
     proof = proven(program)
@@ -300,7 +300,7 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(0.05):
                 await answer(Checkout, request, deployment, proof)
-        assert len(flight.cancelled) == 7
+        assert len(flight.cancelled) == 6
         assert flight.waiting == 0
         assert LOG == ["open:Catalog", "open:Fraud"]
         flight.gate.set()
@@ -311,7 +311,7 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     assert done.route.reply.model_dump_json() == (
         '{"cart":"10.00","gifts":"4","pair":"14.50","solo":"10"}'
     )
-    assert done.passes == 2
+    assert done.passes == 3
     assert len(HELD) == 7
     assert set(HELD) == set(OPENED) == {id(deployment.catalog), id(deployment.fraud)}
     quotes = [
@@ -325,11 +325,11 @@ async def test_a_deadline_cancels_the_pass_in_flight_and_the_opened_deployment_a
     cancelled, answered = by_name(exporter.get_finished_spans(), "Checkout")
     assert attributes(cancelled) == {"tca.request": "PlaceOrder", "tca.outcome": "cancelled"}
     assert cancelled.status.status_code.name == "UNSET"
-    assert admitted(cancelled) == []
+    assert admitted(cancelled) == ["Screen.heard"]
     assert attributes(answered) == {
         "tca.request": "PlaceOrder",
         "tca.outcome": "answered",
-        "tca.passes": 2,
+        "tca.passes": 3,
     }
     assert sorted(admitted(answered)) == sorted(
         f"{s}.heard" for s in ("Screen", *QUOTES.split(", "), "request.solo.lines.[0].Quote")
@@ -361,7 +361,7 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     (failed,) = group.value.exceptions
     assert type(failed) is failure
     assert failed.__notes__ == ["at request.solo.lines.[0].Quote"]
-    assert group.value.__notes__ == [f"heard Screen; cancelled {QUOTES}; admitted none"]
+    assert group.value.__notes__ == [f"heard none; cancelled {QUOTES}; admitted none"]
     if isinstance(failed, ValidationError):
         assert [(e["type"], e["loc"]) for e in failed.errors()] == errors
         assert failed.title == "Price"
@@ -372,7 +372,7 @@ async def test_one_action_failing_mid_pass_cancels_its_siblings_and_the_group_ho
     (route,) = by_name(spans, "Checkout")
     assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
     assert route.status.status_code.name == "ERROR"
-    assert admitted(route) == []
+    assert admitted(route) == ["Screen.heard"]
     actions = [s for s in spans if s.name != "Checkout"]
     assert len(actions) == 7
     assert parented(actions, route)
@@ -495,8 +495,8 @@ async def test_a_premise_the_party_decided_against_refuses_the_run_at_that_field
     ]
     (route,) = by_name(exporter.get_finished_spans(), "Cleared")
     assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "refused"}
-    assert len(admitted(route)) == 7
-    assert "Screen.heard" in admitted(route)
+    assert admitted(route) == ["Screen.heard"]
+    assert PERFORMED == ["screen"]
 
 
 @pytest.mark.asyncio
@@ -699,7 +699,7 @@ def test_a_refutable_kind_is_refuted_by_its_declared_condition_only() -> None:
             stalls.Low,
             ELEMENT,
             premises={
-                "value": (heard.held(stalls.Amount, "amount"),),
+                "value": (heard.held(stalls.Amount, "amount", conditional=False),),
                 "bound": (InputRef((), ("Limit",), stalls.Limit),),
             },
         ),
@@ -910,29 +910,18 @@ def test_a_mixed_refusal_is_a_failure_and_a_pure_one_a_refutation() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("parties")
-async def test_one_resolver_serves_construction_and_explanation_and_only_a_blocked_run_explains(
+async def test_one_resolver_serves_construction_and_explanation_from_one_evaluation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resolved: list[Ref] = []
-    explained: list[engine.Occurrence] = []
-    resolving, explaining = engine.resolve, engine.causes
+    resolving = engine.resolve
 
     def counting(ref: Ref, scope: Scope) -> engine.State:
         """``resolve`` that records each reference dereferenced, in a pass or at the end."""
         resolved.append(ref)
         return resolving(ref, scope)
 
-    def noting(
-        occurrence: engine.Occurrence,
-        unresolved: engine.Unresolved,
-        blocked: Mapping[engine.Occurrence, tuple[engine.Cause, ...]],
-    ) -> tuple[engine.Cause, ...]:
-        """``causes`` that records each occurrence explained."""
-        explained.append(occurrence)
-        return explaining(occurrence, unresolved, blocked)
-
     monkeypatch.setattr(engine, "resolve", counting)
-    monkeypatch.setattr(engine, "causes", noting)
     request = PlaceOrder.model_validate_json(ORDER)
     proof = proven(program)
     retained = {
@@ -947,19 +936,18 @@ async def test_one_resolver_serves_construction_and_explanation_and_only_a_block
     }
     done = await ran(Checkout, request, config(program)(), proof)
     assert isinstance(done, Run)
-    assert done.passes == 2
+    assert done.passes == 3
     assert resolved
     assert all(r in retained for r in resolved)
-    assert explained == []
     resolved.clear()
+    PERFORMED.clear()
     monkeypatch.setenv("FRAUD__SAYS", '{"status": "flagged", "reason": "velocity"}')
     blocked = await ran(program.Cleared, request, config(program)(), proof)
     assert isinstance(blocked, engine.Blocked)
     assert all(r in retained for r in resolved)
     (screened,) = (c for c in proof.constructs(program.Cleared) if c.cls is program.Screened)
     (screen,) = (c for c in proof.constructs(program.Cleared) if c.cls is program.Screen)
-    assert explained
-    assert all(o.scope is blocked.occurrence.scope for o in explained)
+    assert PERFORMED == ["screen"]
     (cause,) = blocked.causes
     assert isinstance(cause, engine.Unfilled)
     assert cause.ref is screened.premises["clear"][0]
@@ -976,19 +964,21 @@ async def test_an_action_that_cancels_itself_fails_the_pass_and_admits_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     exporter = exporting()
-    flight = Flight(6)
-    monkeypatch.setattr(Quote, "perform", quoting(flight))
+    flight = Flight(5)
+    quoting_ = quoting(flight)
 
-    async def quitting(self: Screen) -> Json:
-        """A screening that cancels its own task once its siblings are waiting."""
+    async def quitting(self: Quote) -> Json | Python:
+        """A catalog whose solo quote cancels its own task once its siblings are waiting."""
+        if self.line.sku.root != "pot":
+            return await quoting_(self)
         await flight.full.wait()
         task = asyncio.current_task()
         assert task is not None
         task.cancel()
         await asyncio.sleep(0)
-        return Json(self.party.says.root)
+        return Json('{"price": "10"}')
 
-    monkeypatch.setattr(Screen, "perform", quitting)
+    monkeypatch.setattr(Quote, "perform", quitting)
     request = PlaceOrder.model_validate_json(ORDER)
 
     async def releasing() -> None:
@@ -1001,23 +991,26 @@ async def test_an_action_that_cancels_itself_fails_the_pass_and_admits_none(
         await answer(Checkout, request, config(program)(), proven(program))
     await release
     said = str(failure.value)
-    assert said.startswith("an action of pass 1 cancelled itself; heard ")
-    assert said.endswith("; cancelled Screen; admitted none")
-    assert all(path in said for path in (*QUOTES.split(", "), "request.solo.lines.[0].Quote"))
+    assert said == (
+        f"an action of pass 2 cancelled itself; heard {QUOTES}; cancelled"
+        " request.solo.lines.[0].Quote; admitted none"
+    )
     assert flight.cancelled == []
     spans = exporter.get_finished_spans()
     (route,) = by_name(spans, "Checkout")
     assert attributes(route) == {"tca.request": "PlaceOrder", "tca.outcome": "failed"}
     assert route.status.status_code.name == "ERROR"
     assert route.status.description == "RuntimeError"
-    assert admitted(route) == []
-    assert [(e.name, dict(e.attributes or {})) for e in route.events] == [
-        ("exception", {"exception.type": "builtins.RuntimeError"})
-    ]
+    assert admitted(route) == ["Screen.heard"]
+    assert [e.name for e in route.events] == ["admitted", "exception"]
+    (quit_,) = [s for s in by_name(spans, "Quote") if site(s) == "request.solo.lines.[0].Quote"]
+    assert attributes(quit_)["tca.outcome"] == "cancelled"
+    assert quit_.status.status_code.name == "UNSET"
+    assert {attributes(s)["tca.outcome"] for s in by_name(spans, "Quote") if s is not quit_} == {
+        "heard"
+    }
     (screen,) = by_name(spans, "Screen")
-    assert attributes(screen)["tca.outcome"] == "cancelled"
-    assert screen.status.status_code.name == "UNSET"
-    assert {attributes(s)["tca.outcome"] for s in by_name(spans, "Quote")} == {"heard"}
+    assert attributes(screen)["tca.outcome"] == "heard"
 
 
 @pytest.mark.asyncio
@@ -1053,7 +1046,7 @@ async def test_a_failed_actions_span_names_the_failure_and_carries_nothing_the_p
     assert [(e.name, dict(e.attributes or {})) for e in broken.events] == [
         ("exception", {"exception.type": "pydantic_core._pydantic_core.ValidationError"})
     ]
-    assert [e.name for e in route.events] == ["exception"]
+    assert [e.name for e in route.events] == ["admitted", "exception"]
     exported = [
         *(str(v) for s in spans for v in attributes(s).values()),
         *(str(v) for s in spans for e in s.events for v in (e.attributes or {}).values()),

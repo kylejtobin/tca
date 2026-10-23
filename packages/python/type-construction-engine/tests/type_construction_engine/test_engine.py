@@ -347,7 +347,7 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         (Operation, ()),
     }
     heard_ = HeardRef(placed[Asked, ELEMENT], Heard, (), Heard)
-    amount = heard_.held(Amount, "amount")
+    amount = heard_.held(Amount, "amount", conditional=False)
     assert amount.site == (*ELEMENT, "Asked", "heard", "amount")
     assert placed[Asked, ELEMENT].premises == {
         "party": (InputRef((), ("deployment", "party"), Party),),
@@ -358,7 +358,11 @@ def test_the_proof_places_every_class_at_the_sites_its_fields_bind(proof: Proof)
         "bound": (InputRef((), ("Limit",), Limit),),
     }
     assert placed[Portion, PART].premises == {
-        "left": (heard_.element(Part, "parts", "[]").held(Share, "share"),),
+        "left": (
+            heard_.element(Part, "parts", "[]", conditional=False).held(
+                Share, "share", conditional=False
+            ),
+        ),
         "right": (amount,),
     }
     assert placed[Portion, PART].premises["left"][0].site == (*PART, "share")

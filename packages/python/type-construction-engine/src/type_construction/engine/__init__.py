@@ -66,25 +66,41 @@ available when every way both are clashes, which a run that found both would ref
 between; a construction never constructs when every way its premises are all available
 clashes. A way nothing refutes is open and establishes nothing: evidence of the same class at
 another site is another occurrence, a default is a default, and bounds that overlap do not say
-a run exists. ``Proof`` keeps each exclusion and each existence with its ways and clashes.
+a run exists. A reference to a member of what arrives or is heard carries the sites it is
+conditional on, each field on the way that admits another than it, ``None`` or another class,
+which is where a run that lacks it is blocked. ``Proof`` keeps each exclusion and each
+existence with its ways and clashes.
 
-An effect is performed because the answer needs it, with the evidence the action declares.
-Demand is read from the route's own construction backward, at the fixed point of what
-constructs without an effect: an occurrence not yet made needs, at each premise nothing fills
-yet, what the alternatives still pending need, and of several alternatives what every one of
-them needs, so an effect one alternative alone needs waits until it is the one left, the others
-refuted, absent or heard otherwise; an action needs itself. The route's needs are the pass's
-demand; a use that may apply demands nothing, the way left does. Of the demanded actions those
-whose every premise the scope supplies are constructed, from the exact occurrences bound there,
-each of its own class and holding the very instances supplied or the construction has failed,
-every one before any is performed; the ``Execution`` so made is what the effect boundary takes,
-made by that pass and nowhere else. So what reaches ``perform`` is of this route's proof, in a
-scope this invocation opened, needed, supplied, of the class the construction makes, and not
-performed before, by construction and not by a check afterwards. An action's evidence is its
-own fields: what holds it or its record decides whether it is needed, never what it may be
+An effect is performed because the answer needs it now, with the evidence the action
+declares. Each pass evaluates the route's own occurrence against what the run holds, and
+nothing else is evaluated. An occurrence made is evidence; one refuted, or a premise of which
+nothing fills, can never construct, with each cause; one whose premises are not all filled is
+open. Its premises are a conjunction, and among them the decisions are the fields some
+alternative of which is conditional, a refutable kind, a record among several its action hears,
+a member a record may withhold, or what is constructed from one of these, and the fields several
+alternatives are bound at. The decisions are evaluated first, every one, and while any is
+undecided the other premises are not evaluated at all: nothing on a branch is constructed before
+the branch is established, and an effect that only completes the branch waits, while the effects
+that produce the deciding evidence are performed. An alternative pending is evaluated through
+its reference: an occurrence that constructs once what it needs is performed is decided, and
+undecided seen through a reference that may yet dereference to nothing. An action whose premises
+are all filled is the frontier, performed now; an occurrence of any other kind whose premises
+are all filled is asked for on the spot, so what the answer needs is constructed as it is
+evaluated and what it does not need never is. Of several alternatives pending at one premise,
+those undecided contribute the effects that produce their deciding evidence; when every one is
+decided the premise needs what all of them need, and where they need nothing in common the
+choice is one nothing declared decides, never guessed: the run ends blocked naming the premise
+and what each alternative would perform. An occurrence is evaluated once per pass however many
+fields reach it; one on the way to itself is a cycle, which decides nothing and is not kept.
+The pass constructs each action of the frontier from the exact occurrences bound there, each of
+its own class and holding the very instances supplied or the construction has failed, every one
+before any is performed; the ``Execution`` so made is what the effect boundary takes, made by
+that pass and nowhere else. So what reaches ``perform`` is of this route's proof, in a scope this
+invocation opened, needed now, supplied, of the class the construction makes, and not performed
+before, by construction and not by a check afterwards. An action's evidence is its own fields:
+what holds it or its record decides whether and when it is needed, never what it may be
 performed with, so a consumer added weakens nothing and a branch's effect waits for the branch.
-A choice among effects the evidence present decides neither way is not guessed: the run ends
-blocked, naming the premise and what each alternative would perform. In the run every
+In the run every
 construction is kept with the witness of what supplied it: the reference bound at each premise
 and the occurrence it dereferenced to, the scope that owns the occurrence, what that scope
 holds it as and the admitted instance, each collection and each element's in order. The same
@@ -95,29 +111,29 @@ candidate: an ``InputRef`` to what arrives, a ``ConstructedRef`` to an occurrenc
 constructs, a ``HeardRef`` to a record an action hears or a member of it; a tuple field to the
 collection's holder and one reference per element class in the element's scope. A run is the
 same construction over instances at the same sites. The request and the deployment arrive and
-are walked into scopes; each pass constructs every occurrence of the route that is no effect
-wherever a scope at its site supplies every reference, until none is left, asking
-``cls.model_validate`` over the instances found, a fresh scalar constructed for the holder, and
-a tuple field every element scope's instance in element order, the empty tuple for no element.
-A refusal whose every error the kind raised as ``REFUTED``, its declared condition not holding
-over validated operands, is the occurrence refuted in that scope, once, kept with the operands'
-paths; any other refusal is a failure of the construction and propagates. Then the actions the
-route needs that their scopes supply are constructed the same way and performed together in one
-task group, what each party said is heard at the one boundary as the action's record, and each
-record enters the scope its action was built in once the pass completes, its elements fanning
-out under it. The run ends when the route constructs.
+are walked into scopes; each pass evaluates the route's occurrence, and an occurrence it reaches
+whose every reference resolves is asked for as ``cls.model_validate`` over the instances found,
+a fresh scalar constructed for the holder, and a tuple field every element scope's instance in
+element order, the empty tuple for no element. A refusal whose every error the kind raised as
+``REFUTED``, its declared condition not holding over validated operands, is the occurrence
+refuted in that scope, once, kept with the operands' paths; any other refusal is a failure of
+the construction and propagates. The frontier's actions are constructed the same way and
+performed together in one task group, what each party said is heard at the one boundary as the
+action's record, and each record enters the scope its action was built in once the pass
+completes, its elements fanning out under it. The run ends when the route constructs.
 
-A pass that performs nothing ends the run as a value: the same references of each occurrence
-not constructed, dereferenced in the observed state, are the pending occurrence that could
-still fill the premise or the cause why nothing will, that occurrence refuted, the action having
-heard another record or one without the member, or the input absent. An occurrence a premise
-of which no candidate can fill is blocked by those causes, and so is every occurrence waiting
-on it; the route blocked is ``Blocked``, the business's no, which ``answer`` raises as one
-``ValidationError`` naming each cause at its own occurrence. The route not blocked, and waiting
-on a premise several alternatives could fill through effects no evidence present decides
-between, is blocked by that choice, named with what each alternative would perform. The route
-waiting on occurrences that wait on one another is a deadlock no evidence explains, a failure
-raised as such.
+A pass whose evaluation performs nothing ends the run as a value, read from that same
+evaluation: the references of each occurrence on the way to the route, dereferenced in the
+observed state, are the pending occurrence that could still fill the premise or the cause why
+nothing will, that occurrence refuted, the action having heard another record or one without
+the member, or the input absent. An occurrence a premise of which no candidate can fill is
+blocked by those causes, and so is every occurrence that needs it; the route blocked is
+``Blocked``, the business's no, which ``answer`` raises as one ``ValidationError`` naming each
+cause at its own occurrence. The route open on a premise several alternatives could fill
+through effects that nothing present decides between is blocked by that choice, named with
+what each alternative would perform. The route open with no effect to perform and no such
+choice waits on occurrences that wait on one another, a deadlock no evidence explains, a
+failure raised as such.
 
 ``opened`` enters each connection's ``open`` once and exits each once around whatever a server
 kind runs inside it, whatever the body raised and whatever an exit raises. Every answer is one
@@ -195,6 +211,7 @@ __all__ = [
     "Collected",
     "ConstructedRef",
     "Construction",
+    "Evaluator",
     "Exclusion",
     "Execution",
     "Existence",
@@ -203,13 +220,14 @@ __all__ = [
     "InputRef",
     "Joint",
     "Known",
-    "Needs",
+    "Open",
     "Proof",
     "Ref",
     "Run",
     "Scope",
     "Site",
     "Source",
+    "Stopped",
     "Undecided",
     "Unknown",
     "Waiting",
@@ -229,7 +247,6 @@ __all__ = [
     "interval",
     "joint",
     "models",
-    "needed",
     "never",
     "opened",
     "outcomes",
@@ -323,11 +340,14 @@ class Construction:
 class InputRef:
     """A reference to what arrives: the request, the deployment, a constant, or a member of
     one, in the scope at a site, of a class. It dereferences to what the scope chain holds for
-    it, present from the start or never."""
+    it, present from the start or never. ``because`` is the sites of the fields on the way to
+    it that admit another than this, ``None`` or another class: this may not arrive though its
+    holder did, and nothing that needs it is present in every invocation."""
 
     scope: Site
     member: Site
     cls: type[BaseModel]
+    because: tuple[Site, ...] = ()
 
     @property
     def site(self) -> Site:
@@ -339,13 +359,13 @@ class InputRef:
         """What a scope holds it under: no origin, and its site."""
         return (None, self.site)
 
-    def held(self, cls: type[BaseModel], name: str) -> InputRef:
+    def held(self, cls: type[BaseModel], name: str, *, conditional: bool) -> InputRef:
         """The reference to what a single field of this holds."""
-        return InputRef(self.scope, (*self.member, name), cls)
+        return InputRef(self.scope, (*self.member, name), cls, conditioned(self, name, conditional))
 
-    def element(self, cls: type[BaseModel], name: str, step: str) -> InputRef:
+    def element(self, cls: type[BaseModel], name: str, step: str, *, conditional: bool) -> InputRef:
         """The reference to an element of a tuple field of this, in the element's own scope."""
-        return InputRef((*self.site, name, step), (), cls)
+        return InputRef((*self.site, name, step), (), cls, conditioned(self, name, conditional))
 
 
 @dataclass(frozen=True)
@@ -376,12 +396,14 @@ class HeardRef:
     """A reference to what an action heard: the action's construction, the record among those
     it declares, and the member path under the record, of a class. It dereferences to what the
     action heard in the scope chain: pending while the action is, the record named, another
-    record, or the record named without the member."""
+    record, or the record named without the member. ``because`` as an ``InputRef`` carries
+    it."""
 
     action: Construction
     record: type[BaseModel]
     member: Site
     cls: type[BaseModel]
+    because: tuple[Site, ...] = ()
 
     @property
     def scope(self) -> Site:
@@ -404,13 +426,31 @@ class HeardRef:
         """What a scope holds it under: the action, and the member path."""
         return (self.action, self.member)
 
-    def held(self, cls: type[BaseModel], name: str) -> HeardRef:
+    def held(self, cls: type[BaseModel], name: str, *, conditional: bool) -> HeardRef:
         """The reference to what a single field of this holds."""
-        return HeardRef(self.action, self.record, (*self.member, name), cls)
+        return HeardRef(
+            self.action,
+            self.record,
+            (*self.member, name),
+            cls,
+            conditioned(self, name, conditional),
+        )
 
-    def element(self, cls: type[BaseModel], name: str, step: str) -> HeardRef:
+    def element(self, cls: type[BaseModel], name: str, step: str, *, conditional: bool) -> HeardRef:
         """The reference to an element of a tuple field of this, in the element's own scope."""
-        return HeardRef(self.action, self.record, (*self.member, name, step), cls)
+        return HeardRef(
+            self.action,
+            self.record,
+            (*self.member, name, step),
+            cls,
+            conditioned(self, name, conditional),
+        )
+
+
+def conditioned(holder: InputRef | HeardRef, name: str, conditional: bool) -> tuple[Site, ...]:  # noqa: FBT001
+    """What a member of a holder is conditional on: the holder's sites, and the field's own
+    when what it declares admits another than this member, ``None`` or another class."""
+    return (*holder.because, (*holder.site, name)) if conditional else holder.because
 
 
 type Ref = InputRef | ConstructedRef | HeardRef
@@ -1553,7 +1593,8 @@ def declared_symbol(
     symbols of everything it declares: each single field's classes at the field's site, as
     alternatives, and each tuple field's element classes in element contexts under this one,
     one for ``tuple[E, ...]``, one per position for a fixed tuple, each a reference to a member
-    of this one. A class already on the lineage is not descended into."""
+    of this one, conditional on the field when what it declares admits another than it. A class
+    already on the lineage is not descended into."""
     cls, site = ref.cls, ref.site
     symbol = context.own(Symbol(cls, ref, context))
     if cls in lineage:
@@ -1566,12 +1607,24 @@ def declared_symbol(
                 step = f.step(index)
                 child = context.opened((*site, f.name, step), many=not f.fixed)
                 found.extend(
-                    declared_symbol(ref.element(c, f.name, step), child, lineage) for c in classes_
+                    declared_symbol(
+                        ref.element(
+                            c, f.name, step, conditional=f.admits_none or len(classes_) > 1
+                        ),
+                        child,
+                        lineage,
+                    )
+                    for c in classes_
                 )
             symbol.collected[f.name] = Gathered(symbol, f.name, tuple(found), f.positions)
         else:
             symbol.held[f.name] = tuple(
-                declared_symbol(ref.held(c, f.name), context, lineage) for c in f.classes
+                declared_symbol(
+                    ref.held(c, f.name, conditional=f.admits_none or len(f.classes) > 1),
+                    context,
+                    lineage,
+                )
+                for c in f.classes
             )
     return symbol
 
@@ -1734,8 +1787,8 @@ def reached(
     start: type[BaseModel], classes_: Iterable[type[BaseModel]]
 ) -> frozenset[type[BaseModel]]:
     """Every class a class leads to: through its fields, the words of its computed fields, the
-    carriers of what it holds, the hearer of a record, the declarer of an element, and so on
-    from each."""
+    records an action hears, the carriers of what it holds, the hearer of a record, the declarer
+    of an element, and so on from each."""
     classes_ = tuple(classes_)
     found: set[type[BaseModel]] = set()
     todo = [start]
@@ -1746,6 +1799,8 @@ def reached(
         found.add(cls)
         named = (*holds(cls).values(), *collects(cls).values(), *produces(cls).values())
         todo.extend(c for classes__ in named for c in classes__)
+        if is_action(cls):
+            todo.extend(heard(cls))
         todo.extend(carriers_of(cls, classes_))
         todo.extend(declarers_of(cls, classes_))
         todo.extend(hearers_of(cls, classes_))
@@ -3459,85 +3514,6 @@ def kept(occurrence: Occurrence, supplied_: Bound) -> Made:
     return found
 
 
-def settled(root: Scope, constructions: tuple[Construction, ...]) -> None:
-    """Every occurrence of the route that is no effect constructed, or refuted, wherever a scope
-    under the root supplies it, until none is left: what a pass knows before it asks what the
-    route still needs performed. What arrives, what was heard and what this made are all a later
-    occurrence can be made from, so the fixed point is reached without any effect."""
-    moved = True
-    while moved:
-        moved = False
-        for scope in list(scopes(root)):
-            for construction in constructions:
-                occurrence = Occurrence(scope, construction)
-                if (
-                    is_action(construction.cls)
-                    or construction.scope != scope.site
-                    or occurrence.made is not None
-                ):
-                    continue
-                supplied_ = supplied(occurrence)
-                if supplied_ is not None:
-                    kept(occurrence, supplied_)
-                    moved = True
-
-
-class Needs(NamedTuple):
-    """What an occurrence not yet made needs performed before it can construct: the action
-    occurrences every way of filling its premises passes through, itself among them when it is
-    an action. Empty for one its scope supplies, and for one that construction without an
-    effect would fill."""
-
-    actions: frozenset[Occurrence]
-
-
-def needed(occurrence: Occurrence, seen: frozenset[Occurrence] = frozenset()) -> Needs | None:
-    """What an occurrence needs performed, read from its own references dereferenced in its
-    scope, or ``None`` for one nothing fills. Made, it needs nothing. Refuted, or on the way to
-    itself, nothing fills it. Else each premise nothing fills yet is filled by one of the
-    alternatives still pending, and needs what every one of them needs, so an effect one
-    alternative alone needs waits until the others are refuted, absent or heard otherwise; a
-    premise with no pending alternative nothing fills, and so the occurrence. An action needs
-    itself. Nothing here chooses: a producer is demanded when it is the one left."""
-    made = occurrence.made
-    if isinstance(made, Constructed):
-        return Needs(frozenset())
-    if isinstance(made, Refuted) or occurrence in seen:
-        return None
-    actions: set[Occurrence] = {occurrence} if is_action(occurrence.construction.cls) else set()
-    for states in bound(occurrence.construction, occurrence.scope).unfilled.values():
-        pending = [
-            found
-            for _, state in states
-            if isinstance(state, Pending)
-            and (found := needed(state.occurrence, seen | {occurrence})) is not None
-        ]
-        if not pending:
-            return None
-        actions |= shared(pending)
-    return Needs(frozenset(actions))
-
-
-def shared(needs: Iterable[Needs]) -> frozenset[Occurrence]:
-    """The actions every one of several needs has: what a premise several alternatives could
-    fill needs performed whichever fills it."""
-    found = [n.actions for n in needs]
-    return found[0].intersection(*found[1:]) if found else frozenset()
-
-
-def demanded(goal: Occurrence) -> list[tuple[Occurrence, Bound]]:
-    """The action occurrences the goal needs performed that their scopes supply, each with what
-    is supplied, in path order: what a pass performs. Empty when nothing fills the goal, and
-    when every action it needs waits on evidence not yet there."""
-    needs = needed(goal)
-    found: list[tuple[Occurrence, Bound]] = []
-    for occurrence in sorted(needs.actions if needs else (), key=lambda o: o.path):
-        supplied_ = supplied(occurrence)
-        if supplied_ is not None:
-            found.append((occurrence, supplied_))
-    return found
-
-
 class Unfilled(NamedTuple):
     """A premise of an occurrence that one of its references can never fill, with what the
     reference dereferenced to."""
@@ -3562,57 +3538,12 @@ class Undecided(NamedTuple):
 
     occurrence: Occurrence
     premise: Premise
-    alternatives: tuple[tuple[Ref, Needs], ...]
+    alternatives: tuple[tuple[Ref, frozenset[Occurrence]], ...]
 
 
 type Cause = Unfilled | Refutation | Undecided
 """Why an occurrence can never construct: a premise nothing fills, its own condition rejected,
 or a choice among effects nothing decides."""
-
-
-type Unresolved = Mapping[Premise, tuple[tuple[Ref, State], ...]]
-"""What an occurrence's unfilled premises dereferenced to when the run ended."""
-
-
-def causes(
-    occurrence: Occurrence, unresolved: Unresolved, blocked: Mapping[Occurrence, tuple[Cause, ...]]
-) -> tuple[Cause, ...]:
-    """Why an occurrence can never construct, from what its own references dereferenced to:
-    for each premise nothing fills, every reference is a cause, a rejected condition or an
-    absent source, or a pending occurrence already blocked, whose causes it inherits; a
-    premise with a pending occurrence not blocked may still fill, and is no cause. Empty while
-    no premise is blocked."""
-    found: list[Cause] = []
-    for premise, states in unresolved.items():
-        here: list[Cause] = []
-        for ref, state in states:
-            match state:
-                case Pending(pending):
-                    if pending not in blocked:
-                        break
-                    here.extend(blocked[pending])
-                case Rejected(rejected, refuted):
-                    here.append(Refutation(rejected, refuted))
-                case Absent() | Heard():
-                    here.append(Unfilled(occurrence, premise, ref, state))
-                case Available():
-                    break
-        else:
-            found.extend(here)
-    return tuple(found)
-
-
-def waits_on(
-    unresolved: Unresolved, blocked: Mapping[Occurrence, tuple[Cause, ...]]
-) -> list[Occurrence]:
-    """The pending occurrences, not blocked, that an occurrence's unfilled premises dereferenced
-    to: what it still waits for."""
-    return [
-        state.occurrence
-        for states in unresolved.values()
-        for _, state in states
-        if isinstance(state, Pending) and state.occurrence not in blocked
-    ]
 
 
 class Run[Q: Request, A: Reply[Fact]](NamedTuple):
@@ -3635,35 +3566,285 @@ class Blocked(NamedTuple):
     causes: tuple[Cause, ...]
 
 
-def ended(goal: Occurrence, constructions: tuple[Construction, ...], passes: int) -> Blocked:
-    """Why the route did not construct, read from every occurrence the passes left unmade, its
-    own references dereferenced once in the observed state: an occurrence a premise of which no
-    reference can fill is blocked, and so is every occurrence waiting on it, until nothing
-    moves. The route blocked is the structured refusal, as a value. The route not blocked waits
-    on occurrences that wait on one another, which no evidence explains: a failure, raised,
-    naming each in order of reach and what it waits for."""
-    unresolved: dict[Occurrence, Unresolved] = {
-        occurrence: bound(c, scope).unfilled
-        for scope in scopes(goal.scope)
-        for c in constructions
-        if c.scope == scope.site and (occurrence := Occurrence(scope, c)).made is None
-    }
-    blocked: dict[Occurrence, tuple[Cause, ...]] = {}
-    moved = True
-    while moved:
-        moved = False
-        for occurrence, states in unresolved.items():
-            if occurrence not in blocked and (found := causes(occurrence, states, blocked)):
-                blocked[occurrence] = found
-                moved = True
-    if goal in blocked:
-        return Blocked(goal, passes, blocked[goal])
-    choices = undecided(goal)
-    if choices:
-        return Blocked(goal, passes, tuple(choices))
+class Open(NamedTuple):
+    """An occurrence not yet made that may still construct: whether every decision on the way
+    to it is established, so that only effects remain; the effects that advance it now, those
+    producing the deciding evidence while a decision is pending and everything it needs once
+    none is; the pending occurrences its premises dereference to; and each choice among effects
+    beneath it that nothing decides."""
+
+    decided: bool
+    frontier: frozenset[Occurrence]
+    waits: tuple[Occurrence, ...]
+    choices: tuple[Undecided, ...]
+
+
+class Stopped(NamedTuple):
+    """An occurrence that can never construct in this run, with every cause found."""
+
+    causes: tuple[Cause, ...]
+
+
+type Evaluation = Constructed | Open | Stopped
+"""What evaluating an occurrence concludes: evidence, an open occurrence, or one blocked."""
+
+
+@dataclass(eq=False)
+class Evaluator:
+    """One pass's evaluation of the route from its own occurrence, over the sealed graph and the
+    run's scopes: what is made is evidence, what is open is open, what is blocked is blocked
+    with its causes, and the frontier is what to perform now. An occurrence reached is asked for
+    when every reference resolves, so the evaluation constructs what the route needs as it goes
+    and nothing else. Each occurrence is evaluated once, however many fields reach it, and each
+    source's conditionality read once; an occurrence on the way to itself is a cycle, whose
+    provisional conclusion is kept nowhere. The state lasts one pass: what the pass admits
+    afterwards is read by the next pass's evaluator."""
+
+    evaluated: dict[Occurrence, Evaluation] = field(default_factory=dict[Occurrence, Evaluation])
+    conditions: dict[Source, bool] = field(default_factory=dict[Source, bool])
+    waiting: dict[Occurrence, tuple[Occurrence, ...]] = field(
+        default_factory=dict[Occurrence, tuple[Occurrence, ...]]
+    )
+    stack: set[Occurrence] = field(default_factory=set[Occurrence])
+    cycles: int = 0
+
+    def evaluate(self, occurrence: Occurrence) -> Evaluation:
+        """What an occurrence is now: made, evidence; refuted, blocked by its own refutation;
+        else as its premises are. Kept once concluded, unless a cycle was met on the way."""
+        found = self.evaluated.get(occurrence)
+        if found is not None:
+            return found
+        made = occurrence.made
+        if isinstance(made, Constructed):
+            return made
+        if isinstance(made, Refuted):
+            return Stopped((Refutation(occurrence, made),))
+        if occurrence in self.stack:
+            self.cycles += 1
+            return Open(decided=False, frontier=frozenset(), waits=(occurrence,), choices=())
+        self.stack.add(occurrence)
+        met = self.cycles
+        found = self.pending(occurrence)
+        self.stack.discard(occurrence)
+        if isinstance(found, Open):
+            self.waiting[occurrence] = found.waits
+        if self.cycles == met:
+            self.evaluated[occurrence] = found
+        return found
+
+    def pending(self, occurrence: Occurrence) -> Evaluation:
+        """An occurrence no pass has made: its decisions evaluated first, every one, since each
+        is a condition whose refutation the answer names, blocked where any is, and while any
+        is undecided nothing else of it is evaluated; then its other premises, blocked at once
+        where one is filled by nothing, since what would complete a blocked occurrence is never
+        asked for; and with every premise filled, an action is the frontier and anything else
+        is asked for here."""
+        unfilled = bound(occurrence.construction, occurrence.scope).unfilled
+        decisions = {p: states for p, states in unfilled.items() if self.decision(states)}
+        found = self.premises(occurrence, decisions)
+        if found is not None:
+            return found
+        completions = {p: states for p, states in unfilled.items() if p not in decisions}
+        causes = [c for p, states in completions.items() for c in dead(occurrence, p, states)]
+        if causes:
+            return Stopped(tuple(causes))
+        found = self.premises(occurrence, completions)
+        if found is not None:
+            return found
+        supplied_ = supplied(occurrence)
+        if supplied_ is None:
+            cls, path = occurrence.construction.cls.__name__, ".".join(occurrence.path)
+            unsupplied = f"{cls} at {path} is not supplied though every premise is filled"
+            raise LookupError(unsupplied)
+        if is_action(occurrence.construction.cls):
+            return Open(decided=True, frontier=frozenset({occurrence}), waits=(), choices=())
+        found = kept(occurrence, supplied_)
+        return (
+            found if isinstance(found, Constructed) else Stopped((Refutation(occurrence, found),))
+        )
+
+    def premises(
+        self, occurrence: Occurrence, group: Mapping[Premise, tuple[tuple[Ref, State], ...]]
+    ) -> Evaluation | None:
+        """Several premises of one occurrence, evaluated every one: ``None`` when each is
+        filled; blocked with every cause when any is; else open, undecided with the effects of
+        the undecided premises alone, decided with the effects of every premise."""
+        found = [self.premise(occurrence, premise, states) for premise, states in group.items()]
+        causes = [c for f in found if isinstance(f, Stopped) for c in f.causes]
+        if causes:
+            return Stopped(tuple(causes))
+        opens = [f for f in found if isinstance(f, Open)]
+        if not opens:
+            return None
+        undecided = [o for o in opens if not o.decided]
+        return Open(
+            decided=not undecided,
+            frontier=frozenset[Occurrence]().union(*(o.frontier for o in undecided or opens)),
+            waits=tuple(dict.fromkeys(w for o in opens for w in o.waits)),
+            choices=tuple(c for o in opens for c in o.choices),
+        )
+
+    def premise(
+        self, occurrence: Occurrence, premise: Premise, states: tuple[tuple[Ref, State], ...]
+    ) -> Evaluation | None:
+        """One premise, from what its references dereference to: ``None`` once an alternative
+        is available, an occurrence pending evaluated and constructed among them; blocked with
+        every cause when none is pending; else the one alternative pending, through its
+        reference, or the choice among several."""
+        live: list[tuple[Ref, Open]] = []
+        causes: list[Cause] = []
+        filled = False
+        for ref, state in states:
+            match state:
+                case Pending(waited):
+                    match self.evaluate(waited):
+                        case Constructed():
+                            filled = True
+                        case Stopped(found):
+                            causes.extend(found)
+                        case Open() as found:
+                            live.append((ref, self.through(ref, found)._replace(waits=(waited,))))
+                case Rejected(rejected, refuted):
+                    causes.append(Refutation(rejected, refuted))
+                case Absent() | Heard():
+                    causes.append(Unfilled(occurrence, premise, ref, state))
+                case Available():
+                    filled = True
+        if filled:
+            return None
+        if not live:
+            return Stopped(tuple(causes))
+        if len(live) == 1:
+            return live[0][1]
+        return self.choice(occurrence, premise, live)
+
+    def choice(
+        self, occurrence: Occurrence, premise: Premise, live: list[tuple[Ref, Open]]
+    ) -> Open:
+        """Several alternatives pending at one premise, which the proof established never both
+        available: open, with the effects producing the deciding evidence of those undecided;
+        when every one is decided, with what all of them need, or, where they need nothing in
+        common, with nothing, the choice among effects being one nothing declared decides."""
+        waits = tuple(dict.fromkeys(w for _, o in live for w in o.waits))
+        choices = tuple(c for _, o in live for c in o.choices)
+        undecided = [o for _, o in live if not o.decided]
+        if undecided:
+            frontier = frozenset[Occurrence]().union(*(o.frontier for o in undecided))
+            return Open(decided=False, frontier=frontier, waits=waits, choices=choices)
+        frontiers = [o.frontier for _, o in live]
+        shared = frontiers[0].intersection(*frontiers[1:])
+        if shared:
+            return Open(decided=False, frontier=shared, waits=waits, choices=choices)
+        undecided_ = Undecided(occurrence, premise, tuple((ref, o.frontier) for ref, o in live))
+        return Open(
+            decided=False, frontier=frozenset(), waits=waits, choices=(*choices, undecided_)
+        )
+
+    def through(self, ref: Ref, found: Open) -> Open:
+        """An occurrence's evaluation seen through the reference that dereferences to it:
+        undecided when the reference itself may yet dereference to nothing, a record among
+        several its action hears, a member its record may withhold, a refutable kind."""
+        return found._replace(decided=False) if conditional_here(ref) else found
+
+    def decision(self, states: tuple[tuple[Ref, State], ...]) -> bool:
+        """Whether a premise is a decision: several alternatives are bound at it, or one of
+        them is conditional."""
+        return len(states) > 1 or any(self.conditional(ref) for ref, _ in states)
+
+    def conditional(self, source: Source, seen: frozenset[Source] = frozenset()) -> bool:
+        """Whether a source may be available in one run of the route and not another though
+        what arrives is the same: read from the graph once per source. What arrives is not; a
+        record is where its action hears several, its member where the record may withhold it,
+        and where the action itself is; a construction is where its kind is refutable, where
+        several alternatives are bound at one of its fields, or where any alternative is; a
+        collection is where its holder or an element is, or an element scope has two."""
+        found = self.conditions.get(source)
+        if found is not None:
+            return found
+        if source in seen:
+            return False
+        seen = seen | {source}
+        match source:
+            case InputRef():
+                found = False
+            case HeardRef():
+                found = conditional_here(source) or self.conditional(
+                    ConstructedRef(source.action), seen
+                )
+            case ConstructedRef():
+                found = conditional_here(source) or any(
+                    len(group) > 1 or any(self.conditional(a, seen) for a in group)
+                    for group in needs(source)
+                )
+            case Collected():
+                found = (
+                    self.conditional(source.holder, seen)
+                    or any(self.conditional(e, seen) for e in source.elements)
+                    or any(len(source.placed(step)) > 1 for step in source.every)
+                )
+        self.conditions[source] = found
+        return found
+
+
+def conditional_here(ref: Ref) -> bool:
+    """Whether a reference may dereference to nothing once its occurrence is made: a record
+    among several its action hears, a member its record may withhold, a refutable kind the
+    declarations do not settle."""
+    match ref:
+        case InputRef():
+            return False
+        case HeardRef():
+            return len(records_of(ref.action)) > 1 or bool(ref.because)
+        case ConstructedRef(construction):
+            return refutable(construction.cls) and not shaped(construction)
+
+
+def shaped(construction: Construction) -> bool:
+    """Whether a selection is settled by the declarations alone: its only condition is its
+    elements' count, and every collection it may gather is fixed at a number of positions the
+    field admits, so it refuses nowhere, and is no decision of the run."""
+    cls = construction.cls
+    if not is_selection(cls) or [f.name for f in fields(cls) if f.condition is not None] != ["of"]:
+        return False
+    length = declared(cls, "of").length
+    if isinstance(length, Unknown) or not construction.collections:
+        return False
+    low, high = length
+    return all(
+        c.positions is not None and low <= c.positions and (high is None or c.positions <= high)
+        for candidates in construction.collections.values()
+        for c in candidates
+    )
+
+
+def records_of(construction: Construction) -> tuple[type[Record], ...]:
+    """The records an action construction's class hears; none for another class."""
+    return heard(construction.cls) if is_action(construction.cls) else ()
+
+
+def dead(
+    occurrence: Occurrence, premise: Premise, states: tuple[tuple[Ref, State], ...]
+) -> list[Cause]:
+    """Why a premise is filled by nothing, read before anything is evaluated: each reference's
+    cause, when none is available or pending; nothing otherwise."""
+    if any(isinstance(state, Available | Pending) for _, state in states):
+        return []
+    return [
+        Refutation(state.occurrence, state.refuted)
+        if isinstance(state, Rejected)
+        else Unfilled(occurrence, premise, ref, state)
+        for ref, state in states
+        if isinstance(state, Rejected | Absent | Heard)
+    ]
+
+
+def deadlock(goal: Occurrence, evaluator: Evaluator) -> ValidationError:
+    """The failure of a route open with nothing to perform and no choice to name: each
+    occurrence from the route through what each waits on, in order of reach, naming what it
+    waits for."""
     reach = [goal]
     for occurrence in reach:
-        reach.extend(o for o in waits_on(unresolved[occurrence], blocked) if o not in reach)
+        reach.extend(o for o in evaluator.waiting.get(occurrence, ()) if o not in reach)
     details = [
         fault(
             "deadlock",
@@ -3673,37 +3854,12 @@ def ended(goal: Occurrence, constructions: tuple[Construction, ...], passes: int
             path=".".join(occurrence.path),
             on=", ".join(
                 f"{o.construction.cls.__name__} at {'.'.join(o.path)}"
-                for o in waits_on(unresolved[occurrence], blocked)
+                for o in evaluator.waiting.get(occurrence, ())
             ),
         )
         for occurrence in reach
     ]
-    raise ValidationError.from_exception_data(goal.construction.cls.__name__, details)
-
-
-def undecided(goal: Occurrence) -> list[Undecided]:
-    """Every premise on the way from the goal through what is still pending that several
-    pending alternatives could fill and no effect every one of them needs: where a run at the
-    fixed point of what constructs without an effect, with nothing it may perform, is decided
-    by nothing."""
-    found: list[Undecided] = []
-    seen: set[Occurrence] = set()
-    todo = [goal]
-    while todo:
-        occurrence = todo.pop()
-        if occurrence in seen or occurrence.made is not None:
-            continue
-        seen.add(occurrence)
-        for premise, states in bound(occurrence.construction, occurrence.scope).unfilled.items():
-            alternatives = [
-                (ref, needs)
-                for ref, state in states
-                if isinstance(state, Pending) and (needs := needed(state.occurrence)) is not None
-            ]
-            if len(alternatives) > 1 and not shared(n for _, n in alternatives):
-                found.append(Undecided(occurrence, premise, tuple(alternatives)))
-            todo.extend(state.occurrence for _, state in states if isinstance(state, Pending))
-    return found
+    return ValidationError.from_exception_data(goal.construction.cls.__name__, details)
 
 
 def rendered(refuted: Refuted) -> str:
@@ -3726,11 +3882,11 @@ def rendered(refuted: Refuted) -> str:
     return "; ".join(found)
 
 
-def performs(needs: Needs) -> str:
-    """The actions an occurrence needs performed, for a message: each at its concrete path."""
+def performs(actions: frozenset[Occurrence]) -> str:
+    """The actions an alternative would perform, for a message: each at its concrete path."""
     return ", ".join(
         f"{o.construction.cls.__name__} at {'.'.join(o.path)}"
-        for o in sorted(needs.actions, key=lambda o: o.path)
+        for o in sorted(actions, key=lambda o: o.path)
     )
 
 
@@ -3759,7 +3915,8 @@ def explained(cause: Cause) -> InitErrorDetails:
             name=name,
             path=path,
             choices="; ".join(
-                f"{at(ref)} needs {performs(needs)} performed" for ref, needs in cause.alternatives
+                f"{at(ref)} needs {performs(actions)} performed"
+                for ref, actions in cause.alternatives
             ),
         )
     match cause.state:
@@ -3833,16 +3990,16 @@ class Execution(NamedTuple):
     supplied: Bound
 
 
-def performable(occurrence: Occurrence, supplied_: Bound) -> Execution:
-    """An action occurrence constructed from what its scope supplies and kept there with its
-    witness, as the execution the pass performs. An action is no refutable kind, so what the scope
-    keeps of it is the instance, of the construction's own class, or the construction has
-    failed."""
-    found = kept(occurrence, supplied_)
+def performable(occurrence: Occurrence) -> Execution:
+    """An action occurrence of the frontier constructed from what its scope supplies and kept
+    there with its witness, as the execution the pass performs. The frontier holds actions whose
+    every premise is filled, and an action is no refutable kind, so what the scope keeps of it is
+    the instance, of the construction's own class, or the construction has failed."""
+    supplied_ = supplied(occurrence)
+    found = None if supplied_ is None else kept(occurrence, supplied_)
     if not isinstance(found, Constructed) or not is_performed(found.instance):
-        no_action = (
-            f"{occurrence.construction.cls.__name__} at {'.'.join(occurrence.path)} is no action"
-        )
+        cls, path = occurrence.construction.cls.__name__, ".".join(occurrence.path)
+        no_action = f"{cls} at {path} is no supplied action"
         raise TypeError(no_action)
     return Execution(occurrence, found.instance, found.supplied)
 
@@ -3943,23 +4100,24 @@ async def ran[Q: Request, A: Reply[Fact]](
 async def constructed[Q: Request, A: Reply[Fact]](
     route: type[Route[Q, A]], request: Q, deployment: Config, proof: Proof, span: Span
 ) -> Run[Q, A] | Blocked:
-    """The passes of ``ran``. Each pass constructs every occurrence of the route that is no
-    effect wherever a scope at its template supplies every reference, until none is left: a
+    """The passes of ``ran``. Each pass evaluates the route's own occurrence with a fresh
+    ``Evaluator``, which asks for each occurrence it reaches whose every reference resolves: a
     refutable kind whose declared condition does not hold is refuted in that scope, once; any
     other refusal is a failure and propagates, and so is an instance of another class than the
-    construction makes or holding other instances than were supplied. Then, unless the route
-    constructed, the route's own occurrence is asked what it needs performed, and each action
-    among them that its scope supplies is constructed the same way, every one before any is
-    performed, so a construction that fails performs none; those are performed together in one
-    task group, across every scope, each heard at the one boundary, and each record enters the
-    scope its action was built in once every action of the pass was heard, as one ``admitted``
-    event on the route's span; a library kind's exception, or a refusal of what it returned,
-    cancels the group's other actions and propagates in an ``ExceptionGroup``, noted with the
-    paths of the actions cancelled with it. An action's effect may have happened whenever its
-    task started: one heard returned a validated record, one failed or cancelled may have had
-    its effect and returned none, and no record of the pass is admitted, which the group's note
-    says; an action that cancelled itself fails the pass the same way, once every other task
-    is done. A pass that performs nothing ends the run as ``ended`` reads it."""
+    construction makes or holding other instances than were supplied. The route made ends the
+    run; the route blocked is the business's no, with the causes the evaluation found, a choice
+    among effects nothing decides among them; the route open with nothing to perform and no such
+    choice is a deadlock, a failure. Otherwise each action of the frontier is constructed the
+    same way, every one before any is performed, so a construction that fails performs none;
+    those are performed together in one task group, across every scope, each heard at the one
+    boundary, and each record enters the scope its action was built in once every action of
+    the pass was heard, as one ``admitted`` event on the route's span; a library kind's
+    exception, or a refusal of what it returned, cancels the group's other actions and
+    propagates in an ``ExceptionGroup``, noted with the paths of the actions cancelled with
+    it. An action's effect may have happened whenever its task started: one heard returned a
+    validated record, one failed or cancelled may have had its effect and returned none, and no
+    record of the pass is admitted, which the group's note says; an action that cancelled itself
+    fails the pass the same way, once every other task is done."""
     constructions = proof.constructs(route)
     root = Scope((), (), None)
     arrived(request, None, REQUEST, root)
@@ -3970,12 +4128,17 @@ async def constructed[Q: Request, A: Reply[Fact]](
     passes = 0
     while True:
         passes += 1
-        settled(root, constructions)
-        if goal.made is not None:
+        evaluator = Evaluator()
+        found = evaluator.evaluate(goal)
+        if isinstance(found, Constructed):
             break
-        executions = [performable(o, s) for o, s in demanded(goal)]
-        if not executions:
-            return ended(goal, constructions, passes)
+        if isinstance(found, Stopped):
+            return Blocked(goal, passes, found.causes)
+        if not found.frontier:
+            if found.choices:
+                return Blocked(goal, passes, found.choices)
+            raise deadlock(goal, evaluator)
+        executions = [performable(o) for o in sorted(found.frontier, key=lambda o: o.path)]
         performed = [e.occurrence for e in executions]
         tasks: list[Task[Record]] = []
         try:

@@ -11,11 +11,13 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
-from typing import Literal, NamedTuple, Self, cast, override
+from typing import Annotated, Literal, NamedTuple, Self, cast, override
 
 import pytest
+from annotated_types import MaxLen
 from pydantic import Field, ValidationError, model_validator
 
+from type_construction import engine
 from type_construction.engine import (
     Blocked,
     Constructed,
@@ -46,6 +48,7 @@ from type_construction.world import (
     Route,
     Scalar,
     Setting,
+    Sum,
     Under,
     Value,
 )
@@ -724,8 +727,12 @@ async def test_evidence_is_gathered_first_and_one_branchs_effect_performed_after
     judged(
         {"a": "50", "b": "50", "c": "5", "d": "5"}, {"a": "yes", "b": "no", "c": "yes", "d": "no"}
     )
+    exporter = exporting()
     done = await ran(ChargeOperation, requested("a", "b", "c", "d"), config(program)(), proof)
     assert isinstance(done, Run)
+    spans = exporter.get_finished_spans()
+    assert {attributes(s)["tca.pass"] for s in spans if s.name in {"Judge", "Ask"}} == {1}
+    assert {attributes(s)["tca.pass"] for s in spans if s.name == charge.__name__} == {2}
     leaves = [type(o.which.which) for o in done.route.reply.of.outcomes]
     assert leaves == [BigYes, BigNo, SmallYes, SmallNo]
     assert [p.subject for p in performed(Judge)] == ["a", "b", "c", "d"]
@@ -897,9 +904,7 @@ async def test_a_choice_between_effects_is_never_guessed_and_a_decided_one_perfo
     (cause,) = blocked.causes
     assert isinstance(cause, Undecided)
     assert (cause.occurrence.construction.cls, cause.premise) == (Sent, ("which", None))
-    assert [
-        (ref.cls, [o.construction.cls for o in n.actions]) for ref, n in cause.alternatives
-    ] == [
+    assert [(ref.cls, [o.construction.cls for o in a]) for ref, a in cause.alternatives] == [
         (ByMail, [SendMail]),
         (ByText, [SendText]),
     ]
@@ -1533,3 +1538,359 @@ async def test_no_element_and_another_implementation_demand_nothing_more(
     assert [p.subject for p in performed(Notify)] == ["50"]
     assert set(made_in(again.root, Notify)) == before
     assert again.route.reply.of.valued[0].noted.word.root == "dear"  # type: ignore[union-attr]
+
+
+# --- 7. the decision first; the effect that only completes the outcome after -------------------
+
+
+class Permit(Request):
+    """What arrives: a name to admit."""
+
+    name: Name
+
+
+class Allowed(Record):
+    """The judging party's yes."""
+
+    status: Literal["allowed"]
+
+
+class Denied(Record):
+    """The judging party's no."""
+
+    status: Literal["denied"]
+
+
+class Gate(Action[Judging, Allowed | Denied]):
+    """Ask the judging party whether to admit: the effect that produces the decision."""
+
+    permit: Permit
+
+    @override
+    async def perform(self) -> Json:
+        answers: dict[str, str] = json.loads(self.party.says.root)
+        PERFORMED.append(Performed(Gate, self.permit.name.root))
+        return Json(json.dumps({"status": answers[self.permit.name.root]}))
+
+
+class PingPermit(Action[Teller, Pinged]):
+    """Ping the teller about a permit: holds the request alone, and is supplied from the
+    start."""
+
+    permit: Permit
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(PingPermit, self.permit.name.root))
+        return Json(self.party.says.root)
+
+
+class Admitted(Fact):
+    """A permit allowed and pinged about."""
+
+    allowed: Allowed
+    pinged: Pinged
+
+
+class AdmittedReply(Reply[Admitted]):
+    """What leaves."""
+
+
+class Admit(Route[Permit, AdmittedReply]):
+    """Admit a permit."""
+
+
+class Refused(Fact):
+    """A permit denied."""
+
+    denied: Denied
+
+
+class Gated(Fact):
+    """Admitted or refused."""
+
+    which: Admitted | Refused
+
+
+class GatedReply(Reply[Gated]):
+    """What leaves."""
+
+
+class AdmitEither(Route[Permit, GatedReply]):
+    """Admit a permit, or refuse it."""
+
+
+class Gates(Config):
+    """The judging party and the teller."""
+
+    judging: Judging
+    teller: Teller
+
+
+GATING: tuple[type[object], ...] = (
+    Name,
+    Permit,
+    Said,
+    Judging,
+    Teller,
+    Word,
+    Pinged,
+    Allowed,
+    Denied,
+    Gate,
+    PingPermit,
+    Admitted,
+    Gates,
+)
+"""The gate, the ping, and the conclusion that needs both."""
+
+ADMIT = program_of(*GATING, AdmittedReply, Admit)
+"""The program whose one conclusion needs the gate's yes and the ping's record."""
+
+ADMIT_EITHER = program_of(*GATING, Refused, Gated, GatedReply, AdmitEither)
+"""The same program with a fallback for the gate's no."""
+
+
+@pytest.fixture
+def gated(parties: Callable[[dict[str, str]], None], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The judging party's answers per permit name."""
+    parties({})
+    monkeypatch.setenv("JUDGING__SAYS", json.dumps({"yes": "allowed", "no": "denied"}))
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gated")
+@pytest.mark.parametrize(("program", "route"), [(ADMIT, Admit), (ADMIT_EITHER, AdmitEither)])
+async def test_the_gate_is_performed_first_and_the_ping_only_once_the_gate_allowed(
+    program: ModuleType, route: type[Route[Permit, Reply[Fact]]]
+) -> None:
+    exporter = exporting()
+    proof = proven(program)
+    assert proof.faulted == ()
+    done = await ran(route, Permit(name=Name("yes")), config(program)(), proof)
+    assert isinstance(done, Run)
+    assert [p.action for p in PERFORMED] == [Gate, PingPermit]
+    assert done.passes == 3
+    passes = {
+        s.name: attributes(s)["tca.pass"]
+        for s in exporter.get_finished_spans()
+        if s.name in {"Gate", "PingPermit"}
+    }
+    assert (passes["Gate"], passes["PingPermit"]) == (1, 2)
+    PERFORMED.clear()
+    refused_ = await ran(route, Permit(name=Name("no")), config(program)(), proof)
+    assert [p.action for p in PERFORMED] == [Gate]
+    if route is Admit:
+        assert isinstance(refused_, Blocked)
+        assert errors_of(refused_) == [
+            (
+                "missing",
+                ("Admitted", "allowed"),
+                "no instance fills Admitted.allowed at Admitted, which holds Allowed; Gate at Gate"
+                " heard Denied",
+            )
+        ]
+    else:
+        assert isinstance(refused_, Run)
+        assert type(refused_.route.reply.of.which) is Refused  # type: ignore[union-attr]
+
+
+# --- 8. a dormant branch's ordinary construction is never asked for ----------------------------
+
+
+class Amounts(Request):
+    """What arrives: amounts, any number."""
+
+    amounts: tuple[Amount, ...]
+
+
+class Clear(Record):
+    """The judging party's clear."""
+
+    status: Literal["clear"]
+
+
+class Flagged(Record):
+    """The judging party's flag."""
+
+    status: Literal["flagged"]
+
+
+class Vet(Action[Judging, Clear | Flagged]):
+    """Ask the judging party about the amounts."""
+
+    amounts: Amounts
+
+    @override
+    async def perform(self) -> Json:
+        PERFORMED.append(Performed(Vet, str(len(self.amounts.amounts))))
+        return Json(self.party.says.root)
+
+
+class Total(Sum[Amount]):
+    """Every amount, summed."""
+
+
+class Stats(Fact):
+    """Every amount, no more than one: a native constraint, which rejects two amounts as a
+    failure of the construction, not a refutation."""
+
+    amounts: Annotated[tuple[Amount, ...], MaxLen(1)]
+
+
+class Normal(Fact):
+    """Amounts cleared, totalled."""
+
+    clear: Clear
+    total: Total
+
+
+class Special(Fact):
+    """Amounts flagged, with their stats."""
+
+    flagged: Flagged
+    stats: Stats
+
+
+class Vetted(Fact):
+    """Normal or special, as the judging party says."""
+
+    which: Normal | Special
+
+
+class VettedReply(Reply[Vetted]):
+    """What leaves."""
+
+
+class Vetting(Route[Amounts, VettedReply]):
+    """Vet amounts."""
+
+
+class Vets(Config):
+    """The judging party."""
+
+    judging: Judging
+
+
+VETTED = program_of(
+    Amount,
+    Amounts,
+    Said,
+    Judging,
+    Clear,
+    Flagged,
+    Vet,
+    Total,
+    Stats,
+    Normal,
+    Special,
+    Vetted,
+    VettedReply,
+    Vetting,
+    Vets,
+)
+"""A route whose dormant branch holds a construction that would fail over the request."""
+
+
+@pytest.mark.asyncio
+async def test_a_dormant_branchs_failing_construction_is_never_asked_for_and_a_selected_ones_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    PERFORMED.clear()
+    proof = proven(VETTED)
+    assert proof.faulted == ()
+    request = Amounts(amounts=(Amount(Decimal(1)), Amount(Decimal(2))))
+    with pytest.raises(ValidationError) as failure:
+        Stats(amounts=request.amounts)
+    assert [(e["type"], e["loc"]) for e in failure.value.errors()] == [("too_long", ("amounts",))]
+    monkeypatch.setenv("JUDGING__SAYS", '{"status": "clear"}')
+    done = await ran(Vetting, request, config(VETTED)(), proof)
+    assert isinstance(done, Run)
+    assert type(done.route.reply.of.which) is Normal
+    assert done.route.reply.of.which.total.root == 3  # type: ignore[union-attr]
+    assert made_in(done.root, Stats) == {}
+    assert [p.action for p in PERFORMED] == [Vet]
+    monkeypatch.setenv("JUDGING__SAYS", '{"status": "flagged"}')
+    with pytest.raises(ValidationError) as failed:
+        await ran(Vetting, request, config(VETTED)(), proof)
+    assert failed.value.title == "Stats"
+    assert failed.value.__notes__ == ["at Stats"]
+    assert [(e["type"], e["loc"]) for e in failed.value.errors()] == [("too_long", ("amounts",))]
+
+
+# --- 9. shared occurrences are evaluated once, however many fields reach them -----------------
+
+
+class Seed(Scalar[Decimal]):
+    """What a chain of facts grows from."""
+
+    root: Decimal
+
+
+class Seeded(Request):
+    """What arrives: a seed."""
+
+    seed: Seed
+
+
+class Alone(Config):
+    """No party."""
+
+
+def chained(depth: int) -> tuple[ModuleType, type[Route[Seeded, Reply[Fact]]]]:
+    """A program whose facts form a chain of diamonds: each holds the one before it at two
+    fields, so a tree expansion visits ``2 ** depth`` occurrences and a graph ``depth``."""
+    steps: list[type[Fact]] = [
+        type(
+            "Step0",
+            (Fact,),
+            {"__annotations__": {"seed": Seed}, "__module__": __name__, "__doc__": "The first."},
+        )
+    ]
+    for index in range(1, depth + 1):
+        steps.append(
+            type(
+                f"Step{index}",
+                (Fact,),
+                {
+                    "__annotations__": {"left": steps[-1], "right": steps[-1]},
+                    "__module__": __name__,
+                    "__doc__": f"Step {index}: the one before, held twice.",
+                },
+            )
+        )
+    reply = type("ClimbedReply", (Reply[steps[-1]],), {"__module__": __name__, "__doc__": "Out."})  # type: ignore[valid-type]
+    route = type(
+        "Climb",
+        (Route[Seeded, reply],),  # type: ignore[valid-type]
+        {"__module__": __name__, "__doc__": "Climb the chain."},
+    )
+    program = program_of(Seed, Seeded, Alone, *steps, reply, route)
+    return program, cast("type[Route[Seeded, Reply[Fact]]]", route)
+
+
+@pytest.mark.asyncio
+async def test_a_chain_of_diamonds_is_evaluated_as_a_graph_not_expanded_as_a_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    binding = engine.bound
+    bindings: list[int] = []
+
+    def counting(construction: engine.Construction, scope: Scope) -> engine.Bound:
+        bindings.append(1)
+        return binding(construction, scope)
+
+    monkeypatch.setattr(engine, "bound", counting)
+    counts: dict[int, int] = {}
+    for depth in (4, 8, 16):
+        program, route = chained(depth)
+        bindings.clear()
+        done = await ran(route, Seeded(seed=Seed(Decimal(1))), Alone(), proven(program))
+        assert isinstance(done, Run)
+        assert done.passes == 1
+        assert len(done.root.made) == depth + 3
+        counts[depth] = len(bindings)
+    assert counts[16] - counts[8] == 2 * (counts[8] - counts[4])
+    assert counts[16] <= 2 * (16 + 3)

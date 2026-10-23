@@ -957,8 +957,8 @@ async def test_optional_evidence_cannot_become_guaranteed_or_exclusive(
     found = by_class(proof)
     coupon = (*ELEMENT, "AskQuoted", "heard", "coupon")
     (coupon_ref,) = found[Discount].premises["coupon"]
-    assert coupon_ref == HeardRef(found[AskQuoted], Quoted, ("coupon",), Coupon)
-    assert coupon_ref.site == coupon
+    assert isinstance(coupon_ref, HeardRef)
+    assert coupon_ref.because == (coupon,)
     assert not exclusion_at(proof, Offered, "which").established
     assert not joint((ConstructedRef(found[Discount]),)).impossible
     assert not joint((ConstructedRef(found[Plain]),)).impossible
@@ -1646,7 +1646,9 @@ async def test_optional_alternatives_both_absent_block_the_run_and_never_the_pro
     found = by_class(proof)
     (coupon_ref,) = found[WithCoupon].premises["coupon"]
     (bonus_ref,) = found[WithBonus].premises["bonus"]
-    assert (coupon_ref.site, bonus_ref.site) == (COUPON, BONUS)
+    assert isinstance(coupon_ref, HeardRef)
+    assert isinstance(bonus_ref, HeardRef)
+    assert (coupon_ref.because, bonus_ref.because) == ((COUPON,), (BONUS,))
     assert found[CouponAgain].premises["coupon"] == (coupon_ref,)
     which = exclusion_at(proof, Perk, "which")
     assert which.joint.clashes[0].why == "heard"

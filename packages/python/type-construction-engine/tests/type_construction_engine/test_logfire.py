@@ -56,7 +56,7 @@ def test_a_route_under_logfire_is_one_trace_of_the_engines_spans(tmp_path: Path)
     assert all(s["parent"] == route["span"] for s in actions)
     assert route["attributes"]["tca.request"] == "PlaceOrder"
     assert route["attributes"]["tca.outcome"] == "answered"
-    assert route["attributes"]["tca.passes"] == 2
+    assert route["attributes"]["tca.passes"] == 3
     assert sorted((e["name"], e["attributes"]["tca.heard"]) for e in route["events"]) == sorted(
         ("admitted", s["attributes"]["tca.heard"]) for s in actions
     )
@@ -72,7 +72,7 @@ def test_a_route_under_logfire_is_one_trace_of_the_engines_spans(tmp_path: Path)
     ]
     for s in actions:
         site = s["attributes"]["tca.site"]
-        assert s["attributes"]["tca.pass"] == 1
+        assert s["attributes"]["tca.pass"] == (1 if site == "Screen" else 2)
         assert s["attributes"]["tca.heard"] == f"{site}.heard"
         assert s["attributes"]["tca.outcome"] == "heard"
         assert s["attributes"]["tca.record"] == ("Clear" if site == "Screen" else "Price")

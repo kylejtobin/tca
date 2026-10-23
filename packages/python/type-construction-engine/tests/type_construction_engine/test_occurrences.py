@@ -315,10 +315,16 @@ def test_a_fixed_pair_does_not_bind_to_a_collection_of_any_number() -> None:
     )
 
 
-def test_a_conditional_chain_binds_through_the_member_the_record_may_withhold() -> None:
+def test_conditional_evidence_is_carried_on_the_reference_through_a_chain() -> None:
     placed = {c.cls: c for c in proven(optional).constructs(optional.Checkout)}
     assert placed[optional.Discount].premises["coupon"] == (
-        HeardRef(placed[optional.Quote], optional.Quoted, ("coupon",), optional.Coupon),
+        HeardRef(
+            placed[optional.Quote],
+            optional.Quoted,
+            ("coupon",),
+            optional.Coupon,
+            because=(("Quote", "heard", "coupon"),),
+        ),
     )
     assert placed[optional.Discounted].premises["discount"] == (
         ConstructedRef(placed[optional.Discount]),
@@ -409,11 +415,12 @@ async def test_every_construction_records_the_concrete_occurrences_that_supplied
     }
     gift = root.collections[None, ("request", "gifts", "lines")][0]
     assert made_of(first, Share).provenance["cart"] == (("CartTotal",),)
-    assert made_of(gift, Share).provenance["cart"] == (("CartTotal",),)
-    cart_share, gift_share = made_of(first, Share).instance, made_of(gift, Share).instance
+    assert made_of(second, Share).provenance["cart"] == (("CartTotal",),)
+    cart_share, other_share = made_of(first, Share).instance, made_of(second, Share).instance
     assert isinstance(cart_share, Share)
-    assert isinstance(gift_share, Share)
-    assert cart_share.cart is gift_share.cart
+    assert isinstance(other_share, Share)
+    assert cart_share.cart is other_share.cart
+    assert not any(c.cls is Share for c in gift.made), "nothing of the answer needs a gift's share"
     assert made_of(root, program.Paid).provenance["at"] == (("Paid", "at"),)
     assert made_of(root, Screened).provenance == {
         "order": (("request",),),
@@ -424,7 +431,7 @@ async def test_every_construction_records_the_concrete_occurrences_that_supplied
     assert isinstance(screened, Screened)
     assert root.arrived[screen, ()] is screened.clear
     assert root.arrived[None, ("request",)] is request
-    assert done.passes == 2
+    assert done.passes == 3
 
 
 @pytest.mark.asyncio
@@ -447,7 +454,7 @@ async def test_spans_name_each_action_occurrence_by_its_concrete_path() -> None:
             {
                 "tca.party": "Catalog",
                 "tca.site": f"{site}.Quote",
-                "tca.pass": 1,
+                "tca.pass": 2,
                 "tca.outcome": "heard",
                 "tca.record": "Price",
                 "tca.heard": f"{site}.Quote.heard",
@@ -480,7 +487,7 @@ async def test_spans_name_each_action_occurrence_by_its_concrete_path() -> None:
     assert dict(checkout.attributes or {}) == {
         "tca.request": "PlaceOrder",
         "tca.outcome": "answered",
-        "tca.passes": 2,
+        "tca.passes": 3,
     }
     assert sorted(
         (e.name, str((e.attributes or {})["tca.heard"])) for e in checkout.events
