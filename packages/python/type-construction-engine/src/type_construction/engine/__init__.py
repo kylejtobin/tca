@@ -635,12 +635,19 @@ class Declared:
     def output(self) -> Output:
         """What the field's compiled schema can output when it validates: ``Known``, every
         successful output described conservatively, or ``Unknown``, naming the node of the
-        compiled schema the description cannot pass. The field's complete schema is located
-        in the class's as Pydantic compiled it, definitions resolved and the model's own
-        before validators passed, since every output still passes the fields' schemas; any
-        other validator around the model or its fields leaves every field's output unknown.
-        The one source of the constraints Pydantic applies, since a repeated constraint keeps
-        the last declared and distinct constraints all apply."""
+        compiled schema the description cannot pass. The one static knowledge of a value:
+        a constant's, a derivation's, a scalar's and a selection's alike, since each is what
+        Pydantic constructs through this schema and nothing else."""
+        return self.outputs(PLACED)
+
+    def outputs(self, seen: frozenset[type[BaseModel]]) -> Output:
+        """``output``, with the classes already being analyzed, so a derivation reached again
+        through its own operands refines nothing. The field's complete schema is located in
+        the class's as Pydantic compiled it, definitions resolved and the model's own before
+        validators passed, since every output still passes the fields' schemas; any other
+        validator around the model or its fields leaves every field's output unknown. The one
+        source of the constraints Pydantic applies, since a repeated constraint keeps the last
+        declared and distinct constraints all apply."""
         top: Mapping[str, object] = self.cls.__pydantic_core_schema__
         definitions: dict[object, Mapping[str, object]] = {}
         at: tuple[str, ...] = ()
@@ -653,7 +660,11 @@ class Declared:
         node, at = model
         config_ = mapped(node.get("config"))
         compiled = Compiled(
-            definitions, bool(config_.get("validate_default")), tuple(self.info.metadata)
+            self.cls,
+            seen | {self.cls},
+            definitions,
+            bool(config_.get("validate_default")),
+            tuple(self.info.metadata),
         )
         if node.get("root_model"):
             return compiled.outputs(mapped(node.get("schema")), at)
@@ -846,10 +857,12 @@ def beneath(
 @dataclass(frozen=True)
 class Compiled:
     """One field's place in its class's compiled schema, for the analysis of its outputs: the
-    definitions the schema may reference, whether the class validates defaults, and the
-    objects the field's metadata declares, which own the only validators whose output the
-    analysis follows."""
+    class and those already being analyzed above it, the definitions the schema may
+    reference, whether the class validates defaults, and the objects the field's metadata
+    declares, which own the only validators whose output the analysis follows."""
 
+    cls: type[BaseModel]
+    seen: frozenset[type[BaseModel]]
     definitions: Mapping[object, Mapping[str, object]]
     validate_default: bool
     owners: tuple[object, ...]
@@ -888,10 +901,12 @@ class Compiled:
         self, node: Mapping[str, object], here: tuple[str, ...], seen: frozenset[object]
     ) -> Output:
         """A wrapper's output: unknown for a validator that is not a kind's own, since it
-        returns what it will; else the inner schema's, with ``None`` for ``nullable`` and the
-        default for a ``default`` that is not validated."""
+        returns what it will; else the inner schema's, with ``None`` for ``nullable``, the
+        default for a ``default`` that is not validated, and a derivation's own mathematics
+        for a ``Derived`` admitting what it computed through the declared type itself."""
         kind = here[-1]
-        if kind in EXECUTED and not self.owned(node, kind):
+        owner = self.owner(node) if kind in EXECUTED else None
+        if kind in EXECUTED and owner is None:
             return Unknown(kind, here)
         found = self.outputs(mapped(node.get("schema")), here, seen)
         if isinstance(found, Unknown):
@@ -900,30 +915,72 @@ class Compiled:
             return replace(found, none=True)
         if kind == "default":
             return self.defaulted(node, here, found)
+        if isinstance(owner, Derived) and direct(node):
+            return self.derived(owner, found)
         return found
 
-    def owned(self, node: Mapping[str, object], kind: str) -> bool:
-        """Whether a validator node is a kind's own: a wrap validator that is the bound method
-        of a ``Computation`` or a ``Condition`` the field's metadata declares, whose output is
-        what the field's own type admitted of what it computed or was given."""
+    def derived(self, owner: Derived, found: Known) -> Known:
+        """A derivation's output: what its operation makes of what its operands can be, and
+        within what the declared type admits, since the type admits the computed value as it
+        is; the type's alone when an operand's interval is unknown, which the operation can
+        make nothing of."""
+        operands: list[Interval] = []
+        for name in owner.operands:
+            span = spanned(declared(self.cls, name).classes, self.seen)
+            if isinstance(span, Unknown):
+                return found
+            operands.append(span)
+        return replace(found, numbers=meet(found.numbers, owner.interval(tuple(operands))))
+
+    def owner(self, node: Mapping[str, object]) -> Computation | Condition | None:
+        """The kind's own object a validator node is the bound method of, if it is one: a wrap
+        validator of a ``Computation`` or a ``Condition`` the field's metadata declares, whose
+        output is what the field's own type admitted of what it computed or was given."""
         function = mapped(node.get("function")).get("function")
         owner = getattr(function, "__self__", None)
-        return (
-            kind == "function-wrap"
+        if (
+            node.get("type") == "function-wrap"
             and isinstance(owner, (Computation, Condition))
             and any(owner is o for o in self.owners)
-        )
+        ):
+            return owner
+        return None
 
     def defaulted(self, node: Mapping[str, object], here: tuple[str, ...], found: Known) -> Output:
         """A ``default`` node's output: the inner schema's when the default is validated, by
-        the node or by the class; else that with the default among the outputs, or unknown
-        for a factory, whose value nothing bounds."""
+        the node or by the class, and the default's own number when the declared type admits
+        it as it is, which is what a constant constructs; else that with the default among the
+        outputs, or unknown for a factory, whose value nothing bounds."""
         validate = node.get("validate_default")
         if self.validate_default if validate is None else bool(validate):
-            return found
+            value = decimal(node.get("default")) if direct(node) else None
+            return (
+                found if value is None else replace(found, numbers=Interval(low=value, high=value))
+            )
         if "default_factory" in node:
             return Unknown("default_factory", here)
         return widened(found, node.get("default"), here)
+
+
+def direct(node: Mapping[str, object]) -> bool:
+    """Whether a node's inner schema is a native numeric or literal node, which outputs the
+    number it admits as it is: what a default or a computed value passes through unchanged."""
+    return mapped(node.get("schema")).get("type") in NUMBERS | {"literal"}
+
+
+def meet(a: Interval, b: Interval) -> Interval:
+    """The interval both intervals contain: the greater low and the lesser high, strict where
+    the bound that decides is."""
+    lows = [(i.low, i.low_strict) for i in (a, b) if i.low is not None]
+    highs = [(i.high, i.high_strict) for i in (a, b) if i.high is not None]
+    low = max((v for v, _ in lows), default=None)
+    high = min((v for v, _ in highs), default=None)
+    return Interval(
+        low=low,
+        low_strict=any(strict for v, strict in lows if v == low),
+        high=high,
+        high_strict=any(strict for v, strict in highs if v == high),
+    )
 
 
 def alternatives(node: Mapping[str, object]) -> list[Mapping[str, object]]:
@@ -2089,26 +2146,18 @@ def hull(intervals: Iterable[Interval]) -> Interval:
 
 
 def interval(cls: type[BaseModel], seen: frozenset[type[BaseModel]] = PLACED) -> Interval | Unknown:
-    """What a numeric class can be: a constant is its default; a derivation is what its
-    operation makes of what its operands can be; any other class with a root is what the
-    root's compiled schema can output; a class without one is unbounded. A derivation reached
-    again through its own operands is unknown, not a bound invented for the recursion."""
+    """What a class's value can be: every number its ``root`` field's compiled schema can
+    output, as ``Declared.output`` reads it, a constant's default, a derivation's computation
+    and a scalar's bounds among the nodes it passes; unbounded for a class without a root. A
+    derivation reached again through its own operands is unknown, not a bound invented for
+    the recursion."""
     root = root_of(cls)
     if root is None:
         return Interval()
     if cls in seen:
         return Unknown("recursion", (cls.__name__,))
-    if constant(cls) and (value := decimal(root.info.default)) is not None:
-        return Interval(low=value, high=value)
-    if isinstance(derived := root.computation, Derived):
-        operands: list[Interval] = []
-        for name in derived.operands:
-            found = spanned(declared(cls, name).classes, seen | {cls})
-            if isinstance(found, Unknown):
-                return found
-            operands.append(found)
-        return derived.interval(tuple(operands))
-    return root.bounds
+    found = root.outputs(seen)
+    return found.numbers if isinstance(found, Known) else found
 
 
 def spanned(

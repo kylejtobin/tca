@@ -32,6 +32,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    RootModel,
     ValidationError,
     WrapValidator,
     computed_field,
@@ -40,11 +41,13 @@ from pydantic import (
 from pydantic_core import PydanticSerializationError
 
 from type_construction.engine import (
+    Constructed,
     ConstructedRef,
     HeardRef,
     InputRef,
     Known,
     Proof,
+    Run,
     Unknown,
     answer,
     asked,
@@ -62,14 +65,18 @@ from type_construction.engine import (
     outcomes,
     produces,
     proven,
+    ran,
+    scopes,
 )
 from type_construction.world import (
+    COMPUTED,
     Action,
     AtMost,
     Beyond,
     Comparison,
     Config,
     Connection,
+    Derived,
     Equal,
     Fact,
     Greatest,
@@ -945,8 +952,8 @@ def known(found: Interval | Unknown) -> Interval:
     return found
 
 
-def within(interval: Interval, v: int) -> bool:
-    """Whether an integer lies in an interval."""
+def within(interval: Interval, v: Decimal | int) -> bool:
+    """Whether a number lies in an interval."""
     low_ok = interval.low is None or (
         v > interval.low if interval.low_strict else v >= interval.low
     )
@@ -1194,7 +1201,7 @@ def test_a_kinds_own_validator_keeps_its_types_bound_and_every_output_lies_in_it
     )
     assert declared(Largest, "of").output == Known(lengths=(1, None))
     assert declared(Only[Element], "of").output == Known(lengths=(1, 1))
-    assert declared(Portion, "root").output == Known()
+    assert declared(Portion, "root").output == Known(numbers=Interval(low=Decimal(0)))
     assert interval(Portion) == Interval(low=Decimal(0))
     orderings: set[int] = set()
     for amount in (Decimal("0.5"), Decimal(10), Decimal(11)):
@@ -1276,3 +1283,114 @@ def test_a_validator_around_the_model_leaves_its_fields_unknown_and_a_before_one
 
     assert declared(Checked, "amount").output == Unknown("function-after", ("function-after",))
     assert declared(Fed, "amount").output == Known(numbers=Interval(low=Decimal(1)))
+
+
+def test_a_constant_is_what_its_whole_compiled_schema_outputs_not_the_default_written() -> None:
+    class Doubled(Scalar[Decimal]):
+        """A constant whose validated default is doubled on the way in."""
+
+        root: Annotated[Decimal, AfterValidator(lambda v: v * 2)] = Decimal(5)
+
+    class Lifted(Scalar[Decimal]):
+        """A constant whose default is lifted before its bound admits it."""
+
+        root: Annotated[Decimal, Gt(0), BeforeValidator(lambda v: Decimal(str(v)) + 1)] = Decimal(5)
+
+    class Loose(RootModel[int]):
+        """A root whose default is not validated: what is written is what is held."""
+
+        model_config = ConfigDict(validate_default=False)
+        root: int = Field(default=-5, ge=1)
+
+    assert Doubled().root == 10
+    assert interval(Doubled) == Unknown("function-after", ("model", "default", "function-after"))
+    assert Lifted().root == 6
+    assert interval(Lifted) == Interval(low=Decimal(0), low_strict=True)
+    assert Loose().root == -5
+    assert interval(Loose) == Interval(low=Decimal(-5))
+    assert Limit().root == 10
+    assert interval(Limit) == Interval(low=Decimal(10), high=Decimal(10))
+    for cls in (Lifted, Loose, Limit):
+        assert within(known(interval(cls)), cls().root)
+
+
+def test_a_derived_bound_holds_only_through_the_declared_type_admitting_the_computed_value() -> (
+    None
+):
+    (summing,) = (m for m in Sum.model_fields["root"].metadata if isinstance(m, Derived))
+
+    class Plain(Sum[Amount]):
+        """A sum computed and admitted by its declared type, nothing between."""
+
+    class Negated(Sum[Amount]):
+        """A sum whose computed value an after validator negates."""
+
+        root: Annotated[Decimal, summing, AfterValidator(lambda v: -v)] = Field(
+            default=COMPUTED, exclude=True
+        )
+
+    class Turned(Sum[Amount]):
+        """A sum whose computed value a before validator turns before the type admits it."""
+
+        root: Annotated[Decimal, BeforeValidator(lambda v: -Decimal(str(v))), summing] = Field(
+            default=COMPUTED, exclude=True
+        )
+
+    at = ("model", "model-fields", "model-field", "default")
+    amounts = (Amount(Decimal(2)), Amount(Decimal(3)))
+    assert interval(Plain) == Interval(low=Decimal(0))
+    assert Plain(of=amounts).root == 5
+    assert interval(Negated) == Unknown("function-after", (*at, "function-after"))
+    assert Negated(of=amounts).root == -5
+    assert interval(Turned) == Interval()
+    assert Turned(of=amounts).root == -5
+    for cls in (Plain, Turned):
+        assert within(known(interval(cls)), cls(of=amounts).root)
+    assert interval(Portions) == Interval(low=Decimal(0))
+    assert Portions(of=(Portion(left=Share(Decimal(1)), right=Amount(Decimal(2))),)).root == 2
+
+
+def test_a_relations_conclusion_is_not_drawn_from_a_default_its_validators_change() -> None:
+    class Fee(Scalar[Decimal]):
+        """A constant written as 5 and constructed as 50."""
+
+        root: Annotated[Decimal, AfterValidator(lambda v: v * 10)] = Decimal(5)
+
+    class Floor(Scalar[Decimal]):
+        """At least 6."""
+
+        root: Decimal = Field(ge=6)
+
+    class Over(Beyond[Fee, Floor]):
+        """A fee over a floor: held by what constructs, refused by the default as written."""
+
+    assert outcomes(Interval(low=Decimal(5), high=Decimal(5)), known(interval(Floor))) == {-1}
+    assert never(Over) is None
+    assert Over(value=Fee(), bound=Floor(Decimal(6))).ordering == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("party")
+async def test_every_value_constructed_in_nested_and_repeated_occurrences_lies_in_its_bound() -> (
+    None
+):
+    request = Elements.model_validate_json(
+        '{"each": [{"name": "a"}, {"name": "b"}, {"name": "c"}]}'
+    )
+    done = await ran(Operation, request, config(PROGRAM)(), proven(PROGRAM))
+    assert isinstance(done, Run)
+    checked: list[tuple[type[object], Decimal | int]] = []
+    for scope in scopes(done.root):
+        instances = [
+            *((type(i), i) for i in scope.arrived.values()),
+            *((c.cls, m.instance) for c, m in scope.made.items() if isinstance(m, Constructed)),
+        ]
+        for cls, instance in instances:
+            root = getattr(instance, "root", None)
+            if isinstance(root, bool) or not isinstance(root, (Decimal, int)):
+                continue
+            assert within(known(interval(cls)), root), (cls, root)
+            checked.append((cls, root))
+    assert [c for c, _ in checked].count(Portion) == 6
+    assert [c for c, _ in checked].count(Portions) == 3
+    assert {c for c, _ in checked} >= {Portion, Portions, Total, Limit, Amount, Share}
