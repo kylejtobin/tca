@@ -20,6 +20,7 @@ Read [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md
 ## Architectural principles
 
 - Business types remain the declarative program.
+- Apply the seven preservation laws in [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md#laws-every-implementation-must-preserve): effect justification, no authority from ignorance, compositional meaning, scoped constraints, retained distinctions, useful safe progress, and semantics-preserving infrastructure. Passing an example does not waive these laws.
 - Application scenarios exercise generic framework semantics. They must not become engine-specific branches or subsystems.
 - An invocation's lifetime is independent of requests, connections, coroutines and worker attempts.
 - Evaluation, external execution, durable recording, evidence admission and interface projection have separate responsibilities. Do not merge them to save a layer.

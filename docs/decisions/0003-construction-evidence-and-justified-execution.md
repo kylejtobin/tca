@@ -24,6 +24,26 @@ A construction witness identifies the versioned construction and its supplied ev
 
 **Execution belongs to the invocation.** Pure evaluation derives work; the host executes and records it without interpreting business branches. Immediate responses and delayed deliveries both pass admission. Logical effects remain distinct from attempts; equal payloads must not collapse distinct intended occurrences. Closed collections require declared closure before finality or absence is inferred. Local and durable hosts interpret the same business program. No API request, coroutine or transport owns the program's lifetime.
 
+## Laws every implementation must preserve
+
+These laws constrain behavior across the refactor; they do not prescribe class names, storage layout or an algorithm. They apply as each outcome introduces the corresponding machinery. A changed representation must preserve them, and a new abstraction must explain which declared distinction it represents.
+
+1. **Every effect has a justification.** For each proposed effect occurrence, the evaluator must be able to identify its demanding consumer or branch, validated eligibility premises, and established controlling decisions. Availability, eventual usefulness, a successful hypothetical outcome, or a source's name is not a substitute. This justification is derived from the business declarations, not supplied by a second workflow.
+
+2. **Less knowledge cannot create more authority.** Replacing established semantic knowledge with an opaque or unsupported construction cannot, by itself, release an effect. A missing proof stays missing. Equally, more evidence is not automatically more permission: closure, cancellation and version-specific authority must be interpreted under their declared rules. Do not collapse "unknown", "rejected", "waiting" and "authorized" into one flag.
+
+3. **Business meaning survives composition.** A semantics-preserving wrapper, extraction, shared dependency or equivalent validator formulation must not weaken the conditions for an effect, change its subject, or merge distinct occurrences. Explain any genuine semantic change rather than treating model shape as a scheduling instruction. This law does not erase native Pydantic field-order, validator-context or transformation semantics. Opaque behavior may reduce provable knowledge; it must not grant authority.
+
+4. **Constraints and authority stay at their declared scope.** A receiving field's constraint belongs to that construction site; a default belongs to its construction path; a consumer's condition belongs to that demand; an action's eligibility belongs to the action; closure belongs to its declared source and occurrence. None may silently become a class-wide assumption, invocation-wide event, or unrelated sibling's permission. Adding a consumer cannot weaken action eligibility.
+
+5. **Semantic distinctions survive every boundary.** If correctness depends on source, occurrence, version, logical repetition, validation mode, receipt/result role or closure, compilation, admission, evaluation and recovery must retain or soundly derive that distinction. A representation that cannot carry it must change. Dropping information and later guessing it from class, shape, equality, field order or timing is not an implementation strategy.
+
+6. **Safety and useful progress are both obligations.** Refusing every program, withholding every effect, serializing independent work, or requiring invented business types does not implement the contract. A repair must preserve the corresponding valid case and justified concurrency as well as block the invalid case. Missing declarative information receives a precise diagnostic; supported valid programs must not be narrowed merely to simplify the engine.
+
+7. **Optimization and infrastructure preserve meaning.** A cache, index, compiled summary, snapshot, transport or host cannot become a second business authority. Compare behavior with and without an optimization and across hosts under the same declared guarantees. Replay of the same version and recorded history preserves business results, logical identities and justified work; no such claim applies to arbitrarily reordered causal histories or unrecorded observations.
+
+These laws make the design falsifiable. A counterexample is a reason to repair or replace the representation, or to bring an explicit contract conflict to the reviewer. It is not permission to redefine a business requirement around the implementation.
+
 ## Rejected rule and evidence
 
 In `343b13b`, every open construction becomes "undecided", and conjunction dispatches work under every undecided child. This is rejected as a causal rule. A plain fact around `Pinged` causes inspection and ping to dispatch together before permission exists; the identical probe passed on `9447f67`. A minimum-length constraint directly on a goal field also permits premature ping. An evaluation probe changes accepted nested list evidence during construction.
