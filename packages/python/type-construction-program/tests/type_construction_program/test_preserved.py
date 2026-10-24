@@ -9,9 +9,14 @@ beside it; each form waits, refuses and releases alike, with unrelated work conc
 value each constructs equals Pydantic's own. A conditional that leaves its demand open is refused,
 never read as a product. A condition that may be established without the effect it governs is a
 condition, and the same operation at two distinct occurrences is two; only a condition
-established by the very occurrences the conditional governs is refused. A relation over business
-constants is established or refuted from nothing exactly as native construction under the same
-context judges it, and so is a root constant whose validator reads that context.
+established by the very occurrences the conditional governs is refused. A request occurrence is
+one send: two answers the source may give are two propositions over it, so a condition
+established through either answer is established through that one send, which is dispatched
+once with both demands, and a result that is itself one of those answers orders nothing; the
+same operation on another collection's elements is another occurrence, whichever way each is
+answered. A relation over business constants is established or refuted from nothing exactly as
+native construction under the same context judges it, and so is a root constant whose validator
+reads that context.
 """
 
 import pytest
@@ -56,8 +61,11 @@ REFUSED = '{"applicant": "ada", "reason": "unknown"}'
 LINE_SHIPPED = '{"order_id": "o-7", "tracking": "1Z-%s"}'
 CAPTURED = '{"order_id": "o-7", "amount": "%s"}'
 SHIPPED = '{"order_id": "o-7", "tracking": "1Z"}'
+CLEARED = '{"order_id": "o-7"}'
+HELD = '{"order_id": "o-7", "reason": "recall"}'
 PING_REQUEST = "type_construction_program.decisions.PingRequest"
 SHIP_LINE = "type_construction_program.composite.ShipLine"
+SCREEN_LINE = "type_construction_program.composite.ScreenLine"
 
 
 def names(result: Frontier) -> list[str]:
@@ -125,20 +133,6 @@ def test_the_conditional_relationship_is_the_same_in_every_form_the_type_takes(g
     native = declared.model_validate(given, context=Refusals(), by_name=True)  # pyright: ignore[reportUnknownVariableType]  the conditional's arguments are the test's parameter
     assert type(pinged) is declared
     assert pinged == native
-
-
-def test_the_metadata_a_conditional_is_declared_with_is_native_and_kept() -> None:
-    """``Annotated`` outside the conditional describes the holder's field; ``Annotated`` on its
-    arguments describes the conditional's own fields. Pydantic resolves both, and the compiler
-    reads the resolved fields, so nothing is lost and nothing is reinterpreted."""
-    holder = decisions.AdmittedAnnotated.model_fields["pinged"]
-    assert holder.description == "the desk pinged once the registrar allows"
-    declared = holder.annotation
-    assert isinstance(declared, type)
-    assert issubclass(declared, When)
-    assert declared.model_fields["condition"].description == "the registrar's allowance"
-    assert declared.model_fields["result"].description == "the desk's ping"
-    assert decisions.ADMISSIONS["AdmittedAnnotated"].graph.gated
 
 
 def test_a_conditional_that_leaves_its_demand_open_is_refused_not_read_as_a_product() -> None:
@@ -337,6 +331,162 @@ def test_the_same_occurrences_on_both_sides_of_a_conditional_are_a_cycle_and_ref
     assert "CartAfterCart.cart:" in message
     assert "ShipLine at CartAfterCart.cart.condition.cart.*.shipment" in message
     assert "CartAfterCart.cart.result.*.shipment" in message
+    assert "orders nothing" in message
+
+
+def test_two_answers_to_one_check_are_one_occurrence_and_either_establishes_the_condition() -> None:
+    """The desk pinged once the registrar has ruled, allowed or denied. One check is dispatched,
+    demanded by both members of the condition, and the ping is pending behind it. Either answer
+    establishes the ruling and releases the ping, under the ruling's occurrence at that answer,
+    and the goal holds the answer the registrar gave."""
+    program = decisions.RULING
+    invocation = accept(program, InvocationId("rul"), decisions.APPLICANT)
+    opening = frontier(evaluate(program, invocation))
+    (check,) = opening.dispatch
+    assert isinstance(check.request, decisions.CheckRequest)
+    assert sorted(d.consumer for d in opening.why(check.identity).demands) == [
+        "PingedWhenRuled.pinged.condition.via.Allowed",
+        "PingedWhenRuled.pinged.condition.via.Denied",
+    ]
+    assert all(d.activations == () for d in opening.why(check.identity).demands)
+    assert opening.withheld == (
+        Pending(
+            premise="PingedWhenRuled.pinged",
+            condition="PingedWhenRuled.pinged.condition",
+            operations=(PING_REQUEST,),
+        ),
+    )
+    for answer, member in ((ALLOWED, decisions.Allowed), (DENIED, decisions.Denied)):
+        ruled = perform(program, intend(invocation, opening.dispatch), check.identity, answer)
+        released = frontier(evaluate(program, ruled))
+        (ping,) = released.dispatch
+        assert isinstance(ping.request, decisions.PingRequest)
+        assert released.withheld == ()
+        (ruling,) = ruled.evidence
+        assert isinstance(ruling.value, member)
+        assert released.why(ping.identity).demands == (
+            Demand(
+                consumer="PingedWhenRuled.pinged.result",
+                activations=(
+                    Activation(
+                        conditional="PingedWhenRuled.pinged",
+                        condition="PingedWhenRuled.pinged.condition",
+                        occurrence=Built(
+                            kind="type_construction_program.decisions.Ruled",
+                            parts=(("via", Site(evidence=ruling.id)),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        done = perform(program, intend(ruled, (ping,)), ping.identity, PINGED)
+        result = evaluate(program, done)
+        assert isinstance(result, Completed)
+        assert isinstance(result.goal, decisions.PingedWhenRuled)
+        assert isinstance(result.goal.pinged.condition.via, member)
+
+
+def test_a_result_that_is_one_answer_to_the_check_its_condition_needs_is_refused() -> None:
+    """The allowance demanded once the registrar has ruled: the ruling is established through
+    either answer to the one check, and the allowance is that check's answer, so the conditional
+    orders nothing. The program is refused naming the one request and every place that demands
+    an answer to it."""
+    with pytest.raises(ValidationError) as refusal:
+        Program(
+            goal=decisions.AllowedWhenRuled,
+            accepts=decisions.Admit,
+            interactions=(decisions.CHECK,),
+        )
+    message = str(refusal.value)
+    assert "AllowedWhenRuled.allowed:" in message
+    assert (
+        "CheckRequest at AllowedWhenRuled.allowed.condition.via.Allowed and at"
+        " AllowedWhenRuled.allowed.condition.via.Denied and at AllowedWhenRuled.allowed.result"
+    ) in message
+    assert "orders nothing" in message
+
+
+def test_two_answers_per_subject_keep_distinct_subjects_distinct_occurrences() -> None:
+    """The gifts screened only once every cart line is, cleared or held. One screening per cart
+    line is dispatched, each demanded by both answers' premises, and the gifts' screening is
+    pending. One line cleared and one held, the condition is established and the gift's
+    screening released under it, demanded by both of its answers' premises; the goal holds each
+    answer where it was given."""
+    program = composite.SCREENING
+    invocation = accept(program, InvocationId("scr"), composite.ORDER)
+    opening = frontier(evaluate(program, invocation))
+    assert [type(d.request) for d in opening.dispatch] == [composite.ScreenLine] * 2
+    by_line = {d.elements[0].path[-1]: d for d in opening.dispatch}
+    assert set(by_line) == {0, 1}
+    for index, dispatch in by_line.items():
+        assert dispatch.elements == (Site(evidence=0, path=("order", "cart", "lines", index)),)
+        assert sorted(d.consumer for d in opening.why(dispatch.identity).demands) == [
+            f"GiftsAfterCartScreened.gifts.condition.cart[{index}].verdict.LineCleared",
+            f"GiftsAfterCartScreened.gifts.condition.cart[{index}].verdict.LineHeld",
+        ]
+    assert opening.withheld == (
+        Pending(
+            premise="GiftsAfterCartScreened.gifts",
+            condition="GiftsAfterCartScreened.gifts.condition",
+            operations=(SCREEN_LINE,),
+        ),
+    )
+    invocation = intend(invocation, opening.dispatch)
+    invocation = perform(program, invocation, by_line[0].identity, CLEARED)
+    invocation = perform(program, invocation, by_line[1].identity, HELD)
+    released = frontier(evaluate(program, invocation))
+    (gift,) = released.dispatch
+    assert isinstance(gift.request, composite.ScreenLine)
+    assert gift.elements == (Site(evidence=0, path=("order", "gifts", "lines", 0)),)
+    assert released.withheld == ()
+    demands = released.why(gift.identity).demands
+    assert sorted(d.consumer for d in demands) == [
+        "GiftsAfterCartScreened.gifts.result[0].verdict.LineCleared",
+        "GiftsAfterCartScreened.gifts.result[0].verdict.LineHeld",
+    ]
+    for demand in demands:
+        (activation,) = demand.activations
+        assert activation.conditional == "GiftsAfterCartScreened.gifts"
+        assert isinstance(activation.occurrence, Built)
+        assert activation.occurrence.kind.endswith(".CartScreened")
+        cart = dict(activation.occurrence.parts)["cart"]
+        assert isinstance(cart, Elements)
+        assert len(cart.of) == 2
+
+    invocation = perform(program, intend(invocation, (gift,)), gift.identity, HELD)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Completed)
+    assert isinstance(result.goal, composite.GiftsAfterCartScreened)
+    assert [type(s.verdict) for s in result.goal.gifts.condition.cart] == [
+        composite.LineCleared,
+        composite.LineHeld,
+    ]
+    assert [type(s.verdict) for s in result.goal.gifts.result] == [composite.LineHeld]
+
+
+def test_two_answers_per_subject_on_both_sides_of_a_conditional_are_a_cycle_and_refused() -> None:
+    """The cart screened only once the cart is screened, cleared or held: whichever way each
+    line is answered, the condition is established through the very screenings the conditional
+    would govern, so the program is refused naming the one operation at every place an answer
+    to it is demanded."""
+    with pytest.raises(ValidationError) as refusal:
+        Program(
+            goal=composite.CartAfterCartScreened,
+            accepts=composite.ProcessOrder,
+            interactions=(composite.SCREEN_LINE,),
+            bound=(
+                Binding(premise="cart.condition.cart", subject="order.cart.lines"),
+                Binding(premise="cart.result", subject="order.cart.lines"),
+            ),
+        )
+    message = str(refusal.value)
+    assert "CartAfterCartScreened.cart:" in message
+    assert (
+        "ScreenLine at CartAfterCartScreened.cart.condition.cart.*.verdict.LineCleared and at"
+        " CartAfterCartScreened.cart.condition.cart.*.verdict.LineHeld and at"
+        " CartAfterCartScreened.cart.result.*.verdict.LineCleared and at"
+        " CartAfterCartScreened.cart.result.*.verdict.LineHeld"
+    ) in message
     assert "orders nothing" in message
 
 

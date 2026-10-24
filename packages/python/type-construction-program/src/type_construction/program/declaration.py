@@ -23,18 +23,30 @@ a generic subclass of it, either under ``Annotated`` metadata, or a subclass wit
 own beside the two, is the same relationship, read from the fields Pydantic resolves for the
 class; naming it or describing it changes nothing about it, and a conditional whose parameters
 are left open is refused, not read as a product. ``C`` and ``R`` are premises like any other, a
-class constructed through its own complete native boundary, an alternative, a collection; what a
-condition checks inside its boundary, a validator, a constraint, a relation, is its own business
-and the evaluator reads none of it. Established, ``R`` is demanded; refused, the conditional is
-refused. A product without it demands every field jointly and orders nothing between them: a
-validator on a class that also holds an effect is a postcondition of that class, never prior
-authorization for the effect (foundations §7.2, §7.4, §8.2). Whether a condition can be
-established before what the conditional governs is a question about request occurrences, not
-operation names: a condition established, every way it can be, only through the very occurrences
-its result demands would be established by the effects it governs, so the conditional orders
-nothing and the program is refused naming them; a condition with another way to be established,
-through one member of an alternative or through the same operation at another occurrence, is a
-condition (foundations §7.3, §7.6).
+class constructed through its own complete native boundary, an alternative, a collection. The
+condition is established in two steps the graph keeps apart: a candidate is obtained, as any
+premise is, and the candidate is established through the condition's complete declaration, the
+field as the conditional's class declares it with every piece of metadata Pydantic resolved for
+it, a constraint, a validator, a normalization, a discriminator, under that class's configuration
+and the construction's context. What the condition checks there is its own business and the
+evaluator reads none of it; it asks Pydantic the whole question, and asks nothing before.
+Established, ``R`` is demanded; refused, the conditional is refused. A validator a conditional's
+class declares on its condition with a decorator runs only when the class constructs, which is
+after the result it demands, so such a class is refused at declaration and the check belongs in
+the condition's own type. A product without ``When`` demands every field jointly and orders
+nothing between them: a validator on a class that also holds an effect is a postcondition of that
+class, never prior authorization for the effect (foundations §7.2, §7.4, §8.2). Whether a
+condition can be established before what the conditional governs is a question about request
+occurrences, not operation names: a condition established, every way it can be, only through the
+very occurrences its result demands would be established by the effects it governs, so the
+conditional orders nothing and the program is refused naming them; a condition with another way
+to be established, through one member of an alternative or through the same operation at another
+occurrence, is a condition (foundations §7.3, §7.6). A request occurrence is one send: the
+request an interaction sends, constructed from its premises at one place in the graph. The
+records the source may answer it with are distinct propositions heard through that one send, not
+distinct sends, and the same operation requested from other premises, another element of a
+collection, is another occurrence; the evaluator's identity for an effect is the occurrence of
+that same construction.
 
 A ``Program`` is a goal, the input it accepts, its interactions, and the bindings of the goal's
 premises that the classes alone do not determine. Constructing one compiles the goal into a
@@ -50,10 +62,10 @@ constructed, naming the places and the declaration that would tell them apart.
 import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from functools import cached_property
-from typing import Any, Union, get_args, get_origin
+from functools import cache, cached_property
+from typing import Annotated, Any, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, TypeAdapter, model_validator
 from pydantic.fields import FieldInfo
 
 from type_construction.world import Record, Scalar
@@ -181,16 +193,20 @@ def constant(kind: type[BaseModel]) -> bool:
     return not any(True for _ in premises(kind))
 
 
-class When[C: BaseModel, R](BaseModel):
+class When[C, R](BaseModel):
     """``R``, demanded only once ``C`` is established: the one construction relationship a
-    business type declares beyond what its fields already say.
+    business type declares beyond what its fields already say. ``C`` and ``R`` are premises, so
+    each is a declared class, an alternative of them or a collection of one, as any field is.
 
     A field typed ``When[Eligible, OrderShipped]`` says that this holder wants the shipment, and
     wants it only after this eligibility has been constructed; the shipment is not asked for
     while the eligibility is open, and never if it is refused. The condition is an ordinary
-    declared class, constructed through its own complete native boundary with whatever it
-    checks inside it; the evaluator reads nothing of it and needs nothing from it. The value holds
-    both, so the conclusion carries the condition that justified obtaining its result::
+    declared premise, constructed through its own complete native boundary with whatever it
+    checks inside it, and established through the ``condition`` field's complete declaration,
+    metadata and all, so that ``When[Annotated[tuple[Line, ...], Field(min_length=2)], Shipped]``
+    is established by two lines and not by one; the evaluator reads nothing of either and needs
+    nothing from them. The value holds both, so the conclusion carries the condition that
+    justified obtaining its result::
 
         class Fulfilled(Fact):
             shipment: When[Eligible, OrderShipped]
@@ -206,6 +222,12 @@ class When[C: BaseModel, R](BaseModel):
 
         class ApprovedPing(When[Allowed, Pinged]): ...
         class Once[R](When[Allowed, R]): ...
+
+    What establishes the condition is the condition's declaration. A validator the subclass
+    puts on ``condition`` with a decorator belongs to the class and runs when the class
+    constructs, after the result; such a subclass is refused, and the check is declared in the
+    condition's type instead. A validator on the whole class is a postcondition of the whole
+    value, as on any class that holds an effect's result.
     """
 
     model_config = DECLARATION
@@ -431,14 +453,26 @@ class Found:
 
 
 @dataclass(frozen=True)
+class Sent:
+    """One request occurrence: the request an interaction sends, constructed from its premises at
+    one place. Every record the source may answer it with is heard through this one send, so two
+    answers are two propositions over one occurrence, not two occurrences; the same operation
+    requested from other premises, another element of a collection, is another node. The
+    occurrence of the request's construction is the identity of the effect."""
+
+    interaction: Interaction
+    request: Node
+
+
+@dataclass(frozen=True)
 class Heard:
-    """One record a source says, through its interaction: the answer to ``request`` when the
-    interaction sends one, a correlated delivery when it does not, and one element of what the
-    source says when the interaction is a collection source."""
+    """One record a source says, through its interaction: an answer to ``sent`` when the
+    interaction sends a request, a correlated delivery when it does not, and one element of what
+    the source says when the interaction is a collection source."""
 
     interaction: Interaction
     kind: type[BaseModel]
-    request: Node | None = None
+    sent: Sent | None = None
 
 
 @dataclass(frozen=True)
@@ -478,19 +512,48 @@ class Each:
 
 
 @dataclass(frozen=True)
+class Established:
+    """A premise established through one field's complete declaration: ``candidate`` obtains a
+    value as any premise is obtained, and the value is then validated as the field ``name`` of
+    ``holder`` declares it, with every piece of metadata Pydantic resolved for the field, under
+    the holder's configuration and the construction's context. Obtaining the candidate and
+    establishing it are two operations, so that nothing is demanded on a candidate the
+    declaration would refuse. The holder constructs natively from the candidate afterwards, once,
+    so a normalization the declaration performs is applied as the holder applies it."""
+
+    holder: type[BaseModel]
+    name: str
+    candidate: Node
+
+
+@dataclass(frozen=True)
 class Conditional:
     """A ``When``, under whatever name: ``result`` is demanded only once ``condition`` is
-    constructed, and ``premises`` are the fields a subclass declares beside the two, demanded
-    with the condition."""
+    established through the conditional's own declaration of it, and ``premises`` are the fields
+    a subclass declares beside the two, demanded with the condition."""
 
     kind: type[BaseModel]
-    condition: Node
+    condition: Established
     result: Node
     premises: tuple[tuple[str, Node], ...] = ()
 
 
-type Node = Found | Heard | Made | Choice | All | Each | Conditional
+type Node = Found | Heard | Sent | Made | Choice | All | Each | Conditional | Established
 """One construction relationship: how a premise is obtained."""
+
+
+@cache
+def boundary(holder: type[BaseModel], name: str) -> TypeAdapter[object]:
+    """Pydantic's validation of one field as its class declares it: the field's annotation with
+    the field itself as its metadata, which is how Pydantic reads ``Annotated[T, Field(...)]``,
+    so every constraint, validator, normalization and discriminator the class resolved for the
+    field applies, under the class's configuration where the field's type does not carry its
+    own. A type adapter in its supported role, over the complete declaration; nothing is
+    removed from it and nothing is added."""
+    info = holder.model_fields[name]
+    annotation = cast("type[object]", Annotated[(info.annotation, info)])
+    config = None if declared(info.annotation) is not None else holder.model_config
+    return TypeAdapter(annotation, config=config)
 
 
 def within(node: Node) -> tuple[Node, ...]:
@@ -499,7 +562,9 @@ def within(node: Node) -> tuple[Node, ...]:
     match node:
         case Found(held=held):
             inner = (held,)
-        case Heard(request=request):
+        case Heard(sent=sent):
+            inner = (sent,)
+        case Sent(request=request):
             inner = (request,)
         case Made(premises=premises):
             inner = tuple(n for _, n in premises)
@@ -511,39 +576,38 @@ def within(node: Node) -> tuple[Node, ...]:
             inner = (element, closure, holder)
         case Conditional(condition=condition, result=result, premises=premises):
             inner = (condition, result, *(n for _, n in premises))
+        case Established(candidate=candidate):
+            inner = (candidate,)
     return tuple(n for n in inner if n is not None)
 
 
-def dependencies(
-    node: Node, memo: dict[Node, frozenset[Heard]], *, every: bool
-) -> frozenset[Heard]:
-    """The request occurrences a node is constructed through: the nodes of the solicited
-    receives under it, however deep. With ``every``, those every construction of the node passes
-    through, so an alternative contributes what all its members need; without, those some
-    construction may pass through. A class needs each of its premises, a collection each of its
-    elements and its closure, a conditional its condition and its result; an alternative is
-    whichever member holds. Two nodes equal in how they obtain a request are one occurrence, and
-    one operation requested from different premises is as many occurrences."""
+def dependencies(node: Node, memo: dict[Node, frozenset[Sent]], *, every: bool) -> frozenset[Sent]:
+    """The request occurrences a node is constructed through: the sends under it, however deep.
+    With ``every``, those every construction of the node passes through, so an alternative
+    contributes what all its members need; without, those some construction may pass through. A
+    class needs each of its premises, a collection each of its elements and its closure, a
+    conditional its condition and its result; an alternative is whichever member holds, and two
+    members that hold through two answers to one send both need that send. Two nodes equal in how
+    they obtain a request are one occurrence, and one operation requested from different premises
+    is as many occurrences."""
     if node in memo:
         return memo[node]
-    own = frozenset[Heard]()
-    if isinstance(node, Heard) and node.interaction.sends is not None:
-        own = frozenset({node})
+    own = frozenset({node}) if isinstance(node, Sent) else frozenset[Sent]()
     inner = [dependencies(n, memo, every=every) for n in within(node)]
     if isinstance(node, Choice) and every and inner:
         found = inner[0].intersection(*inner[1:])
     else:
-        found = frozenset[Heard]().union(*inner)
+        found = frozenset[Sent]().union(*inner)
     memo[node] = own | found
     return own | found
 
 
-def needed(node: Node) -> frozenset[Heard]:
+def needed(node: Node) -> frozenset[Sent]:
     """The request occurrences every construction of a node passes through."""
     return dependencies(node, {}, every=True)
 
 
-def reachable(node: Node) -> frozenset[Heard]:
+def reachable(node: Node) -> frozenset[Sent]:
     """The request occurrences some construction of a node may pass through."""
     return dependencies(node, {}, every=False)
 
@@ -719,8 +783,8 @@ class Compiler:
         self.program = program
         self.varies: dict[Node, frozenset[Collection]] = {}
         self.gated: dict[Conditional, tuple[str, ...]] = {}
-        self.placed: dict[Heard, list[str]] = {}
-        """Per request occurrence, every path at which the receive it answers is demanded."""
+        self.placed: dict[Sent, list[str]] = {}
+        """Per request occurrence, every path at which a record answering it is demanded."""
 
     def compiled(self) -> Graph:
         program = self.program
@@ -798,7 +862,7 @@ class Compiler:
 
     def heard(self, interaction: Interaction, kind: type[BaseModel], path: str, walk: Walk) -> Node:
         """The node for one record a source says."""
-        request: Node | None = None
+        sent: Sent | None = None
         varies: frozenset[Collection] = frozenset()
         over = self.program.element_collection(interaction)
         if over is not None:
@@ -807,13 +871,13 @@ class Compiler:
             sends = interaction.sends
             rooted = walk.rooted(interaction.bound)
             request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
+            sent = Sent(interaction, request)
+            self.record(sent, self.varies[request])
+            self.placed.setdefault(sent, []).append(path)
             varies = varies | self.varies[request]
         if interaction.many:
             varies = varies | {Collection(kind, ())}
-        node = Heard(interaction, kind, request)
-        if request is not None:
-            self.placed.setdefault(node, []).append(path)
-        return self.record(node, varies)
+        return self.record(Heard(interaction, kind, sent), varies)
 
     def located(self, location: Location, path: str, walk: Walk) -> Node:
         """The node for a value found at a location, with the node that supplies its container
@@ -969,14 +1033,17 @@ class Compiler:
 
     def when(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
         """A conditional premise, read from the fields Pydantic resolved for the class, whatever
-        it is named or inherits from: the condition compiled at ``condition``, the result at
+        it is named or inherits from: the condition's candidate compiled at ``condition`` and
+        established through the class's complete declaration of that field, the result at
         ``result``, and any premise the class declares beside them, demanded with the condition.
         The conditional gates the request occurrences under its result that its condition is not
         established through. One whose result demands only occurrences the condition is
         established through, every way it can be, gates nothing: the condition would be
         established by the very effects it governs, so the program is refused naming them. A
-        conditional with a parameter left open, or whose condition or result is not a premise, is
-        refused as well, since what it orders is not declared."""
+        conditional with a parameter left open, whose condition or result is not a premise, or
+        whose class validates its condition with a decorator, which runs only when the class
+        constructs, is refused as well, since what it orders is not declared where it could
+        establish anything."""
         parameters = kind.__pydantic_generic_metadata__["parameters"]
         if parameters:
             left = ", ".join(p.__name__ for p in parameters)
@@ -996,9 +1063,26 @@ class Compiler:
                     f" {otherwise}; a conditional's condition and result are both premises"
                 )
                 raise ValueError(msg)
-        condition = self.compile(
+        decorated = [
+            d.func.__name__
+            for d in kind.__pydantic_decorators__.field_validators.values()
+            if "condition" in d.info.fields or "*" in d.info.fields
+        ]
+        if decorated:
+            msg = (
+                f"{path}: {kind.__name__} validates its condition with {', '.join(decorated)},"
+                " a validator of the class, which runs when the class constructs, after the"
+                " result the condition is to release; what establishes a condition is the"
+                " condition's own declaration, so declare the check there, in the condition's"
+                " class or as Annotated metadata on it"
+            )
+            raise ValueError(msg)
+        boundary(kind, "condition")
+        candidate = self.compile(
             required.pop("condition"), (*at, "condition"), f"{path}.condition", walk
         )
+        condition = Established(kind, "condition", candidate)
+        self.record(condition, self.varies[candidate])
         result = self.compile(required.pop("result"), (*at, "result"), f"{path}.result", walk)
         beside = tuple(
             (name, self.compile(annotation, (*at, name), f"{path}.{name}", walk))
@@ -1009,20 +1093,21 @@ class Compiler:
         if governed and not gated:
             raise ValueError(self.vacuous(kind, path, governed))
         node = Conditional(kind, condition, result, beside)
-        operations = {qualified(h.interaction.sends) for h in gated if h.interaction.sends}
+        operations = {qualified(s.interaction.sends) for s in gated if s.interaction.sends}
         self.gated[node] = tuple(sorted(operations))
         varies = frozenset[Collection]().union(*(self.varies[n] for n in within(node)))
         return self.record(node, varies)
 
-    def vacuous(self, kind: type[BaseModel], path: str, governed: frozenset[Heard]) -> str:
+    def vacuous(self, kind: type[BaseModel], path: str, governed: frozenset[Sent]) -> str:
         """Why a conditional that gates nothing is refused: each request occurrence its result
-        demands, and every place under the conditional that demands it, condition and result."""
+        demands, and every place under the conditional that demands an answer to it, condition
+        and result, whichever answer."""
         where: list[str] = []
-        for heard in sorted(governed, key=lambda h: qualified(h.kind)):
-            sends = heard.interaction.sends
+        for sent in sorted(governed, key=lambda s: sorted(self.placed[s])):
+            sends = sent.interaction.sends
             if sends is None:
                 continue
-            places = [p for p in self.placed[heard] if p.startswith(f"{path}.")]
+            places = [p for p in self.placed[sent] if p.startswith(f"{path}.")]
             where.append(f"{sends.__name__} at {' and at '.join(sorted(places))}")
         return (
             f"{path}: {kind.__name__} demands its result only once its condition is established,"

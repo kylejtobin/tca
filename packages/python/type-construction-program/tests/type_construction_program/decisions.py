@@ -14,7 +14,10 @@ The conditional is a type, so it composes as types do: under a business name, as
 subclass, under ``Annotated`` metadata, with a premise of its own beside it. Each form is the
 same relationship. A condition that may be established without the effect it governs, through
 one member of an alternative, is a condition; a relation over two business constants is a
-condition established from nothing, or refuted from nothing.
+condition established from nothing, or refuted from nothing. The registrar's one check may be
+answered two ways, and a condition established through either answer is established through
+that one check: the ping it releases is ordered, the allowance it would release is the check's
+own answer and nothing is ordered.
 """
 
 from decimal import Decimal
@@ -466,6 +469,27 @@ class PingedWhenReached(Fact):
     pinged: When[Reached, Pinged]
 
 
+class Ruled(Fact):
+    """The registrar has ruled, either way: allowed or denied, two answers to one check."""
+
+    via: Allowed | Denied
+
+
+class PingedWhenRuled(Fact):
+    """The desk pinged once the registrar has ruled: the one check establishes the condition
+    through either of its answers, and the ping is what the conditional orders after it."""
+
+    pinged: When[Ruled, Pinged]
+
+
+class AllowedWhenRuled(Fact):
+    """The allowance demanded once the registrar has ruled: the allowance is the registrar's
+    answer to the very check the ruling is established through, so the conditional orders
+    nothing and the program is refused at declaration."""
+
+    allowed: When[Ruled, Allowed]
+
+
 class Fee(Scalar[Decimal]):
     """What admission costs: a business constant."""
 
@@ -625,6 +649,7 @@ ADMISSIONS = {
 """One conditional in each of its forms, beside work it does not govern."""
 VOUCHING = Program(goal=PingedWhenVouched, accepts=Admit, interactions=(COMMITTEE_DECISION, PING))
 REACHING = Program(goal=PingedWhenReached, accepts=Admit, interactions=(PING,))
+RULING = Program(goal=PingedWhenRuled, accepts=Admit, interactions=(CHECK, PING))
 FEES = Program(goal=NotifiedByFee, accepts=Admit, interactions=(MAIL, TEXT))
 WAIVED_MAILING = Program(goal=MailedWhenWaived, accepts=Admit, interactions=(MAIL,))
 BILLED_TEXTING = Program(goal=TextedWhenBilled, accepts=Admit, interactions=(TEXT,))

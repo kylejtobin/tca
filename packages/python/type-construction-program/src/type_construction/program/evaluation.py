@@ -21,9 +21,14 @@ Demand is rooted in the goal and propagated through the declared construction re
 
 - **A conditional is ordered demand.** ``When[C, R]``, under whatever name or subclass the
   declarations give it, demands ``C`` first, through its own complete native construction, and
-  demands ``R`` only once ``C`` is constructed. Until then the operations under ``R`` are
-  ``Pending``, named with the conditional and its condition. If ``C`` is refused, nothing under
-  ``R`` is ever demanded and the conditional is refused with it. A premise a subclass declares
+  demands ``R`` only once ``C`` is established. Establishing is two operations: the candidate for
+  ``C`` is constructed as any premise is, and the candidate is validated through the
+  conditional's complete declaration of its condition, the field with every piece of metadata
+  Pydantic resolved for it, under the conditional's configuration and the construction's
+  context. Only that boundary's acceptance activates the result; what it refuses refuses the
+  conditional, classified as the conditional's class classifies its refusals, and nothing under
+  ``R`` is demanded on it. Until the condition is established the operations under ``R`` are
+  ``Pending``, named with the conditional and its condition. A premise a subclass declares
   beside the two is demanded with the condition.
   The work that establishes ``C`` is justified by ``C``'s own demand and needs its own premises
   like any other; being useful to a decision exempts it from nothing (§7.3). Where every use of
@@ -51,7 +56,10 @@ premises, with ``Refusals`` as the validation context so that a refutable kind's
 told from a malformed construction, and nothing is judged before that: no constraint is run on
 a field alone, no validator is set aside, no fragment is rebuilt from an annotation. What
 Pydantic accepts with a padding before-validator, or a revalidated element reading the context,
-the evaluator accepts, because it only ever asks Pydantic the question the declaration asks. A
+the evaluator accepts, because it only ever asks Pydantic the question the declaration asks. The
+one judgement made before a class constructs is a conditional's condition, and it is made the
+same way: the whole field declaration, through Pydantic, under the same context; the class then
+constructs from the candidate, once, so a normalization is applied as the class applies it. A
 class with no premise, a constant or a relation over constants, is constructed from nothing the
 same way, under the same context, so its own refusal is told from a malformed construction like
 any other's; a root model's omitted root is handed to Pydantic as Pydantic's own omitted-root
@@ -69,10 +77,13 @@ relationship; evaluation is scoped, binding each collection in play to one eleme
 is constructed once per scope it varies over, so two places that obtain a value the same way
 share one occurrence and two elements with equal content do not. A constructed value's
 occurrence is the occurrences of its premises, which is what identifies the effect a request
-intends. It reads no clock, performs no effect and allocates no identity that is not derived
-from the history. An attempt that failed leaves its intent dispatchable under the same
-identity. An attempt whose outcome is uncertain leaves it outstanding and not dispatchable;
-which is right is the capability's recovery contract, not a business conclusion.
+intends: the request is one node, constructed once, and every record the source may answer it
+with is heard through that one construction, so the identity the dispatch carries is the
+occurrence the compiler reasoned over. It reads no clock, performs no effect and allocates no
+identity that is not derived from the history. An attempt that failed leaves its intent
+dispatchable under the same identity. An attempt whose outcome is uncertain leaves it
+outstanding and not dispatchable; which is right is the capability's recovery contract, not a
+business conclusion.
 """
 
 from dataclasses import dataclass, field, replace
@@ -98,6 +109,7 @@ from .declaration import (
     Collection,
     Conditional,
     Each,
+    Established,
     Found,
     Heard,
     Interaction,
@@ -105,7 +117,9 @@ from .declaration import (
     Made,
     Node,
     Program,
+    Sent,
     Source,
+    boundary,
     qualified,
 )
 from .invocation import (
@@ -668,6 +682,8 @@ class Evaluator:
                 outcome = self._chosen(node, path, scope, context)
             case Heard():
                 outcome = self._received(node, path, scope, context)
+            case Sent():
+                outcome = self.construct(node.request, path, scope, context)
             case Found():
                 outcome = self._located(node, path, scope, context)
             case Made():
@@ -678,6 +694,8 @@ class Evaluator:
                 outcome = self._mapped(node, path, scope, context)
             case Conditional():
                 outcome = self._conditional(node, path, scope, context)
+            case Established():
+                outcome = self._established(node, path, scope, context)
         return outcome
 
     def _chosen(self, node: Choice, path: str, scope: Scope, context: Context) -> Outcome:
@@ -687,12 +705,29 @@ class Evaluator:
         ]
         return chosen(path, outcomes)
 
+    def _established(self, node: Established, path: str, scope: Scope, context: Context) -> Outcome:
+        """A premise established through its holder's complete declaration of it: the candidate
+        constructed first, as any premise is, then validated as the field declares it, under the
+        holder's configuration and the refusal context. Accepted, the premise is the candidate
+        at its occurrence, which the holder constructs from natively; refused, the refusal is
+        classified as the holder classifies its own, a refutation or a malformed construction,
+        and nothing that waits on the premise is demanded."""
+        candidate = self.construct(node.candidate, path, scope, context)
+        if not isinstance(candidate, Available):
+            return candidate
+        refusals = Refusals()
+        try:
+            boundary(node.holder, node.name).validate_python(candidate.value, context=refusals)
+        except ValidationError as refusal:
+            return refused(node.holder, refusal, refusals, path)
+        return candidate
+
     def _conditional(self, node: Conditional, path: str, scope: Scope, context: Context) -> Outcome:
-        """A conditional premise: the condition first, through its own construction, with any
-        premise the class declares beside it; while the condition is open, the result is pending
-        and nothing under it is demanded; refused, the conditional is refused; constructed, the
-        result is demanded under one more activation, and the class constructs natively from all
-        of them."""
+        """A conditional premise: the condition first, its candidate constructed and established
+        through the conditional's declaration of it, with any premise the class declares beside
+        it; while the condition is open, the result is pending and nothing under it is demanded;
+        refused, the conditional is refused; established, the result is demanded under one more
+        activation, and the class constructs natively from all of them."""
         at = f"{path}.condition"
         gathered = Gathering()
         condition = self.construct(node.condition, at, scope, context)
@@ -726,7 +761,7 @@ class Evaluator:
                 raise RuntimeError(msg)
             (mine,) = [e for e in said if e.id == site.evidence]
             return self._answer(mine, kind, path)
-        if node.request is None:
+        if node.sent is None:
             element = self._element(interaction, scope)
             mine = self._one(path, [e for e in said if e.element == element])
             if mine is not None:
@@ -735,14 +770,16 @@ class Evaluator:
                 receives=interaction.receives, source=interaction.source, element=element
             )
             return awaiting(interaction, how, element)
-        return self._solicited(node, node.request, path, scope, context)
+        return self._solicited(node, node.sent, path, scope, context)
 
     def _solicited(
-        self, node: Heard, sent: Node, path: str, scope: Scope, context: Context
+        self, node: Heard, sent: Sent, path: str, scope: Scope, context: Context
     ) -> Outcome:
         """The answer to this scope's request, or the request's own outcome: the send to
         dispatch, demanded at this premise under the conditions in force, the wait after an
-        attempt, or the premises the request still lacks."""
+        attempt, or the premises the request still lacks. The request is the send's one
+        construction, whichever of the source's records this premise is heard as, so every
+        answer's premise names one identity."""
         interaction, kind = node.interaction, node.kind
         sends = interaction.sends
         if sends is None:
@@ -980,11 +1017,21 @@ class Evaluator:
                 given or omitted(kind), context=refusals, by_alias=False, by_name=True
             )
         except ValidationError as refusal:
-            messages = tuple(e["msg"] for e in refusal.errors())
-            if issubclass(kind, Refutable) and kind.refuted(refusal, refusals):
-                return Refuted((Refutation(premise=path, kind=kind, refused=messages),))
-            return Stuck((Malformed(premise=path, kind=kind, errors=messages),))
+            return refused(kind, refusal, refusals, path)
         return Available(value, occurrence)
+
+
+def refused(
+    kind: type[BaseModel], refusal: ValidationError, refusals: Refusals, path: str
+) -> Refuted | Stuck:
+    """How a refusal of a construction at ``path`` is classified: refuted, when the kind owns the
+    distinction and says, from the context the validation carried, that only its declared
+    conditions refused; malformed otherwise. The same classification for a class constructed
+    from its premises, from nothing, and for a premise established through a field of it."""
+    messages = tuple(e["msg"] for e in refusal.errors())
+    if issubclass(kind, Refutable) and kind.refuted(refusal, refusals):
+        return Refuted((Refutation(premise=path, kind=kind, refused=messages),))
+    return Stuck((Malformed(premise=path, kind=kind, errors=messages),))
 
 
 def items(value: object) -> tuple[object, ...]:

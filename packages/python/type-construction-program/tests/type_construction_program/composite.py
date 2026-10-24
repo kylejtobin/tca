@@ -4,11 +4,13 @@ correlation unique only as a whole, and a request and a fact with native aliases
 
 An order holds lines in a cart and lines among gifts. Every line is a ``Line``, with a sku and
 the warehouse it ships from; two lines may share a sku. The carrier ships one line per request,
-and the same request is sent for a cart line and a gift line. Reviewers approve lines, several
-approvals per line, and say per line when that line's review is closed. An order is eligible
-when an ordinary validator on the fact says so; where the business means the shipment to wait
-for that, it says so with ``When``, and where it holds both jointly it says nothing. Nothing here
-is written for the interpreter.
+and the same request is sent for a cart line and a gift line. Screeners clear or hold one line
+per request, two answers to one request. Reviewers approve lines, several approvals per line,
+and say per line when that line's review is closed. An order is eligible when an ordinary
+validator on the fact says so; where the business means the shipment to wait for that, it says
+so with ``When``, and where it holds both jointly it says nothing. A condition is declared as a
+class of its own or as metadata on the conditional's argument, a constraint, a validator, a
+normalization, and means the same either way. Nothing here is written for the interpreter.
 """
 
 from decimal import Decimal
@@ -748,6 +750,132 @@ class CartAfterCart(Fact):
     cart: When[CartDone, tuple[LineDone, ...]]
 
 
+class Lines(Fact):
+    """At least two lines, by a native constraint inside a condition class of its own."""
+
+    lines: Annotated[tuple[Line, ...], Field(min_length=2)]
+
+
+class ShippedWhenLined(Fact):
+    """The shipment demanded only once the order has at least two lines, the condition a class
+    of its own; the desk pinged regardless."""
+
+    shipment: When[Lines, OrderShipped]
+    pinged: Pinged
+
+
+class ShippedWhenTwoLines(Fact):
+    """The same condition as metadata on the conditional's own argument: the constraint is the
+    condition's declaration, and establishes it, or not, before anything is shipped."""
+
+    shipment: When[Annotated[tuple[Line, ...], Field(min_length=2)], OrderShipped]
+    pinged: Pinged
+
+
+def consolidated(lines: tuple[Line, ...]) -> tuple[Line, ...]:
+    """An ordinary after-validator: every line ships from one warehouse."""
+    if len({line.warehouse.root for line in lines}) > 1:
+        msg = "the lines ship from more than one warehouse"
+        raise ValueError(msg)
+    return lines
+
+
+class ShippedWhenConsolidated(Fact):
+    """The shipment demanded only once every line ships from one warehouse, by a validator on
+    the conditional's argument."""
+
+    shipment: When[Annotated[tuple[Line, ...], AfterValidator(consolidated)], OrderShipped]
+    pinged: Pinged
+
+
+def consolidated_order(order: Lined) -> Lined:
+    """The same check on the order that holds the lines: a validator on a class argument."""
+    consolidated(order.lines)
+    return order
+
+
+class ShippedWhenOrderConsolidated(Fact):
+    """The shipment demanded only once the order, a class, passes a validator on the argument."""
+
+    shipment: When[Annotated[Lined, AfterValidator(consolidated_order)], OrderShipped]
+    pinged: Pinged
+
+
+class ShippedWhenSecondedLines(Fact):
+    """The shipment demanded once the lines, a lone line doubled before the length is checked,
+    are at least two: a normalization the declaration performs, which makes one line enough."""
+
+    shipment: When[
+        Annotated[tuple[Line, ...], BeforeValidator(seconded), Field(min_length=2)], OrderShipped
+    ]
+    pinged: Pinged
+
+
+class ConsolidatedShipment(When[Lined, OrderShipped]):
+    """A conditional that checks its condition with a validator of its own class: the check runs
+    when the class constructs, after the shipment it would have governed, so the program refuses
+    the declaration and the check belongs on the condition."""
+
+    @field_validator("condition")
+    @classmethod
+    def _consolidated(cls, order: Lined) -> Lined:
+        return consolidated_order(order)
+
+
+class ShippedWhenValidated(Fact):
+    shipment: ConsolidatedShipment
+    pinged: Pinged
+
+
+class Reason(Scalar[str]):
+    root: str = Field(min_length=1)
+
+
+class ScreenLine(Value):
+    """What the program sends the screeners for one line, whichever collection holds it."""
+
+    order: OrderId
+    line: Line
+
+
+class LineCleared(Record):
+    order: OrderId = Field(alias="order_id")
+
+
+class LineHeld(Record):
+    order: OrderId = Field(alias="order_id")
+    reason: Reason
+
+
+class LineScreened(Fact):
+    """One line screened, either way: the screeners' one answer, cleared or held."""
+
+    line: Line
+    verdict: LineCleared | LineHeld
+
+
+class CartScreened(Fact):
+    """Every cart line screened, either way."""
+
+    cart: tuple[LineScreened, ...]
+
+
+class GiftsAfterCartScreened(Fact):
+    """The gifts screened only once every cart line is, either way: the condition is established
+    through either answer to one request per cart line, and the gifts' screenings are other
+    occurrences of the operation, which the conditional orders after it."""
+
+    gifts: When[CartScreened, tuple[LineScreened, ...]]
+
+
+class CartAfterCartScreened(Fact):
+    """The cart screened only once the cart is screened: the condition is established by either
+    answer to the very requests the conditional would govern, so it orders nothing and the
+    program is refused at declaration."""
+
+    cart: When[CartScreened, tuple[LineScreened, ...]]
+
+
 class LineQuoted(Fact):
     """One line and its quote."""
 
@@ -790,6 +918,7 @@ class AliasedFact(Fact):
 CARRIER = Source("carrier")
 REVIEWERS = Source("reviewers")
 PAYMENTS = Source("payments")
+SCREENERS = Source("screeners")
 
 BY_ORDER = (Correlation(received="order", subject="order.id"),)
 BY_LINE = (
@@ -801,6 +930,9 @@ BY_SKU = (*BY_ORDER, Correlation(received="sku", subject="order.lines.*.sku"))
 
 SHIP_LINE = Interaction(
     source=CARRIER, sends=ShipLine, receives=(LineShipped,), correlated=BY_ORDER
+)
+SCREEN_LINE = Interaction(
+    source=SCREENERS, sends=ScreenLine, receives=(LineCleared, LineHeld), correlated=BY_ORDER
 )
 LINE_APPROVALS = Interaction(
     source=REVIEWERS, receives=(LineApproved,), correlated=BY_LINE, closed_by=LineReviewClosed
@@ -932,6 +1064,27 @@ GIFTING = Program(
         Binding(premise="gifts.result", subject="order.gifts.lines"),
     ),
 )
+SCREENING = Program(
+    goal=GiftsAfterCartScreened,
+    accepts=ProcessOrder,
+    interactions=(SCREEN_LINE,),
+    bound=(
+        Binding(premise="gifts.condition.cart", subject="order.cart.lines"),
+        Binding(premise="gifts.result", subject="order.gifts.lines"),
+    ),
+)
+LINED_SHIPPING = {
+    goal.__name__: Program(goal=goal, accepts=ReviewLines, interactions=(SHIP_ORDER, PING))
+    for goal in (
+        ShippedWhenLined,
+        ShippedWhenTwoLines,
+        ShippedWhenConsolidated,
+        ShippedWhenOrderConsolidated,
+        ShippedWhenSecondedLines,
+    )
+}
+"""One condition over the order's lines in each of its declarations, beside a ping it does not
+govern."""
 PADDING = Program(goal=Padded, accepts=Count)
 ALIASING = Program(goal=AliasedFact, accepts=FulfillOrder, interactions=(ALIASED,))
 
@@ -963,4 +1116,8 @@ COUNTED = CountedOrder.model_validate({"order": PRICED.order, "note": {"reviewer
 """An order with one counted note, validated once by the time it is accepted, as the order's
 field."""
 ONE_LINE = ReviewLines(order=Lined(id=OrderId("o-7"), lines=(line("tea", "w1"),)))
+TWO_LINES = ReviewLines(
+    order=Lined(id=OrderId("o-7"), lines=(line("tea", "w1"), line("mug", "w1")))
+)
+"""Two lines from one warehouse."""
 TALLY = Count(id=OrderId("o-7"), tally=Tally(counts=[1, 1]))
