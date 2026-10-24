@@ -30,6 +30,14 @@ happen; or an outcome that is not known. Which of these came back is the capabil
 an inference from the payload's shape: a receipt may have the shape of a result. Nothing here
 calls an external system, reads a clock, or decides a business branch.
 
+The history owns its values. What is handed to it, the accepted input and each committed
+request, it copies, so the caller's objects remain the caller's and changing them afterwards
+changes nothing recorded. What it admits from a payload it constructs itself. What is read from
+it is read: the evaluator constructs from copies of the history's values and never hands them to
+a validator, and the values it derives, requests and the goal, are constructions of its own. A
+reader that writes into an entry of the history writes into the record, which nothing here
+pretends to prevent; the record is the owner and is read, not changed.
+
 These are in-memory records for contract experiments. They are not a durable codec, and nothing
 here demonstrates recovery, concurrency or worker ownership.
 """
@@ -471,11 +479,21 @@ class Refusal(Exception):  # noqa: N818  a refusal is a boundary decision, not a
         self.reason: Reason = reason
 
 
+def owned[M: BaseModel](value: M) -> M:
+    """The history's own copy of a value handed to it: the caller keeps its object and may go on
+    changing what that object holds; the record holds a value nothing outside the history
+    refers to. A deep copy through Pydantic copies the model and every value inside it; a
+    class whose copying is not faithful to its value is outside the supported domain."""
+    return value.model_copy(deep=True)
+
+
 def accept(program: Program, identity: InvocationId, given: BaseModel) -> Invocation:
-    """Open an invocation of the program with its accepted input."""
+    """Open an invocation of the program with its accepted input. The history takes its own copy
+    of the input: the caller's object is the caller's, and changing it afterwards changes no
+    recorded premise, no evaluation and no effect identity."""
     if not isinstance(given, program.accepts):
         raise Refusal(NotAccepted(expected=program.accepts, given=type(given)))
-    return Invocation(id=identity, history=(Accepted(input=given),))
+    return Invocation(id=identity, history=(Accepted(input=owned(given)),))
 
 
 def validated(
@@ -722,11 +740,14 @@ def admit(program: Program, invocation: Invocation, delivery: Delivery) -> Invoc
 
 
 def intend(invocation: Invocation, dispatches: tuple[Dispatch, ...]) -> Invocation:
-    """Commit each proposed dispatch's intent that is not yet committed."""
+    """Commit each proposed dispatch's intent that is not yet committed. The history takes its
+    own copy of each request: the dispatch the host holds is the host's."""
     for dispatch in dispatches:
         if dispatch.identity not in invocation.intents:
             entry = Intended(
-                identity=dispatch.identity, request=dispatch.request, elements=dispatch.elements
+                identity=dispatch.identity,
+                request=owned(dispatch.request),
+                elements=dispatch.elements,
             )
             invocation = invocation._with(entry)  # pyright: ignore[reportPrivateUsage]
     return invocation

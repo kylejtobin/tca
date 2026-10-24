@@ -12,7 +12,15 @@ an ordinary validator on the fact says so. Nothing here is written for the inter
 from decimal import Decimal
 from typing import Annotated, Self, cast
 
-from pydantic import AfterValidator, BeforeValidator, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from type_construction.program import Binding, Correlation, Interaction, Program, Source
 from type_construction.world import Equal, Fact, Only, Record, Scalar, Value
@@ -344,6 +352,69 @@ class GuardedDispatched(Fact):
     shipment: GuardedShipped
 
 
+class FlatDispatched(Fact):
+    """The same condition as ``Eligible`` states, moved onto the goal that holds the order, the
+    payment and the shipment: natively, the same business values are accepted and refused."""
+
+    order: Priced
+    payment: Captured
+    shipment: OrderShipped
+
+    @model_validator(mode="after")
+    def _matches(self) -> Self:
+        if self.payment.amount.root != self.order.total.root:
+            msg = "the capture does not match the total"
+            raise ValueError(msg)
+        return self
+
+
+class Noted(Value):
+    """A note that is validated again wherever it is held, by a validator that reads the
+    validation's context: natively, the context the outer construction carries reaches it."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, extra="forbid", revalidate_instances="always"
+    )
+
+    reviewer: Reviewer
+
+    @model_validator(mode="after")
+    def _in_context(self, info: ValidationInfo) -> Self:
+        if info.context is None:
+            msg = "validated outside any context"
+            raise ValueError(msg)
+        return self
+
+
+class Notes(Fact):
+    """At least one note: a native constraint on a field whose elements are revalidated."""
+
+    notes: tuple[Noted, ...] = Field(min_length=1)
+
+
+class Stamped(Value):
+    """A stamp validated again wherever it is held, by a validator on one of its own fields that
+    reads the validation's context: nothing wraps the class, the function is inside it."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, extra="forbid", revalidate_instances="always"
+    )
+
+    reviewer: Reviewer
+
+    @field_validator("reviewer")
+    @classmethod
+    def _in_context(cls, reviewer: Reviewer, info: ValidationInfo) -> Reviewer:
+        if info.context is None:
+            msg = "validated outside any context"
+            raise ValueError(msg)
+        return reviewer
+
+
+class Stamps(Fact):
+    stamps: tuple[Stamped, ...] = Field(min_length=1)
+
+
 class Matches(Equal[Paid, Total]):
     """The capture equals the total: the same condition as ``Eligible`` states, as a declared
     relation the evaluator reads."""
@@ -359,6 +430,15 @@ class DeclaredEligible(Fact):
 
 class DeclaredDispatched(Fact):
     eligible: DeclaredEligible
+    shipment: OrderShipped
+
+
+class FlatDeclared(Fact):
+    """The same condition as a declared relation, on the goal that holds everything."""
+
+    order: Priced
+    payment: Captured
+    matched: Matches
     shipment: OrderShipped
 
 
@@ -560,6 +640,12 @@ DECIDING_BY_SKU = Program(
 DISPATCHING = Program(goal=Dispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
 GUARDED_DISPATCHING = Program(
     goal=GuardedDispatched, accepts=FulfillOrder, interactions=(CAPTURE, GUARDED_SHIP)
+)
+FLAT_DISPATCHING = Program(
+    goal=FlatDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
+)
+FLAT_DECLARED_DISPATCHING = Program(
+    goal=FlatDeclared, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
 )
 DECLARED_DISPATCHING = Program(
     goal=DeclaredDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)

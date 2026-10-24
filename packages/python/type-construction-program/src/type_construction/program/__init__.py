@@ -24,7 +24,6 @@ from .declaration import (
     Interaction,
     Judgement,
     Program,
-    Refusability,
     Source,
     Unread,
 )
@@ -134,7 +133,6 @@ __all__ = [
     "NotAccepted",
     "Occurrence",
     "Program",
-    "Refusability",
     "Refusal",
     "Refutation",
     "Returned",

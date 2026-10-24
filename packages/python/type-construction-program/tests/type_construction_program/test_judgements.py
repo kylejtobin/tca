@@ -11,9 +11,10 @@ constructed results are compared with Pydantic's own construction over the same 
 """
 
 from decimal import Decimal
+from typing import Annotated, Any, cast
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 
 from type_construction.program import (
     Blocked,
@@ -37,8 +38,9 @@ from type_construction.program import (
     intend,
     perform,
 )
-from type_construction.program.declaration import early
+from type_construction.program.declaration import at_field, early, field_schema
 from type_construction.program.evaluation import checked
+from type_construction.world import Refusals
 
 from . import composite
 from .drive import delivered, frontier
@@ -95,6 +97,66 @@ def test_the_same_condition_as_a_validator_or_a_relation_withholds_and_releases_
     assert reason.kind is judged
     assert all(not isinstance(r, composite.ShipOrder) for r in short.intents.values())
 
+    exact = perform(
+        program, intend(invocation, opening.dispatch), opening.dispatch[0].identity, CAPTURED % "50"
+    )
+    (ship,) = frontier(evaluate(program, exact)).dispatch
+    assert isinstance(ship.request, composite.ShipOrder)
+
+
+def test_the_condition_moved_onto_the_goal_grants_the_shipment_no_authority() -> None:
+    """The same condition as a validator on the goal holding the order, the payment and the
+    shipment. Natively it accepts and refuses the same business values as the nested form.
+    Flattened, the evaluator can no longer read that the condition is over the payment and not
+    the shipment: under one reading of the validator the shipment should wait for the capture,
+    under another the capture for the shipment. Neither request is dispatched, and the block
+    names the one judgement and both requests. Packaging reduced what can be read; it did not
+    release the shipment."""
+    program = composite.FLAT_DISPATCHING
+    invocation = accept(program, InvocationId("flat"), composite.PRICED)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Blocked)
+    (reason,) = result.reasons
+    assert reason == Undetermined(
+        judgements=(Unread(premise="FlatDispatched", kind=composite.FlatDispatched),),
+        operations=(
+            "type_construction_program.composite.CaptureRequest",
+            "type_construction_program.composite.ShipOrder",
+        ),
+    )
+    assert invocation.intents == {}
+
+
+@pytest.mark.parametrize(
+    ("program", "behind"),
+    [
+        (composite.DECLARED_DISPATCHING, Decided(premise="DeclaredDispatched.eligible.matched")),
+        (composite.FLAT_DECLARED_DISPATCHING, Decided(premise="FlatDeclared.matched")),
+    ],
+)
+def test_the_same_declared_relation_nested_or_flat_orders_the_shipment_alike(
+    program: Program, behind: Decided
+) -> None:
+    """The condition as a declared relation, inside a nested fact and directly on the goal: the
+    relation says what it is over, so in both forms the capture decides it and the shipment
+    waits for it, a short capture refutes it with no shipment, and an exact one releases it."""
+    invocation = accept(program, InvocationId("fd"), composite.PRICED)
+    opening = frontier(evaluate(program, invocation))
+    assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, composite.ShipOrder)
+    assert deferred.behind == (behind,)
+    assert deferred.unread == ()
+    short = perform(
+        program, intend(invocation, opening.dispatch), opening.dispatch[0].identity, CAPTURED % "20"
+    )
+    blocked = evaluate(program, short)
+    assert isinstance(blocked, Blocked)
+    (reason,) = blocked.reasons
+    assert isinstance(reason, Refutation)
+    assert reason.kind is composite.Matches
+    assert all(not isinstance(r, composite.ShipOrder) for r in short.intents.values())
     exact = perform(
         program, intend(invocation, opening.dispatch), opening.dispatch[0].identity, CAPTURED % "50"
     )
@@ -281,20 +343,60 @@ def test_a_validator_padding_before_a_length_check_is_judged_by_pydantic_alone(
 
 def test_the_bare_constraint_refuses_what_pydantic_accepts_so_it_is_not_judged_early() -> None:
     """The counterexample itself: the field's constraint stripped of its before-validator
-    refuses a lone approval that native construction accepts. ``early`` is false for the field,
-    so the evaluator never makes that stripped judgement."""
+    refuses a lone approval that native construction accepts. The evaluator has no early
+    judgement for either padded field: Pydantic's own schema for the field runs a function, so
+    the field is judged only by constructing."""
     approval = composite.OrderApproval(
         order_id=composite.OrderId("o-7"), reviewer=composite.Reviewer("ren")
     )
-    assert checked(composite.Seconded, "approvals", (approval,)) is not None
+    stripped: TypeAdapter[tuple[composite.OrderApproval, ...]] = TypeAdapter(
+        Annotated[tuple[composite.OrderApproval, ...], Field(min_length=2)]
+    )
+    with pytest.raises(ValidationError):
+        stripped.validate_python((approval,), strict=True)
     assert len(composite.Seconded(approvals=(approval,)).approvals) == 2
+    assert composite.Prefaced.model_validate({"approvals": (approval,)}, by_name=True)
+    assert field_schema(composite.Seconded, "approvals") is None
+    assert field_schema(composite.Prefaced, "approvals") is None
     assert not early(composite.Seconded, "approvals")
     assert not early(composite.Prefaced, "approvals")
-    assert composite.Prefaced.model_validate({"approvals": (approval,)}, by_name=True)
-    assert checked(composite.Prefaced, "approvals", (approval,)) is not None
     assert not early(composite.Covered, "payment")
     assert early(composite.Catalogued, "quotes")
     assert early(composite.Endorsed, "approvals")
+
+
+@pytest.mark.parametrize(
+    ("holder", "name", "element"),
+    [
+        (composite.Notes, "notes", composite.Noted),
+        (composite.Stamps, "stamps", composite.Stamped),
+    ],
+)
+def test_a_revalidated_element_reading_the_context_is_not_judged_outside_it(
+    holder: type[composite.Notes | composite.Stamps],
+    name: str,
+    element: type[composite.Noted | composite.Stamped],
+) -> None:
+    """Pydantic's own construction of the holder revalidates each element with the context the
+    construction carries, and accepts. A judgement of the field from its annotation alone would
+    run the element's validator with no context and refuse what native construction accepts,
+    whether that validator wraps the element's class or sits on one of its fields. The field's
+    own schema runs a function, so the evaluator has no early judgement for it and the field is
+    judged only by constructing, with the same context construction has."""
+    one = element.model_validate({"reviewer": composite.Reviewer("ren")}, context={})
+    native = holder.model_validate({name: (one,)}, context=Refusals(), by_name=True)
+    assert getattr(native, name) == (one,)
+    stripped: TypeAdapter[tuple[object, ...]] = TypeAdapter(
+        Annotated[tuple[element, ...], Field(min_length=1)]  # pyright: ignore[reportInvalidTypeForm]
+    )
+    with pytest.raises(ValidationError, match="outside any context"):
+        stripped.validate_python((one,), strict=True)
+    assert field_schema(holder, name) is None
+    assert not early(holder, name)
+    assert at_field(holder, name, f"{holder.__name__}.{name}", constructed=False) == (
+        Bounded(premise=f"{holder.__name__}.{name}"),
+        Unread(premise=f"{holder.__name__}.{name}", kind=holder),
+    )
 
 
 @pytest.mark.parametrize("count", [1, 2, 3])
@@ -306,7 +408,13 @@ def test_an_early_constraint_judgement_is_pydantics_own_verdict(count: int) -> N
     quotes = tuple(
         composite.Quoted(line=composite.line("tea", "w1"), quote=quote) for _ in range(count)
     )
-    verdict = checked(composite.Catalogued, "quotes", quotes)
+    native = field_schema(composite.Catalogued, "quotes")
+    assert native is not None
+    schema, config = native
+    own = cast("dict[str, Any]", composite.Catalogued.__pydantic_core_schema__)
+    assert schema is own["schema"]["fields"]["quotes"]["schema"]
+    assert config is own["config"]
+    verdict = checked(native, quotes)
     pinged = composite.Pinged(order_id=composite.OrderId("o-7"))
     try:
         composite.Catalogued.model_validate(

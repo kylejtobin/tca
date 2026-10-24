@@ -30,9 +30,8 @@ constructed, naming the places and the declaration that would tell them apart.
 import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from enum import Enum
 from functools import cached_property
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Union, cast, get_args, get_origin
 
 from annotated_types import BaseMetadata, Predicate
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
@@ -163,53 +162,11 @@ def constant(kind: type[BaseModel]) -> bool:
     return not any(True for _ in premises(kind))
 
 
-class Refusability(Enum):
-    """How a construction still open may yet be refused, as far as the evaluator can read it.
-
-    ``ASSURED``: nothing declared or located can refuse it; once its open inputs arrive as the
-    classes declared, it constructs. ``READABLE``: it may be refused, and the evaluator reads
-    what decides that: a source that may answer with another record, a declared refutable
-    condition, a native constraint Pydantic interprets at a field. ``UNREAD``: it may be
-    refused by a validator, default or schema the evaluator locates but cannot read; whether
-    that part refuses anything at all is unknown until the construction runs.
-
-    These are three propositions, not three ranks. A conjunction may be refused if any part may,
-    so ``strongest`` combines its parts; an alternative may be refused only if every live member
-    may, so ``weakest`` combines them. What each proposition justifies for the effects beside it
-    is derived in ``evaluation``, by case analysis over what the unread part might be.
-    """
-
-    ASSURED = "assured"
-    UNREAD = "unread"
-    READABLE = "readable"
-
-
-def strongest(*each: Refusability) -> Refusability:
-    """How a conjunction may be refused: readably if any part may be refused readably, else by
-    an unread part if any part has one, else not at all."""
-    if Refusability.READABLE in each:
-        return Refusability.READABLE
-    if Refusability.UNREAD in each:
-        return Refusability.UNREAD
-    return Refusability.ASSURED
-
-
-def weakest(*each: Refusability) -> Refusability:
-    """How an alternative may be refused: not at all if any live member cannot be, since that
-    member holds whatever the others do; else, if any member's refusal is unread, whether the
-    alternative can be refused is unread; else readably."""
-    if Refusability.ASSURED in each:
-        return Refusability.ASSURED
-    if Refusability.UNREAD in each:
-        return Refusability.UNREAD
-    return Refusability.READABLE
-
-
 class Decided(BaseModel):
     """A decision the business declared may refuse the premise at ``premise``: a source that
     may answer with another of its declared records, or a refutable condition over its
     operands. The evaluator reads it: the premise is decided when the answer or the operands
-    are there."""
+    are there, and the requests that supply them are what decides it."""
 
     model_config = DECLARATION
 
@@ -218,9 +175,9 @@ class Decided(BaseModel):
 
 class Bounded(BaseModel):
     """A native constraint Pydantic interprets may refuse the field at ``premise``: a bound, a
-    length, a fixed tuple size. The evaluator reads it, and where nothing else at the field or
-    around it can change Pydantic's verdict (``early``) judges it through Pydantic as soon as
-    the field's value is there."""
+    length, a fixed tuple size. The evaluator reads it, and where the field's own schema runs
+    nothing but such constraints (``early``) judges it through Pydantic's own schema for the
+    field as soon as the field's value is there."""
 
     model_config = DECLARATION
 
@@ -229,10 +186,11 @@ class Bounded(BaseModel):
 
 class Unread(BaseModel):
     """A part of the construction at ``premise`` the evaluator locates but cannot read may
-    refuse it: a validator callback, a decorated validator, a discriminator, a validated
-    default, a custom schema or a post-init hook of ``kind``. Whether it refuses anything is
-    known only when the construction runs. It is neither a decision the evaluator can wait on
-    knowingly nor proof the construction holds."""
+    refuse it: a validator function anywhere in the field's or the class's schema, a
+    revalidated instance, a discriminator, a validated default, a custom schema or a post-init
+    hook of ``kind``. Whether it refuses anything, and over which premises, is known only when
+    the construction runs. It is neither a decision the evaluator can wait on knowingly nor
+    proof the construction holds."""
 
     model_config = DECLARATION
 
@@ -242,16 +200,6 @@ class Unread(BaseModel):
 
 type Judgement = Decided | Bounded | Unread
 """One place a construction may be refused, at the premise where that is declared."""
-
-
-def refusability(judgement: Judgement) -> Refusability:
-    """The proposition one judgement establishes about the premise it is at."""
-    return Refusability.UNREAD if isinstance(judgement, Unread) else Refusability.READABLE
-
-
-def readable(judgements: tuple[Judgement, ...]) -> tuple[Judgement, ...]:
-    """The judgements the evaluator reads."""
-    return tuple(j for j in judgements if not isinstance(j, Unread))
 
 
 def unread(judgements: tuple[Judgement, ...]) -> tuple[Unread, ...]:
@@ -265,43 +213,224 @@ def native(metadata: object) -> bool:
     return isinstance(metadata, BaseMetadata) and not isinstance(metadata, Predicate)
 
 
-def customized(kind: type[BaseModel]) -> bool:
-    """Whether the class, below Pydantic's own bases, supplies its own core schema or a
-    post-init hook: construction the evaluator cannot read."""
+type Schema = dict[str, Any]
+"""One node of a core schema, as Pydantic built it."""
+
+VALUE_ONLY = frozenset(
+    {
+        "any",
+        "bool",
+        "bytes",
+        "complex",
+        "custom-error",
+        "date",
+        "datetime",
+        "decimal",
+        "dict",
+        "enum",
+        "float",
+        "frozenset",
+        "int",
+        "is-instance",
+        "is-subclass",
+        "list",
+        "literal",
+        "none",
+        "nullable",
+        "set",
+        "str",
+        "time",
+        "timedelta",
+        "tuple",
+        "union",
+        "url",
+        "uuid",
+    }
+)
+"""Core schema kinds whose verdict over a Python value is a function of that value, the schema
+and the configuration alone: they run no function of the business's, read no context, field
+name or sibling data, and transform nothing. Everything else is left to construction."""
+
+NESTED = ("schema", "items_schema", "choices", "keys_schema", "values_schema")
+"""The keys under which a core schema node holds the schemas it validates with."""
+
+FUNCTIONS = frozenset({"function-before", "function-after", "function-wrap"})
+"""Core schema kinds that run a function of the business's around another schema. A class's
+model validators that run after or around construction wrap its model node from outside, so a
+field typed as that class runs them again on the instance it is given."""
+
+
+def peeled(schema: Schema) -> Schema:
+    """The schema with the function wrappers around a model node removed: what a field typed as
+    a declared class runs beyond that class's own validators. Any other schema is returned as
+    it is."""
+    node = schema
+    while node["type"] in FUNCTIONS:
+        node = cast("Schema", node["schema"])
+    return node if node["type"] == "model" else schema
+
+
+@dataclass(frozen=True)
+class Modelled:
+    """A class's core schema read as a model: its fields' schemas by name, its core
+    configuration, the shared definitions its fields may refer to, and whether Pydantic hands
+    each field exactly what was given for it, which a model validator running before or around
+    field validation does not."""
+
+    fields: dict[str, Schema]
+    config: Schema
+    definitions: dict[str, Schema]
+    direct: bool
+    wrapped: bool
+    """Whether any validator of the business's runs around the fields' validation, before,
+    after or around it."""
+
+
+def modelled(kind: type[BaseModel]) -> Modelled | None:
+    """The class's core schema as a model, or ``None`` when it is a root model or supplies a
+    schema that is not a model's."""
+    top: Schema = cast("Schema", kind.__pydantic_core_schema__)
+    definitions: dict[str, Schema] = {}
+    if top["type"] == "definitions":
+        definitions = {d["ref"]: d for d in cast("list[Schema]", top["definitions"])}
+        top = cast("Schema", top["schema"])
+    wrapped = False
+    direct = True
+    while top["type"] in FUNCTIONS:
+        wrapped = True
+        direct = direct and top["type"] == "function-after"
+        top = cast("Schema", top["schema"])
+    if top["type"] != "model":
+        return None
+    inner = cast("Schema", top["schema"])
+    while inner["type"] in FUNCTIONS:
+        wrapped = True
+        direct = direct and inner["type"] == "function-after"
+        inner = cast("Schema", inner["schema"])
+    if inner["type"] != "model-fields":
+        return None
+    fields = {
+        name: cast("Schema", f["schema"])
+        for name, f in cast("dict[str, Schema]", inner["fields"]).items()
+    }
+    return Modelled(fields, cast("Schema", top.get("config", {})), definitions, direct, wrapped)
+
+
+def value_only(schema: Schema, definitions: dict[str, Schema], *, own: bool = False) -> bool:
+    """Whether a core schema judges a Python value by the value alone: it is one of
+    ``VALUE_ONLY`` and so is every schema it validates with, a reference is judged as what it
+    refers to, and a model schema as ``passed``. Any other kind, a function, a call, a default,
+    a tagged union whose tag is computed, is not. With ``own``, the validators a declared class
+    wraps around its own model node are set aside, for a value the evaluator constructs as that
+    class and so judges by that class's own judgements."""
+    if own:
+        schema = peeled(schema)
+    kind = schema["type"]
+    if kind == "definition-ref":
+        return value_only(definitions[schema["schema_ref"]], definitions, own=own)
+    if kind == "model":
+        return passed(schema, definitions, own=own)
+    return kind in VALUE_ONLY and nested_value_only(schema, definitions, own=own)
+
+
+def passed(schema: Schema, definitions: dict[str, Schema], *, own: bool) -> bool:
+    """Whether a model schema judges an instance by the value alone: one that does not
+    revalidate instances passes an instance of its class through, so nothing inside it runs;
+    one that revalidates, which Pydantic records in the node's own configuration, runs its
+    fields, which are judged in turn."""
+    config = cast("Schema", schema.get("config", {}))
+    revalidate = schema.get("revalidate_instances", config.get("revalidate_instances", "never"))
+    if revalidate == "never":
+        return True
+    fields = cast("Schema", schema["schema"])
+    return fields["type"] == "model-fields" and all(
+        value_only(cast("Schema", f["schema"]), definitions, own=own)
+        for f in cast("dict[str, Schema]", fields["fields"]).values()
+    )
+
+
+def nested_value_only(schema: Schema, definitions: dict[str, Schema], *, own: bool) -> bool:
+    """Whether every schema a node validates with, under ``NESTED``, judges by the value alone."""
+    for key in NESTED:
+        inner: object = schema.get(key)
+        if isinstance(inner, dict):
+            if not value_only(cast("Schema", inner), definitions, own=own):
+                return False
+        elif isinstance(inner, list):
+            for choice in cast("list[object]", inner):
+                node: object = (
+                    cast("tuple[object, ...]", choice)[0] if isinstance(choice, tuple) else choice
+                )
+                if not isinstance(node, dict) or not value_only(
+                    cast("Schema", node), definitions, own=own
+                ):
+                    return False
+    return True
+
+
+def field_schema(kind: type[BaseModel], name: str) -> tuple[Schema, Schema] | None:
+    """The core schema Pydantic runs for one field of the class, with the class's core
+    configuration, when that schema judges the field's value by the value alone and the class
+    hands the field exactly what it is given; else ``None``. Validating a value with this
+    schema under this configuration is then the judgement construction makes on the field: the
+    same schema object, the same configuration, and nothing in it that could read a context, a
+    field name, a sibling or run a function of the business's. A refutable class's conditions
+    are judged by constructing it, never here."""
+    if issubclass(kind, Refutable):
+        return None
+    found = modelled(kind)
+    if found is None or not found.direct:
+        return None
+    schema = found.fields[name]
+    if not value_only(schema, found.definitions):
+        return None
+    return schema, found.config
+
+
+def early(kind: type[BaseModel], name: str) -> bool:
+    """Whether the native constraints at a field are judged before the class constructs, with
+    the verdict Pydantic gives at construction: the field has such constraints and its schema
+    is Pydantic's own, judging by the value alone (``field_schema``)."""
+    return bool(constrained(kind, name)) and field_schema(kind, name) is not None
+
+
+def constrained(kind: type[BaseModel], name: str) -> bool:
+    """Whether a field carries a native constraint: constraint metadata, or a fixed tuple
+    size."""
+    info = kind.model_fields[name]
+    shape = collection(info.annotation)
+    return any(native(m) for m in info.metadata) or (shape is not None and shape[1] is not None)
+
+
+def hooked(kind: type[BaseModel]) -> bool:
+    """Whether the class, below Pydantic's own bases, runs a post-init hook: code after
+    construction that the schema does not show and the evaluator cannot read."""
     for base in kind.__mro__:
         if base is BaseModel or base is RootModel:
             break
-        if "__get_pydantic_core_schema__" in vars(base) or "model_post_init" in vars(base):
-            return True
-    return False
-
-
-def decorated(kind: type[BaseModel], name: str) -> bool:
-    """Whether a validator declared by decorator judges this field, by name or for every
-    field."""
-    decorators = kind.__pydantic_decorators__
-    for validator in (*decorators.field_validators.values(), *decorators.validators.values()):
-        if name in validator.info.fields or "*" in validator.info.fields:
+        if "model_post_init" in vars(base):
             return True
     return False
 
 
 def whole(kind: type[BaseModel], path: str) -> tuple[Judgement, ...]:
-    """The judgements a class makes on its construction as a whole, beyond its fields: its
-    declared condition if it is refutable, which the evaluator reads; else what it cannot
-    read: a model validator, a root validator, revalidation of instances, a custom schema or
-    post-init hook, located at the class, and each validated default, located at its field.
-    Empty for a class with none of these, which is the absence of anything located, and then
-    the class constructs once its premises are there as the classes declared."""
+    """The judgements a class makes on its construction as a whole, over every premise at once:
+    its declared condition if it is refutable, which the evaluator reads; else what it cannot
+    read, by Pydantic's own resolved schema for the class: a validator running before, after or
+    around its fields, revalidation of instances, a schema that is not a model's, a post-init
+    hook, located at the class, and each validated default, located at its field. Empty for a
+    class with none of these, which is the absence of anything located, and then the class
+    constructs once its premises are there as the classes declared."""
     if issubclass(kind, Refutable):
         return (Decided(premise=path),)
     found: list[Judgement] = []
-    decorators = kind.__pydantic_decorators__
+    rooted = RootModel in kind.__mro__
+    model = modelled(kind)
     if (
-        decorators.model_validators
-        or decorators.root_validators
+        (not rooted and (model is None or model.wrapped))
+        or (rooted and kind.__pydantic_core_schema__["type"] in FUNCTIONS)
         or kind.model_config.get("revalidate_instances", "never") != "never"
-        or customized(kind)
+        or hooked(kind)
     ):
         found.append(Unread(premise=path, kind=kind))
     for name, info in kind.model_fields.items():
@@ -310,45 +439,41 @@ def whole(kind: type[BaseModel], path: str) -> tuple[Judgement, ...]:
     return tuple(found)
 
 
-def at_field(kind: type[BaseModel], name: str, path: str) -> tuple[Judgement, ...]:
+def at_field(
+    kind: type[BaseModel], name: str, path: str, *, constructed: bool
+) -> tuple[Judgement, ...]:
     """The judgements at one premise field of a class: a native constraint, which the evaluator
-    reads, and what it cannot read, a callback in the metadata, a decorated validator naming
-    the field, a discriminator. A refutable class's field metadata is its declared condition,
-    judged as the whole."""
+    reads, and what it cannot read, which Pydantic's own resolved schema for the field shows:
+    anything beyond value-only judgement, a callback in the metadata, a decorated validator
+    naming the field, a discriminator, a nested instance revalidated with a validator of its
+    own. A field typed as a class runs that class's after and wrap validators again on the
+    instance it is given; where the evaluator constructs that instance (``constructed``) those
+    are the class's own judgements, located at the class, and not counted again here. A
+    refutable class's field metadata is its declared condition, judged as the whole."""
     if issubclass(kind, Refutable):
         return ()
-    info = kind.model_fields[name]
     found: list[Judgement] = []
-    shape = collection(info.annotation)
-    if any(native(m) for m in info.metadata) or (shape is not None and shape[1] is not None):
+    if constrained(kind, name):
         found.append(Bounded(premise=path))
-    if (
-        any(not native(m) for m in info.metadata)
-        or info.discriminator is not None
-        or decorated(kind, name)
-    ):
+    model = modelled(kind)
+    if model is None or not value_only(model.fields[name], model.definitions, own=constructed):
         found.append(Unread(premise=path, kind=kind))
     return tuple(found)
 
 
-def early(kind: type[BaseModel], name: str) -> bool:
-    """Whether the native constraints at a field can be judged over the field's value before
-    the class constructs, with the verdict Pydantic will give at construction. That holds only
-    when nothing omitted can change the verdict: the field's metadata is native constraints
-    alone, no decorated validator names the field, no model validator runs before or around
-    field validation, the class supplies no schema of its own, and the class is not refutable,
-    whose conditions are judged by constructing it. A before-validator that pads a tuple before
-    its length is checked is the counterexample this excludes: Pydantic accepts what the bare
-    constraint refuses."""
-    if issubclass(kind, Refutable):
-        return False
-    info = kind.model_fields[name]
-    if any(not native(m) for m in info.metadata) or info.discriminator is not None:
-        return False
-    decorators = kind.__pydantic_decorators__
-    if decorators.root_validators or decorated(kind, name) or customized(kind):
-        return False
-    return all(v.info.mode == "after" for v in decorators.model_validators.values())
+def made(node: Node) -> bool:
+    """Whether the premise at a node is constructed by the evaluator from its premises, as the
+    class declared, rather than found or heard: then the class's own judgements are located at
+    the construction."""
+    match node:
+        case Made():
+            return True
+        case Each(element=element):
+            return made(element)
+        case Choice(members=members):
+            return all(made(n) for _, n in members)
+        case Found() | Heard() | All():
+            return False
 
 
 def contradictory(bindings: tuple[Binding, ...], root: type[BaseModel]) -> None:
@@ -1035,7 +1160,11 @@ class Compiler:
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
         judgements = (
             *own,
-            *(j for name, _ in compiled for j in at_field(kind, name, f"{path}.{name}")),
+            *(
+                j
+                for name, n in compiled
+                for j in at_field(kind, name, f"{path}.{name}", constructed=made(n))
+            ),
             *self.judged(*(n for _, n in compiled)),
         )
         return self.record(node, varies, judgements)

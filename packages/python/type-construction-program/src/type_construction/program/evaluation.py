@@ -21,41 +21,47 @@ of any one node:
 - **Decisions precede the effects that depend on them.** Each open premise of a conjunction
   carries the judgements still to be made on it, at the places they are declared
   (``Judgement``): a source that may answer otherwise or a refutable condition (``Decided``),
-  a native constraint at a field (``Bounded``), or a validator, default or schema the
-  evaluator cannot read (``Unread``). A request's result either feeds a judgement, when the
-  premise it supplies is under one, or it does not, and then performing it decides nothing:
-  its demand through the conjunction assumes every open judgement of the conjunction resolves
-  in its favour. So a request under a premise nothing can refuse waits for every judgement
-  the conjunction has open, named in ``Deferred``; requests whose results feed judgements
-  the evaluator reads are dispatched together, since each is the declared means of a decision
-  the goal needs, a decision cannot require its own inputs as prior authority (§7.3), and the
-  declarations order none of them before another (§7.2).
+  a native constraint at a field (``Bounded``), or anything in Pydantic's own resolved schema
+  that runs code or depends on more than the value (``Unread``). A judgement at a field or
+  under a premise is over that premise; a judgement a class makes on the whole is over every
+  premise of the class. The requests under a premise supply its value, so they supply the input
+  of every judgement over it. From that, each premise's requests stand to each open judgement
+  in one of three relations (``related``): they decide a judgement the evaluator reads over
+  their premise, and stand, since they are the declared means of a decision the goal needs, a
+  decision cannot require its own inputs as prior authority (§7.3), and independent decisions
+  are made together (§7.2); they depend on a read judgement over another premise, whose
+  refusal would make them pointless, and wait (§7.2); or the relation is unsettled. Nothing is
+  compared between kinds of judgement, and no premise outranks another.
 
 - **An unread judgement grants nothing and settles nothing.** What a validator the evaluator
-  cannot read means is unknown: it may refuse, or it may be an identity. The effects beside
-  it are derived by taking both cases. A request feeding a readable decision is dispatched
-  either way, so it is dispatched. A request under a premise nothing can refuse must wait if
-  the unread part can refuse, so it waits, and ``Deferred`` names the unread judgement: the
-  dependency is unresolved, not established. A request feeding only an unread judgement,
-  beside a readable one, would be a deciding request if the unread part decides and a
-  dependent one if it does not, so it waits for the readable decision, again named as
-  unresolved. Beside premises nothing can refuse it is dispatched, since it would be either
-  way. Beside another unread judgement neither reading settles the order: both requests wait,
-  and if nothing else can advance the invocation that is reported as ``Undetermined``, naming
-  the judgements and the requests, for the business to declare the condition readably or to
-  put the judgement at a construction boundary before the effect (§8.2). Less knowledge never
-  releases an effect, and never invents an order.
+  cannot read means is unknown: it may be a condition over some of the premises it sees, or an
+  identity. The relation of a request to it is derived by taking every reading and keeping only
+  what holds under all. An unread judgement over the request's own premise alone cannot be made
+  without that request, so there is nothing to wait for; whether the request decides it is
+  noted. An unread judgement over another premise may be a condition the request depends on,
+  so the request waits, unsettled. An unread judgement over the whole class, while another
+  premise is open, may turn on that premise's result or on this one's, so each request might be
+  waiting for the other or deciding the judgement itself, and both wait, unsettled; the
+  condition moved from a nested fact onto the class that also demands the shipment withholds
+  the shipment in both forms, and in the second withholds the capture too, since the evaluator
+  can no longer read which premise it is over. A request that decides a read judgement stands
+  beside unread ones, since it would under either reading. Where unsettled requests leave
+  nothing else to do, that is reported as ``Undetermined``, naming the judgements and the
+  requests, for the business to declare the condition as a relation the evaluator reads or at
+  a construction boundary before the effect (§8.2). Less knowledge never releases an effect,
+  and never invents an order.
 
 Independent necessary work stays concurrent: two premises nothing can refuse dispatch
 together, and two readable decisions dispatch their deciding requests together.
 
-A native constraint is judged before its class constructs only where that is the same
-judgement Pydantic makes at construction (``early``): the field's value is there and nothing
-omitted, a callback at the field, a decorated validator, a model validator before or around
-field validation, a custom schema, can change the verdict. Otherwise the constraint is judged
-only when the class constructs, natively, and until then it is an open judgement like any
-other. A conclusion the evaluator cannot establish stays unknown; it is never made by running
-Pydantic on a fragment with the business's own validators stripped away.
+A native constraint is judged before its class constructs only with Pydantic's own schema for
+that field, under the class's own core configuration, and only when that schema contains no
+node that runs a function, reads a context, a field name or sibling data, or revalidates an
+instance whose own schema does (``field_schema``), and nothing of the class's runs before or
+around its fields. Then the judgement is the one construction will make, made earlier.
+Otherwise the constraint is judged only when the class constructs, natively, and until then it
+is an open judgement like any other. A conclusion the evaluator cannot establish stays unknown;
+it is never made by running Pydantic on a fragment rebuilt from the annotation.
 
 Evidence is owned by the history. Evaluation constructs from its own copy of each piece of
 evidence and, at the end, checks the copies still equal the history; a construction that
@@ -80,17 +86,10 @@ recovery contract, not a business conclusion.
 """
 
 from dataclasses import dataclass, replace
-from typing import Annotated, cast
+from typing import cast
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SerializeAsAny,
-    TypeAdapter,
-    ValidationError,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, ValidationError, model_validator
+from pydantic_core import CoreConfig, CoreSchema, SchemaValidator
 
 from type_construction.world import Refusals, Refutable
 
@@ -110,18 +109,15 @@ from .declaration import (
     Made,
     Node,
     Program,
-    Refusability,
+    Schema,
     Source,
     Unread,
     at_field,
     constant,
-    early,
-    native,
+    field_schema,
+    made,
     qualified,
-    refusability,
-    strongest,
     unread,
-    weakest,
     whole,
 )
 from .invocation import (
@@ -388,15 +384,14 @@ class Available:
 @dataclass(frozen=True)
 class Open:
     """The premise is not yet constructed, and declared work may supply it. ``judgements`` are
-    the places under it still to be judged, where they are declared; ``refusable`` is what
-    they establish about the premise as a whole: for a conjunction the strongest, for an
-    alternative the weakest of its live members."""
+    the places under it still to be judged, where they are declared; each is over this premise
+    as its parent sees it. Empty, nothing located can refuse the premise: once its open inputs
+    arrive as the classes declared, it constructs."""
 
     dispatch: dict[EffectIdentity, Dispatch]
     withheld: dict[EffectIdentity, Withheld]
     awaiting: dict[object, Awaiting]
     judgements: tuple[Judgement, ...] = ()
-    refusable: Refusability = Refusability.ASSURED
 
     def needs(self) -> dict[EffectIdentity, Dispatch]:
         """Every request this premise needs performed, dispatched or deferred."""
@@ -457,11 +452,7 @@ def judged(outcome: Open, *judgements: Judgement) -> Open:
     """The open outcome with judgements added at this premise."""
     if not judgements:
         return outcome
-    return replace(
-        outcome,
-        judgements=once((*outcome.judgements, *judgements)),
-        refusable=strongest(outcome.refusable, *(refusability(j) for j in judgements)),
-    )
+    return replace(outcome, judgements=once((*outcome.judgements, *judgements)))
 
 
 type Part = tuple[str, Outcome, tuple[Judgement, ...]]
@@ -472,7 +463,8 @@ makes at that premise's field which are still to be made."""
 @dataclass(frozen=True)
 class Standing:
     """One premise of a conjunction that is open, or available and still judged at its field, as
-    the conjunction sees it: the judgements on it, and what they establish about it."""
+    the conjunction sees it: the judgements on it, at its field and under it. The requests
+    dispatched under it supply its value, so they supply the input of every judgement on it."""
 
     path: str
     outcome: Open | None
@@ -483,39 +475,106 @@ class Standing:
         inner = () if self.outcome is None else self.outcome.judgements
         return once((*self.own, *inner))
 
-    @property
-    def refusable(self) -> Refusability:
-        inner = Refusability.ASSURED if self.outcome is None else self.outcome.refusable
-        return strongest(inner, *(refusability(j) for j in self.own))
 
-    def deferred(
-        self, behind: tuple[Judgement, ...], unresolved: tuple[Unread, ...]
-    ) -> dict[EffectIdentity, Withheld]:
-        """The requests dispatched under this premise, withheld behind the judgements named."""
-        if self.outcome is None:
-            return {}
-        return {
-            identity: Deferred(
-                identity=identity, request=d.request, behind=behind, unread=unresolved
-            )
-            for identity, d in self.outcome.dispatch.items()
-        }
+@dataclass(frozen=True)
+class Decides:
+    """The requests under the premise supply an input of a judgement the evaluator reads: they
+    are the declared means of that decision, and it cannot require its own inputs as prior
+    authority (foundations §7.3)."""
+
+    judgement: Judgement
 
 
-def conjoined(parts: list[Part]) -> Open | Refuted | Stuck | None:
+@dataclass(frozen=True)
+class Depends:
+    """The requests under the premise supply no input of a judgement the evaluator reads that
+    may refuse the conjunction: their demand assumes the decision goes their way, so they wait
+    for it (§7.2). Established."""
+
+    judgement: Judgement
+
+
+@dataclass(frozen=True)
+class Unsettled:
+    """Whether the requests under the premise decide the judgement or depend on it is not
+    established, because of the unread judgements in ``because``: under one reading of what
+    those might be the requests would be dispatched, under another they would wait. Less
+    knowledge releases nothing: they wait, and the frontier names what it could not read."""
+
+    judgement: Judgement
+    because: tuple[Unread, ...]
+
+
+type Relation = Decides | Depends | Unsettled
+"""How the requests under one premise stand to one open judgement of their conjunction."""
+
+
+def related(
+    premise: Standing, whole: tuple[Judgement, ...], others: list[Standing]
+) -> list[Relation]:
+    """The relation of the requests under one premise to every judgement open across the
+    conjunction, derived from what each judgement is over.
+
+    A judgement at or under the premise is over its value, which the requests supply: read, they
+    decide it; unread, there is nothing they could wait for, since the judgement cannot be made
+    without them, and whether they decide it is noted. A judgement the class makes on the whole
+    is over every premise: read, every premise's requests decide it; unread, it may turn on any
+    premise, so while another premise is open the requests might be waiting for that premise's
+    result or deciding the judgement themselves, and that is unsettled. A judgement under
+    another premise is not over this one: read, the requests depend on it, unless they might
+    decide an unread judgement of their own, which leaves it unsettled; unread, it may be a
+    condition they depend on or an identity, which is unsettled. A judgement under another
+    premise that is also under this one is one construction occurrence demanded at both
+    places, and the requests supplying it here supply it there.
+    """
+    relations: list[Relation] = []
+    might: tuple[Unread, ...] = unread(premise.judgements)
+    relations.extend(Decides(j) for j in premise.judgements if not isinstance(j, Unread))
+    open_elsewhere = any(o is not premise and o.outcome is not None for o in others)
+    for j in whole:
+        if not isinstance(j, Unread):
+            relations.append(Decides(j))
+        elif open_elsewhere:
+            relations.append(Unsettled(j, (j,)))
+        else:
+            might = (*might, j)
+    for other in others:
+        if other is premise:
+            continue
+        for j in other.judgements:
+            if j in premise.judgements:
+                continue
+            if isinstance(j, Unread):
+                relations.append(Unsettled(j, (j, *might)))
+            elif might:
+                relations.append(Unsettled(j, might))
+            else:
+                relations.append(Depends(j))
+    return relations
+
+
+def justified(relations: list[Relation]) -> bool:
+    """Whether the requests stand: they decide a judgement the evaluator reads, so they are the
+    means of a decision the goal needs and independent decisions are made together (§7.2); or
+    nothing open withholds them."""
+    if any(isinstance(r, Decides) for r in relations):
+        return True
+    return not any(isinstance(r, Depends | Unsettled) for r in relations)
+
+
+def conjoined(
+    parts: list[Part], whole: tuple[Judgement, ...] = ()
+) -> Open | Refuted | Stuck | None:
     """How several premises' outcomes combine when all are needed: a malformed construction
     outranks a refutation, which outranks open work; ``None`` when every one is available, and
-    then the class constructs, which is what makes any judgement still open at a field.
+    then the class constructs, which is what makes any judgement still open at a field or on
+    the whole.
 
-    Otherwise the requests dispatched under each open premise are kept or withheld by the
-    rules in the module docstring, derived from the judgements still open across the
-    conjunction. Requests feeding a readable decision stand. Requests under a premise nothing
-    can refuse wait for every open judgement. Requests feeding only an unread judgement stand
-    when nothing else in the conjunction may refuse, wait for readable decisions as
-    unresolved, and wait for other unread judgements as unresolved too; in that last case
-    nothing may stand, and the block that follows names what was not established. A judgement
-    two premises share, one construction occurrence demanded at both, is not another judgement:
-    a request feeding it under one premise feeds it under the other.
+    Otherwise each open premise's requests stand or are withheld by their relations to every
+    judgement open across the conjunction, ``related``: at the premise, under another premise,
+    or on the whole class (``whole``). Withheld requests name the judgements they wait for and,
+    where the relation is unsettled, the judgements that could not be read. The class's whole
+    judgements are open on the result as well, for its parent.
     """
     stuck = [r for _, o, _ in parts if isinstance(o, Stuck) for r in o.reasons]
     if stuck:
@@ -528,73 +587,36 @@ def conjoined(parts: list[Part]) -> Open | Refuted | Stuck | None:
         for path, o, own in parts
         if isinstance(o, Open) or own
     ]
-    opens = [s for s in standings if s.outcome is not None]
+    opens = [(s, s.outcome) for s in standings if s.outcome is not None]
     if not opens:
         return None
-    governing = strongest(*(s.refusable for s in standings))
+    dispatch: dict[EffectIdentity, Dispatch] = {}
     withheld: dict[EffectIdentity, Withheld] = {}
     awaiting: dict[object, Awaiting] = {}
-    for s in opens:
-        if s.outcome is not None:
-            awaiting |= s.outcome.awaiting
-            withheld |= s.outcome.withheld
-    if governing == Refusability.READABLE:
-        dispatch, deferred = decided(standings, opens)
-    elif governing == Refusability.UNREAD:
-        dispatch, deferred = unsettled(standings, opens)
-    else:
-        dispatch = {k: d for s in opens if s.outcome for k, d in s.outcome.dispatch.items()}
-        deferred = {}
-    withheld |= deferred
-    for identity in dispatch:
-        withheld.pop(identity, None)
-    judgements = once(tuple(j for s in standings for j in s.judgements))
-    return Open(dispatch, withheld, awaiting, judgements, governing)
-
-
-type Kept = tuple[dict[EffectIdentity, Dispatch], dict[EffectIdentity, Withheld]]
-"""The requests a conjunction dispatches and the requests it withholds."""
-
-
-def decided(standings: list[Standing], opens: list[Standing]) -> Kept:
-    """A readable decision governs: requests feeding one stand; the rest wait for every
-    judgement of the deciding premises, as unresolved where any of those, or their own, is
-    unread."""
-    deciding = [s for s in standings if s.refusable == Refusability.READABLE]
-    decisions = once(tuple(j for s in deciding for j in s.judgements))
-    dispatch: dict[EffectIdentity, Dispatch] = {}
-    withheld: dict[EffectIdentity, Withheld] = {}
-    for s in opens:
-        if s.outcome is not None and s.refusable == Refusability.READABLE:
-            dispatch |= s.outcome.dispatch
-        else:
-            withheld |= s.deferred(decisions, unread((*decisions, *s.judgements)))
-    return dispatch, withheld
-
-
-def unsettled(standings: list[Standing], opens: list[Standing]) -> Kept:
-    """Only unread judgements are open: a request feeding the one unread judgement stands, since
-    it would under either reading of it; a request feeding one unread judgement beside another
-    waits for the other, since one reading has it depend on it; a request feeding none waits
-    for them all."""
-    unsettled = [s for s in standings if s.refusable == Refusability.UNREAD]
-    dispatch: dict[EffectIdentity, Dispatch] = {}
-    withheld: dict[EffectIdentity, Withheld] = {}
-    for s in opens:
-        others = once(
-            tuple(
-                j
-                for u in unsettled
-                if u is not s
-                for j in unread(u.judgements)
-                if j not in s.judgements
+    for s, o in opens:
+        awaiting |= o.awaiting
+        withheld |= o.withheld
+        relations = related(s, whole, standings)
+        if justified(relations):
+            dispatch |= o.dispatch
+            continue
+        behind = once(tuple(r.judgement for r in relations if not isinstance(r, Decides)))
+        because = tuple(
+            dict.fromkeys(
+                (
+                    *unread(behind),
+                    *(u for r in relations if isinstance(r, Unsettled) for u in r.because),
+                )
             )
         )
-        if s.outcome is not None and s.refusable == Refusability.UNREAD and not others:
-            dispatch |= s.outcome.dispatch
-        else:
-            withheld |= s.deferred(others, unread((*others, *s.judgements)))
-    return dispatch, withheld
+        for identity, d in o.dispatch.items():
+            withheld[identity] = Deferred(
+                identity=identity, request=d.request, behind=behind, unread=because
+            )
+    for identity in dispatch:
+        withheld.pop(identity, None)
+    judgements = once((*(j for s in standings for j in s.judgements), *whole))
+    return Open(dispatch, withheld, awaiting, judgements)
 
 
 def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome:
@@ -622,9 +644,9 @@ def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome
 def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
     """How several live open members of an alternative combine: a request every member needs is
     necessary and dispatched when every member dispatches it; a request one member needs and
-    another does not is unchosen. The judgements open are the members'; what they establish
-    about the alternative is the weakest among the members, since it is refused only if every
-    member is."""
+    another does not is unchosen. The alternative is refused only if every live member is, so a
+    member nothing can refuse leaves no judgement open on the alternative; otherwise the
+    judgements open are the members'."""
     members = tuple(m for m, _ in opens)
     needs = [o.needs() for _, o in opens]
     necessary = set(needs[0]).intersection(*(set(n) for n in needs[1:]))
@@ -646,7 +668,9 @@ def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
             dispatch[identity] = next(o.dispatch[identity] for _, o in opens)
             withheld.pop(identity, None)
     judgements = once(tuple(j for _, o in opens for j in o.judgements))
-    return Open(dispatch, withheld, awaiting, judgements, weakest(*(o.refusable for _, o in opens)))
+    if any(not o.judgements for _, o in opens):
+        judgements = ()
+    return Open(dispatch, withheld, awaiting, judgements)
 
 
 def awaiting(interaction: Interaction, how: Awaiting, which: object) -> Open:
@@ -934,12 +958,12 @@ class Evaluator:
 
     def _composed(self, node: Made, path: str, scope: Scope) -> Outcome:
         """A class constructed from its premises through Pydantic. Each premise carries the
-        judgements the class makes at its field: a native constraint, judged through Pydantic
-        as soon as the premise is there where nothing omitted can change the verdict, else
-        left to construction; and what the evaluator cannot read, always left to construction.
-        The class's judgements on the whole, its declared condition or an unread part, are
-        what its parent sees it refusable by. A constant is constructed the same way, since a
-        default is validated too."""
+        judgements the class makes at its field: a native constraint alone, judged as soon as
+        the premise is there with Pydantic's own schema for the field, which is the judgement
+        construction will make; anything else at the field, left to construction. The class's
+        judgements on the whole, its declared condition or an unread part, are over every
+        premise, in this conjunction and for its parent. A constant is constructed the same
+        way, since a default is validated too."""
         kind = node.kind
         if constant(kind):
             return self._validated(kind, None, Built(kind=qualified(kind)), path)
@@ -949,23 +973,22 @@ class Evaluator:
         for name, premise in node.premises:
             at = f"{path}.{name}"
             outcome = self.construct(premise, at, scope)
-            own = at_field(kind, name, at)
+            own = at_field(kind, name, at, constructed=made(premise))
             if isinstance(outcome, Available):
-                if any(isinstance(j, Bounded) for j in own) and early(kind, name):
-                    errors = checked(kind, name, outcome.value)
+                native = field_schema(kind, name)
+                if own == (Bounded(premise=at),) and native is not None:
+                    errors = checked(native, outcome.value)
                     if errors is not None:
                         outcome = Stuck((Malformed(premise=at, kind=kind, errors=errors),))
-                    own = tuple(j for j in own if not isinstance(j, Bounded))
+                    own = ()
                 if isinstance(outcome, Available):
                     given[name] = outcome.value
                     occurrences.append((name, outcome.occurrence))
             parts.append((at, outcome, own))
-        pending = conjoined(parts)
+        pending = conjoined(parts, whole(kind, path))
         if pending is None:
             occurrence = Built(kind=qualified(kind), parts=tuple(occurrences))
             return self._validated(kind, given, occurrence, path)
-        if isinstance(pending, Open):
-            return judged(pending, *whole(kind, path))
         return pending
 
     def _validated(
@@ -991,19 +1014,17 @@ class Evaluator:
         return Available(value, occurrence)
 
 
-def checked(kind: type[BaseModel], name: str, value: object) -> tuple[str, ...] | None:
-    """The errors a field's native constraints raise over an available premise, or ``None``
-    when they hold. Sound only where ``early`` holds: then the field's annotation with its
-    constraint metadata is exactly what Pydantic applies to the field at construction, under
-    the class's own strictness, and applying it here through Pydantic is the same judgement,
-    made as soon as the premise is there."""
-    info = kind.model_fields[name]
-    bounds = tuple(m for m in info.metadata if native(m))
-    judged: object = info.annotation
-    if bounds:
-        judged = Annotated[(info.annotation, *bounds)]  # pyright: ignore[reportInvalidTypeArguments, reportInvalidTypeForm]
+def checked(native: tuple[Schema, Schema], value: object) -> tuple[str, ...] | None:
+    """The errors Pydantic's own schema for a field raises over an available premise, under the
+    class's own core configuration, or ``None`` when it holds. This is the judgement
+    construction will make on the field, made as soon as the premise is there: the same schema,
+    the same configuration, and, by ``field_schema``, nothing in it that reads anything but
+    the value."""
+    schema, config = native
     try:
-        TypeAdapter(judged).validate_python(value, strict=kind.model_config.get("strict"))
+        SchemaValidator(cast("CoreSchema", schema), cast("CoreConfig", config)).validate_python(
+            value
+        )
     except ValidationError as refusal:
         return tuple(e["msg"] for e in refusal.errors())
     return None
