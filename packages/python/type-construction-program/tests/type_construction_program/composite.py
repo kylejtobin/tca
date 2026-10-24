@@ -1,12 +1,14 @@
 """Declarations whose features interact: one operation under two collections, a collection source
-per element with its own closure, an ordinary validator beside delayed evidence and a dependent
-effect, a correlation unique only as a whole, and a request and a fact with native aliases.
+per element with its own closure, a condition over delayed evidence and the effect it governs, a
+correlation unique only as a whole, and a request and a fact with native aliases.
 
 An order holds lines in a cart and lines among gifts. Every line is a ``Line``, with a sku and
 the warehouse it ships from; two lines may share a sku. The carrier ships one line per request,
 and the same request is sent for a cart line and a gift line. Reviewers approve lines, several
-approvals per line, and say per line when that line's review is closed. A line is eligible when
-an ordinary validator on the fact says so. Nothing here is written for the interpreter.
+approvals per line, and say per line when that line's review is closed. An order is eligible
+when an ordinary validator on the fact says so; where the business means the shipment to wait
+for that, it says so with ``When``, and where it holds both jointly it says nothing. Nothing here
+is written for the interpreter.
 """
 
 from decimal import Decimal
@@ -22,7 +24,7 @@ from pydantic import (
     model_validator,
 )
 
-from type_construction.program import Binding, Correlation, Interaction, Program, Source
+from type_construction.program import Binding, Correlation, Interaction, Program, Source, When
 from type_construction.world import Equal, Fact, Only, Record, Scalar, Value
 
 
@@ -180,7 +182,7 @@ class Captured(Record):
 
 class Eligible(Fact):
     """An order whose capture matches its total, by an ordinary validator and no declared
-    relation: the interpreter does not read it, so it cannot know whether it will hold."""
+    relation: the interpreter does not read it, and does not need to."""
 
     order: Priced
     payment: Captured
@@ -249,9 +251,16 @@ class PingRequest(Value):
     order: OrderId
 
 
+class Quotes(Fact):
+    """At least two quotes, by a native field constraint at a construction boundary of its own."""
+
+    quotes: tuple[Quoted, ...] = Field(min_length=2)
+
+
 class Catalogued(Fact):
-    """At least two lines quoted, by a constraint on the goal's own field, and the desk pinged.
-    The constraint is on the consumer itself, not packaged in a separate fact."""
+    """At least two lines quoted, by a constraint on the goal's own field, and the desk pinged:
+    joint construction. The constraint refuses the goal with fewer quotes; it orders nothing
+    between the quotes and the ping, since nothing here declares that the ping waits."""
 
     order: Lined
     quotes: tuple[Quoted, ...] = Field(min_length=2)
@@ -284,6 +293,41 @@ class CataloguedViaCheckedDesk(Fact):
     order: Lined
     quotes: tuple[Quoted, ...] = Field(min_length=2)
     desk: CheckedPingDesk
+
+
+class CataloguedWhenQuoted(Fact):
+    """The desk pinged only once at least two lines are quoted: the condition at a boundary of
+    its own, and the ping declared to wait for it."""
+
+    order: Lined
+    pinged: When[Quotes, Pinged]
+
+
+class CataloguedWhenQuotedViaDesk(Fact):
+    """The same, with the ping in a plain fact under the condition."""
+
+    order: Lined
+    desk: When[Quotes, PingDesk]
+
+
+class CataloguedWhenQuotedViaCheckedDesk(Fact):
+    """The same, with the ping behind an opaque identity validator under the condition."""
+
+    order: Lined
+    desk: When[Quotes, CheckedPingDesk]
+
+
+class GatedDesk(Fact):
+    """The conditional inside a plain fact: the wrapper around the ``When``."""
+
+    pinged: When[Quotes, Pinged]
+
+
+class CataloguedViaGatedDesk(Fact):
+    """The same, with the conditional wrapped rather than the result."""
+
+    order: Lined
+    desk: GatedDesk
 
 
 class Tally(Value):
@@ -331,6 +375,33 @@ class OrderShipped(Record):
 
 
 class Dispatched(Fact):
+    """The shipment demanded only once the order is eligible: the business says the shipment
+    waits, and says it with ``When``. The eligibility is judged by its own validator at its own
+    boundary; the evaluator reads nothing of it."""
+
+    shipment: When[Eligible, OrderShipped]
+
+
+class PaidShipment(Fact):
+    """The payment and the shipment together: a result that holds a record its condition also
+    holds."""
+
+    payment: Captured
+    shipment: OrderShipped
+
+
+class DispatchedWithPayment(Fact):
+    """The paid shipment demanded only once the order is eligible: the condition and the result
+    share the capture, which the condition demands; the conditional gates the shipment alone."""
+
+    shipment: When[Eligible, PaidShipment]
+
+
+class JointlyDispatched(Fact):
+    """The eligibility and the shipment both demanded, jointly: nothing here says the shipment
+    waits for the eligibility, so it does not. The validator on ``Eligible`` refuses the
+    eligibility, and with it this fact, when the capture comes back short; it orders nothing."""
+
     eligible: Eligible
     shipment: OrderShipped
 
@@ -354,7 +425,9 @@ class GuardedDispatched(Fact):
 
 class FlatDispatched(Fact):
     """The same condition as ``Eligible`` states, moved onto the goal that holds the order, the
-    payment and the shipment: natively, the same business values are accepted and refused."""
+    payment and the shipment: natively, the same business values are accepted and refused. Like
+    ``JointlyDispatched`` it demands everything jointly; the validator is a postcondition of the
+    goal, judged when the goal constructs."""
 
     order: Priced
     payment: Captured
@@ -400,17 +473,55 @@ class TakeNotes(Value):
 
 
 class Noting(Fact):
-    """The notes judged at a construction boundary of their own, and the shipment."""
+    """The notes at a construction boundary of their own, and the shipment, jointly."""
 
     noted: Notes
     shipment: OrderShipped
 
 
 class FlatNoting(Fact):
-    """The notes judged on the goal's own field, beside the shipment."""
+    """The notes on the goal's own field, beside the shipment, jointly: the goal constructs
+    natively once the shipment is there, with the context its notes require."""
 
     notes: tuple[Noted, ...] = Field(min_length=1)
     shipment: OrderShipped
+
+
+class ShippedWhenNoted(Fact):
+    """The shipment demanded only once the notes are constructed at their own boundary."""
+
+    shipment: When[Notes, OrderShipped]
+
+
+class Counted(Value):
+    """A note validated again wherever it is held, whose validator returns a replacement counting
+    the validations it has been through: natively, every class that holds it validates it once
+    more, and the count says how many boundaries it crossed."""
+
+    model_config = ConfigDict(
+        frozen=True, strict=True, extra="forbid", revalidate_instances="always"
+    )
+
+    reviewer: Reviewer
+    passes: int = 0
+
+    @model_validator(mode="after")
+    def _counted(self) -> Self:
+        return self.model_copy(update={"passes": self.passes + 1})
+
+
+class CountedOrder(Value):
+    """The command: ship an order with one counted note."""
+
+    order: Priced
+    note: Counted
+
+
+class ShippedWhenCounted(Fact):
+    """The shipment demanded once the note is there: the conditional is one more class holding
+    the note, so native construction validates the note once more at it."""
+
+    shipment: When[Counted, OrderShipped]
 
 
 class Stamped(Value):
@@ -450,22 +561,27 @@ class DeclaredEligible(Fact):
 
 
 class DeclaredDispatched(Fact):
-    eligible: DeclaredEligible
-    shipment: OrderShipped
+    """The shipment demanded only once the order is eligible by a declared relation: the same
+    business as ``Dispatched``, with the condition's check written as a relation inside the
+    condition's boundary rather than as a validator."""
+
+    shipment: When[DeclaredEligible, OrderShipped]
 
 
 class FlatDeclared(Fact):
-    """The same condition as a declared relation, on the goal that holds everything."""
+    """The same condition as a declared relation on the goal that holds everything, and the
+    shipment demanded only once the relation holds: the relation is a construction boundary of
+    its own, so it is the condition directly, with no fact around it."""
 
     order: Priced
     payment: Captured
     matched: Matches
-    shipment: OrderShipped
+    shipment: When[Matches, OrderShipped]
 
 
 class Doubly(Fact):
-    """Two constructions, each behind a validator the evaluator cannot read, each resolved only
-    by its own effect, and nothing declared between them."""
+    """Two constructions, each behind a validator the evaluator does not read, each needing its
+    own effect, and nothing declared between them: joint."""
 
     eligible: Eligible
     desk: CheckedPingDesk
@@ -518,8 +634,9 @@ class Seconded(Fact):
 
 
 class SecondedRelease(Fact):
-    seconded: Seconded
-    shipment: OrderShipped
+    """The shipment demanded only once the approvals, padded, are at least two."""
+
+    shipment: When[Seconded, OrderShipped]
 
 
 class Prefaced(Fact):
@@ -545,8 +662,7 @@ class Prefaced(Fact):
 
 
 class PrefacedRelease(Fact):
-    prefaced: Prefaced
-    shipment: OrderShipped
+    shipment: When[Prefaced, OrderShipped]
 
 
 class SecondedCatalogue(Fact):
@@ -569,14 +685,67 @@ class SecondedCatalogueViaFact(Fact):
     pinged: Pinged
 
 
+class SecondedCatalogueWhenQuoted(Fact):
+    """The desk pinged only once the quotes, padded, are at least two."""
+
+    order: Lined
+    pinged: When[SecondedQuotes, Pinged]
+
+
 class Settled(Fact):
-    covered: Covered
-    shipment: OrderShipped
+    """The shipment demanded only once the capture is covered by an annotated validator."""
+
+    shipment: When[Covered, OrderShipped]
 
 
 class Released(Fact):
-    endorsed: Endorsed
+    """The shipment demanded only once the order is endorsed by at least two approvals."""
+
+    shipment: When[Endorsed, OrderShipped]
+
+
+class ShipmentChecked(Fact):
+    """A condition that requires the shipment it would govern: the capture matches the total,
+    checked on a fact that also holds the shipment."""
+
+    order: Priced
+    payment: Captured
     shipment: OrderShipped
+
+    @model_validator(mode="after")
+    def _matches(self) -> Self:
+        if self.payment.amount.root != self.order.total.root:
+            msg = "the capture does not match the total"
+            raise ValueError(msg)
+        return self
+
+
+class Circular(Fact):
+    """The shipment demanded only once a condition that itself needs the shipment holds: an
+    order that cannot be kept, which the program refuses at declaration."""
+
+    shipment: When[ShipmentChecked, OrderShipped]
+
+
+class LineQuoted(Fact):
+    """One line and its quote."""
+
+    line: Line
+    quote: Quote
+
+
+class LineShippedWhenQuoted(Fact):
+    """One line shipped only once it is quoted: a conditional per element."""
+
+    line: Line
+    shipment: When[LineQuoted, LineShipped]
+
+
+class QuotedShipments(Fact):
+    """Every line quoted and then shipped, each on its own."""
+
+    order: Lined
+    lines: tuple[LineShippedWhenQuoted, ...]
 
 
 class AliasedRequest(Value):
@@ -659,6 +828,12 @@ DECIDING_BY_SKU = Program(
     goal=AllDecided, accepts=ReviewLines, interactions=(APPROVALS_BY_SKU, CLOSING_BY_SKU)
 )
 DISPATCHING = Program(goal=Dispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
+JOINT_DISPATCHING = Program(
+    goal=JointlyDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
+)
+DISPATCHING_WITH_PAYMENT = Program(
+    goal=DispatchedWithPayment, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
+)
 GUARDED_DISPATCHING = Program(
     goal=GuardedDispatched, accepts=FulfillOrder, interactions=(CAPTURE, GUARDED_SHIP)
 )
@@ -670,6 +845,10 @@ FLAT_DECLARED_DISPATCHING = Program(
 )
 NOTING = Program(goal=Noting, accepts=TakeNotes, interactions=(SHIP_ORDER,))
 FLAT_NOTING = Program(goal=FlatNoting, accepts=TakeNotes, interactions=(SHIP_ORDER,))
+NOTED_SHIPPING = Program(goal=ShippedWhenNoted, accepts=TakeNotes, interactions=(SHIP_ORDER,))
+COUNTED_SHIPPING = Program(
+    goal=ShippedWhenCounted, accepts=CountedOrder, interactions=(SHIP_ORDER,)
+)
 DECLARED_DISPATCHING = Program(
     goal=DeclaredDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
 )
@@ -693,6 +872,9 @@ SECONDED_CATALOGUING = Program(
 SECONDED_CATALOGUING_VIA_FACT = Program(
     goal=SecondedCatalogueViaFact, accepts=ReviewLines, interactions=(QUOTE, PING)
 )
+SECONDED_CATALOGUING_WHEN_QUOTED = Program(
+    goal=SecondedCatalogueWhenQuoted, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
 SETTLING = Program(goal=Settled, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
 RELEASING = Program(
     goal=Released, accepts=FulfillOrder, interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER)
@@ -704,6 +886,21 @@ CATALOGUING_VIA_DESK = Program(
 )
 CATALOGUING_VIA_CHECKED_DESK = Program(
     goal=CataloguedViaCheckedDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+CATALOGUING_WHEN_QUOTED = Program(
+    goal=CataloguedWhenQuoted, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+CATALOGUING_WHEN_QUOTED_VIA_DESK = Program(
+    goal=CataloguedWhenQuotedViaDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+CATALOGUING_WHEN_QUOTED_VIA_CHECKED_DESK = Program(
+    goal=CataloguedWhenQuotedViaCheckedDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+CATALOGUING_VIA_GATED_DESK = Program(
+    goal=CataloguedViaGatedDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+QUOTED_SHIPPING = Program(
+    goal=QuotedShipments, accepts=ReviewLines, interactions=(QUOTE, SHIP_LINE)
 )
 PADDING = Program(goal=Padded, accepts=Count)
 ALIASING = Program(goal=AliasedFact, accepts=FulfillOrder, interactions=(ALIASED,))
@@ -732,5 +929,8 @@ TAKEN = TakeNotes.model_validate(
     {"order": PRICED.order, "notes": ({"reviewer": Reviewer("ren")},)}, context={}
 )
 """An order with one note, constructed under a context as its notes require."""
+COUNTED = CountedOrder.model_validate({"order": PRICED.order, "note": {"reviewer": "ren"}})
+"""An order with one counted note, validated once by the time it is accepted, as the order's
+field."""
 ONE_LINE = ReviewLines(order=Lined(id=OrderId("o-7"), lines=(line("tea", "w1"),)))
 TALLY = Count(id=OrderId("o-7"), tally=Tally(counts=[1, 1]))

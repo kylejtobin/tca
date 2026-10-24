@@ -1,12 +1,14 @@
 """Decisions, and the effects that depend on them.
 
 An applicant is admitted when the registrar allows it and the welcome desk has been pinged. The
-registrar may allow or deny; the desk, when pinged, pings. Nothing here says in what order the
-registrar is asked and the desk is pinged: the business says only that both are needed for an
-admission, and that one of them may say no. The other programs vary that one relationship: a
-fallback outcome for the denial; two effects nothing declared decides between; the same two
-decided by a rating; two effects both needed with nothing to decide; two decisions at once; a
-consumer that wants the desk told after a denial, which the desk's own requirement forbids.
+registrar may allow or deny; the desk, when pinged, pings. Where the business means the ping to
+wait for the allowance, it says so: the ping is demanded ``When`` the allowance is established.
+Where it says nothing, both are demanded jointly. The other programs vary that one
+relationship: a fallback outcome for the denial; two effects nothing declared decides between;
+the same two decided by a rating; two effects both needed with nothing to decide; two decisions
+at once; a consumer that wants the desk told after a denial, which the desk's own requirement
+forbids; one operation demanded jointly and conditionally; a chain of conditions; a conditional
+inside an alternative.
 """
 
 from decimal import Decimal
@@ -14,7 +16,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from type_construction.program import Correlation, Interaction, Program, Source
+from type_construction.program import Correlation, Interaction, Program, Source, When
 from type_construction.world import AtMost, Beyond, Fact, Record, Scalar, Value
 
 
@@ -63,7 +65,17 @@ class Pinged(Record):
 
 
 class Granted(Fact):
-    """The outcome: allowed, and the desk pinged."""
+    """The outcome: allowed, and the desk pinged once allowed. The ping is demanded only when
+    the registrar's allowance is established; a denial never pings."""
+
+    allowed: Allowed
+    pinged: When[Allowed, Pinged]
+
+
+class Jointly(Fact):
+    """Allowed and pinged, both demanded jointly: nothing here says the ping waits, so the desk
+    is pinged while the registrar is asked, and a denial leaves the applicant pinged and not
+    admitted."""
 
     allowed: Allowed
     pinged: Pinged
@@ -77,7 +89,7 @@ class Desk(Fact):
 
 class GrantedViaDesk(Fact):
     allowed: Allowed
-    desk: Desk
+    desk: When[Allowed, Desk]
 
 
 class CheckedDesk(Fact):
@@ -93,7 +105,18 @@ class CheckedDesk(Fact):
 
 class GrantedViaCheckedDesk(Fact):
     allowed: Allowed
-    desk: CheckedDesk
+    desk: When[Allowed, CheckedDesk]
+
+
+class Enclosed(Fact):
+    """The conditional ping inside a plain fact: the wrapper around the ``When``."""
+
+    pinged: When[Allowed, Pinged]
+
+
+class GrantedViaEnclosed(Fact):
+    allowed: Allowed
+    enclosed: Enclosed
 
 
 class Rejected(Fact):
@@ -205,10 +228,10 @@ class Cleared(Fact):
 
 
 class Processed(Fact):
-    """Two decisions inside one fact, and a mail beside them."""
+    """Two decisions inside one fact, and a mail sent once both are made."""
 
     cleared: Cleared
-    mailed: Mailed
+    mailed: When[Cleared, Mailed]
 
 
 class NotifyRequest(Value):
@@ -260,10 +283,11 @@ class Refused(Record):
 
 
 class Endorsed(Fact):
-    """A decision nothing is sent for: the committee approves or refuses on its own."""
+    """A decision nothing is sent for: the committee approves or refuses on its own, and the
+    desk is pinged once it approves."""
 
     approved: Approved
-    pinged: Pinged
+    pinged: When[Approved, Pinged]
 
 
 class Withdrawal(Record):
@@ -281,6 +305,53 @@ class Resolved(Fact):
 
     outcome: Granted | Withdrawn
     mailed: Mailed
+
+
+class Shared(Fact):
+    """One ping demanded twice: jointly, and again once the allowance is established."""
+
+    direct: Pinged
+    later: When[Allowed, Pinged]
+
+
+class SharedReversed(Fact):
+    """The same as ``Shared``, with the conditional declared first."""
+
+    later: When[Allowed, Pinged]
+    direct: Pinged
+
+
+class Twice(Fact):
+    """One conditional ping held at two places: one construction, demanded twice."""
+
+    one: Enclosed
+    two: Enclosed
+
+
+class Chained(Fact):
+    """The mail demanded once the ping is there, and the ping once the allowance is."""
+
+    mailed: When[Allowed, When[Pinged, Mailed]]
+
+
+class Either(Fact):
+    """The desk pinged once allowed, or the applicant rejected: a conditional as one member of
+    an alternative."""
+
+    outcome: When[Allowed, Pinged] | Rejected
+
+
+class Pinging(Fact):
+    """A fact of nothing but the ping."""
+
+    pinged: Pinged
+
+
+class Vacuous(Fact):
+    """The ping demanded once the ping is there: a condition established only by the effect it
+    would govern, which the program refuses at declaration."""
+
+    pinged: When[Pinging, Pinged]
 
 
 REGISTRAR = Source("registrar")
@@ -311,7 +382,11 @@ APPLICANT_SOURCE = Source("applicant")
 WITHDRAWAL = Interaction(source=APPLICANT_SOURCE, receives=(Withdrawal,), correlated=BY_APPLICANT)
 
 ADMISSION = Program(goal=Granted, accepts=Admit, interactions=(CHECK, PING))
-"""Allowed and pinged, with no outcome for a denial."""
+"""Allowed and then pinged, with no outcome for a denial."""
+JOINT_ADMISSION = Program(goal=Jointly, accepts=Admit, interactions=(CHECK, PING))
+"""Allowed and pinged, jointly."""
+ADMISSION_VIA_ENCLOSED = Program(goal=GrantedViaEnclosed, accepts=Admit, interactions=(CHECK, PING))
+"""The same as ADMISSION, with the conditional wrapped in a plain fact."""
 ADMISSION_VIA_DESK = Program(goal=GrantedViaDesk, accepts=Admit, interactions=(CHECK, PING))
 """The same, with the ping wrapped in a plain fact."""
 ADMISSION_VIA_CHECKED_DESK = Program(
@@ -330,5 +405,10 @@ VETTING = Program(goal=VettedGranted, accepts=Admit, interactions=(VETTED_CHECK,
 ENDORSEMENT = Program(goal=Endorsed, accepts=Admit, interactions=(COMMITTEE_DECISION, PING))
 RESOLUTION = Program(goal=Resolved, accepts=Admit, interactions=(CHECK, PING, MAIL, WITHDRAWAL))
 """Granted or withdrawn, with a mail beside the alternative."""
+SHARING = Program(goal=Shared, accepts=Admit, interactions=(CHECK, PING))
+SHARING_REVERSED = Program(goal=SharedReversed, accepts=Admit, interactions=(CHECK, PING))
+TWICE = Program(goal=Twice, accepts=Admit, interactions=(CHECK, PING))
+CHAINING = Program(goal=Chained, accepts=Admit, interactions=(CHECK, PING, MAIL))
+EITHER = Program(goal=Either, accepts=Admit, interactions=(CHECK, PING))
 
 APPLICANT = Admit(applicant=Applicant(name=Name("ada")))

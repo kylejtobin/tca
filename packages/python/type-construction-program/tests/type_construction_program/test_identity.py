@@ -50,16 +50,14 @@ def test_a_retry_keeps_the_identity_and_numbers_a_new_attempt() -> None:
 
 
 def test_two_operations_with_equal_request_bodies_have_different_identities() -> None:
-    """The charge decides (the provider may decline), so the hold waits for it; once captured,
-    the hold is dispatched with a request body equal to the charge's and an identity that is
-    not."""
+    """The hold and the charge are demanded jointly and dispatched together, with request bodies
+    that are equal and identities that are not."""
     program = fulfillment.SETTLEMENT
     invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
     opening = frontier(evaluate(program, invocation))
-    (charge,) = opening.dispatch
-    assert [type(w.request) for w in opening.withheld] == [fulfillment.HoldRequest]
-    invocation = perform(program, intend(invocation, opening.dispatch), charge.identity, CAPTURED)
-    (hold,) = frontier(evaluate(program, invocation)).dispatch
+    assert opening.withheld == ()
+    (hold,) = [d for d in opening.dispatch if isinstance(d.request, fulfillment.HoldRequest)]
+    (charge,) = [d for d in opening.dispatch if isinstance(d.request, fulfillment.ChargeRequest)]
     assert isinstance(charge.request, fulfillment.ChargeRequest)
     assert isinstance(hold.request, fulfillment.HoldRequest)
     assert hold.request.model_dump_json() == charge.request.model_dump_json()
@@ -130,9 +128,10 @@ def test_a_request_built_from_later_evidence_names_that_evidence() -> None:
 def test_an_answer_naming_another_operations_intent_is_refused() -> None:
     program = fulfillment.SETTLEMENT
     invocation = accept(program, InvocationId("inv"), fulfillment.ORDER)
-    invocation, charge = performing(program, invocation, CAPTURED)
-    (hold,) = frontier(evaluate(program, invocation)).dispatch
-    invocation = intend(invocation, (hold,))
+    opening = frontier(evaluate(program, invocation))
+    (charge,) = [d for d in opening.dispatch if isinstance(d.request, fulfillment.ChargeRequest)]
+    (hold,) = [d for d in opening.dispatch if isinstance(d.request, fulfillment.HoldRequest)]
+    invocation = perform(program, intend(invocation, opening.dispatch), charge.identity, CAPTURED)
     assert isinstance(hold.request, fulfillment.HoldRequest)
     with pytest.raises(Refusal) as refusal:
         admit(

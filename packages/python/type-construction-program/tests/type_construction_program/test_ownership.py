@@ -86,7 +86,7 @@ def test_changing_a_dispatch_after_intent_changes_no_committed_request() -> None
 def test_what_the_evaluator_hands_back_is_its_own_and_changing_it_touches_no_history() -> None:
     """A constructed goal and the requests in a frontier are built from the evaluator's copies.
     Changing them changes neither the recorded evidence nor a later evaluation."""
-    program = composite.SECONDED_CATALOGUING_VIA_FACT
+    program = composite.SECONDED_CATALOGUING_WHEN_QUOTED
     invocation = accept(program, InvocationId("own"), composite.ONE_LINE)
     opening = frontier(evaluate(program, invocation))
     (quote,) = opening.dispatch
@@ -103,12 +103,13 @@ def test_what_the_evaluator_hands_back_is_its_own_and_changing_it_touches_no_his
     first = evaluate(program, done)
     assert isinstance(first, Completed)
     goal = first.goal
-    assert isinstance(goal, composite.SecondedCatalogueViaFact)
+    assert isinstance(goal, composite.SecondedCatalogueWhenQuoted)
+    quoted = goal.pinged.condition
     assert all(isinstance(e.value, BaseModel) for e in done.evidence)
-    assert all(goal.quoted.quotes[0].quote is not e.value for e in done.evidence)
-    object.__setattr__(goal.quoted, "quotes", ())
+    assert all(quoted.quotes[0].quote is not e.value for e in done.evidence)
+    object.__setattr__(quoted, "quotes", ())
     second = evaluate(program, done)
     assert isinstance(second, Completed)
-    assert isinstance(second.goal, composite.SecondedCatalogueViaFact)
-    assert len(second.goal.quoted.quotes) == 2
+    assert isinstance(second.goal, composite.SecondedCatalogueWhenQuoted)
+    assert len(second.goal.pinged.condition.quotes) == 2
     assert isinstance(evaluate(program, done), Completed | Frontier)

@@ -7,43 +7,35 @@ from an invocation's history. ``declaration`` holds ``Source``, ``Correlation``,
 and ``Program``. ``invocation`` holds the history entries, ``EffectIdentity``, and the protocol
 ``accept``, ``intend``, ``admissible``, ``admit``, ``perform``, ``acknowledge``, ``failed`` and
 ``uncertain``.
-``evaluation`` holds ``evaluate`` and its three results, ``Completed``, ``Frontier`` and
-``Blocked``; a frontier carries the requests withheld as well, ``Deferred`` behind the
-judgements still to be made on a premise beside it, named where they are declared, or
-``Unchosen`` among alternatives.
+``When`` is the one construction relationship a business type declares beyond its composition:
+a result demanded only once a condition is established. ``evaluation`` holds ``evaluate`` and
+its three results, ``Completed``, ``Frontier`` and ``Blocked``; a frontier carries the
+``Derivation`` of each request it dispatches and the requests withheld, ``Pending`` a condition
+or ``Unchosen`` among alternatives.
 
 Nothing here is a durable host. The history is in memory, no worker owns it, and no experiment
 on it demonstrates recovery, concurrency or stale-commit rejection.
 """
 
-from .declaration import (
-    Binding,
-    Bounded,
-    Correlation,
-    Decided,
-    Interaction,
-    Judgement,
-    Program,
-    Source,
-    Unread,
-)
+from .declaration import Binding, Correlation, Interaction, Program, Source, When
 from .evaluation import (
+    Activation,
     AnsweredOtherwise,
     Blocked,
     Completed,
-    Deferred,
+    Demand,
+    Derivation,
     Evaluation,
     Frontier,
     Impure,
     Indeterminate,
-    Justified,
     Malformed,
+    Pending,
     Refutation,
     Solicited,
     Unchosen,
     Unclosed,
     Undecidable,
-    Undetermined,
     Unresolved,
     Unsolicited,
     Withheld,
@@ -97,6 +89,7 @@ from .invocation import (
 __all__ = [
     "Accepted",
     "Acknowledged",
+    "Activation",
     "Admitted",
     "Ambiguous",
     "Answered",
@@ -104,18 +97,17 @@ __all__ = [
     "Attempted",
     "Binding",
     "Blocked",
-    "Bounded",
     "Built",
     "Claim",
     "Closed",
     "Completed",
     "Conflict",
     "Correlation",
-    "Decided",
-    "Deferred",
     "Delivered",
     "Delivery",
     "DeliveryId",
+    "Demand",
+    "Derivation",
     "Dispatch",
     "EffectIdentity",
     "Elements",
@@ -129,11 +121,10 @@ __all__ = [
     "Interaction",
     "Invocation",
     "InvocationId",
-    "Judgement",
-    "Justified",
     "Malformed",
     "NotAccepted",
     "Occurrence",
+    "Pending",
     "Program",
     "Refusal",
     "Refutation",
@@ -147,15 +138,14 @@ __all__ = [
     "Unclosed",
     "Uncorrelated",
     "Undecidable",
-    "Undetermined",
     "Unintended",
     "UnknownIntent",
     "Unmatched",
-    "Unread",
     "Unrecognized",
     "Unrequested",
     "Unresolved",
     "Unsolicited",
+    "When",
     "Withheld",
     "accept",
     "acknowledge",

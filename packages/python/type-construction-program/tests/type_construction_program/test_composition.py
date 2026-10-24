@@ -4,7 +4,9 @@ A3, B1 to B5, D1, N4, N6, N12).
 The declarations are ``composite``. Each experiment combines what the earlier modules test one at
 a time, and each names what it establishes and no more. Independent review found the defects the
 first two experiments regress: a delivery identity shared across sources was one claim, and a
-request class demanded under two collections was compiled once.
+request class demanded under two collections was compiled once. The conditional cases hold the
+business requirement each reviewer counterexample assumed, declared with ``When``; the plain
+cases beside them are joint construction, where nothing is withheld.
 """
 
 from decimal import Decimal
@@ -16,18 +18,17 @@ from type_construction.program import (
     Blocked,
     Closed,
     Completed,
-    Deferred,
     Dispatch,
     Impure,
     InvocationId,
     Malformed,
+    Pending,
     Program,
     Refusal,
     Refutation,
     Site,
     Unclosed,
     Uncorrelated,
-    Unread,
     Unsolicited,
     accept,
     admit,
@@ -47,6 +48,7 @@ ALIASED_ANSWER = '{"order_ref": "o-7", "tracking": "1Z"}'
 ORDER_APPROVAL = '{"order_id": "o-7", "reviewer": "%s"}'
 QUOTE = '{"order_id": "o-7", "amount": "%s"}'
 ORDER_CLOSED = '{"order_id": "o-7"}'
+PINGED = '{"order_id": "o-7"}'
 APPROVED_O1 = '{"order_id": "o-1", "reviewer": "ren"}'
 
 
@@ -228,17 +230,18 @@ def test_a_selection_per_line_is_decided_by_that_lines_closure_alone() -> None:
 
 def test_an_ordinary_validator_over_delayed_evidence_defers_the_dependent_effect() -> None:
     """The capture has one declared answer and no declared relation; only a model validator may
-    refuse the fact. The shipment, which needs nothing but the order, must still wait."""
+    refuse the fact. The shipment, which needs nothing but the order, must still wait, because
+    the business declared it demanded only once the eligibility is established."""
     program = composite.DISPATCHING
     invocation = accept(program, InvocationId("dsp"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
     assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, composite.ShipOrder)
-    assert deferred.until == ("Dispatched.eligible",)
-    assert deferred.behind == (Unread(premise="Dispatched.eligible", kind=composite.Eligible),)
-    assert deferred.unread == deferred.behind
+    (pending,) = opening.withheld
+    assert pending == Pending(
+        premise="Dispatched.shipment",
+        condition="Dispatched.shipment.condition",
+        operations=("type_construction_program.composite.ShipOrder",),
+    )
 
     short = perform(
         program,
@@ -300,16 +303,18 @@ def test_the_declared_relationship_makes_the_shipment_wait_for_eligibility() -> 
 
 def test_a_native_field_constraint_over_an_unclosed_source_defers_the_dependent_effect() -> None:
     """Regression: a fact with ``Field(min_length=2)`` and no declared selection was taken to
-    construct, and the shipment beside it was dispatched before the reviews closed."""
+    construct, and the shipment the business declared to wait for it was dispatched before the
+    reviews closed. The constraint is judged natively, at the fact's own boundary, once the
+    reviews close."""
     program = composite.RELEASING
     invocation = accept(program, InvocationId("rel"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
     assert opening.dispatch == ()
     assert {type(a) for a in opening.awaiting} == {Unsolicited, Unclosed}
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, composite.ShipOrder)
-    assert deferred.until == ("Released.endorsed.approvals",)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.condition == "Released.shipment.condition"
+    assert pending.operations == ("type_construction_program.composite.ShipOrder",)
 
     one = admit(program, invocation, delivered(composite.REVIEWERS, "a-1", ORDER_APPROVAL % "ren"))
     assert frontier(evaluate(program, one)).dispatch == ()
@@ -333,11 +338,10 @@ def test_an_annotated_after_validator_over_delayed_evidence_defers_the_dependent
     invocation = accept(program, InvocationId("set"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
     assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
-    assert [type(w.request) for w in opening.withheld] == [composite.ShipOrder]
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert deferred.until == ("Settled.covered.payment",)
-    assert deferred.unread == (Unread(premise="Settled.covered.payment", kind=composite.Covered),)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.condition == "Settled.shipment.condition"
+    assert pending.operations == ("type_construction_program.composite.ShipOrder",)
     invocation = intend(invocation, opening.dispatch)
     nothing = perform(program, invocation, opening.dispatch[0].identity, CAPTURED % "0.00")
     blocked = evaluate(program, nothing)
@@ -365,17 +369,64 @@ def test_a_constant_whose_default_its_constraint_refuses_blocks_with_a_structure
     assert reason.premise == "Flawed.limit"
 
 
-def test_a_constraint_on_the_goals_own_field_gates_the_effect_beside_it() -> None:
-    """Regression: the constraint counted only when packaged in a separate fact; on the consumer
-    itself, the ping dispatched with the quotes."""
+def test_a_constraint_on_the_goals_own_field_refuses_the_goal_and_orders_nothing() -> None:
+    """Reviewer counterexample, under the amended contract: a minimum length on the goal's own
+    field keeps its obligation at that field, refusing the goal with fewer quotes, natively, when
+    the goal constructs. It orders nothing: nothing in ``Catalogued`` says the ping waits for the
+    quotes, so the ping is demanded jointly with them. With one line the goal is refused after
+    the ping was performed, which is the program as declared."""
     program = composite.CATALOGUING
     invocation = accept(program, InvocationId("cat"), composite.REVIEW)
     opening = frontier(evaluate(program, invocation))
+    assert sorted(type(d.request).__name__ for d in opening.dispatch) == [
+        "PingRequest",
+        "QuoteRequest",
+        "QuoteRequest",
+        "QuoteRequest",
+    ]
+    assert opening.withheld == ()
+    invocation = intend(invocation, opening.dispatch)
+    for d in opening.dispatch:
+        answer = PINGED if isinstance(d.request, composite.PingRequest) else QUOTE % "5.00"
+        invocation = perform(program, invocation, d.identity, answer)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Completed)
+    assert isinstance(result.goal, composite.Catalogued)
+    assert len(result.goal.quotes) == 3
+
+    short = accept(program, InvocationId("cat-1"), composite.ONE_LINE)
+    opening = frontier(evaluate(program, short))
+    assert sorted(type(d.request).__name__ for d in opening.dispatch) == [
+        "PingRequest",
+        "QuoteRequest",
+    ]
+    short = intend(short, opening.dispatch)
+    for d in opening.dispatch:
+        answer = PINGED if isinstance(d.request, composite.PingRequest) else QUOTE % "5.00"
+        short = perform(program, short, d.identity, answer)
+    blocked = evaluate(program, short)
+    assert isinstance(blocked, Blocked)
+    (reason,) = blocked.reasons
+    assert isinstance(reason, Malformed)
+    assert reason.kind is composite.Catalogued
+    assert any(isinstance(r, composite.PingRequest) for r in short.intents.values())
+
+
+def test_the_declared_condition_on_the_quotes_gates_the_ping() -> None:
+    """The business requirement the counterexample above assumed, declared: the quotes at a
+    boundary of their own, and the ping demanded only once that boundary constructs. The quotes
+    are dispatched, the ping is pending; with one line the quotes' fact is refused and the ping
+    was never dispatched; with three the ping is released."""
+    program = composite.CATALOGUING_WHEN_QUOTED
+    invocation = accept(program, InvocationId("cat"), composite.REVIEW)
+    opening = frontier(evaluate(program, invocation))
     assert [type(d.request) for d in opening.dispatch] == [composite.QuoteRequest] * 3
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, composite.PingRequest)
-    assert deferred.until == ("Catalogued.quotes",)
+    (pending,) = opening.withheld
+    assert pending == Pending(
+        premise="CataloguedWhenQuoted.pinged",
+        condition="CataloguedWhenQuoted.pinged.condition",
+        operations=("type_construction_program.composite.PingRequest",),
+    )
     invocation = intend(invocation, opening.dispatch)
     for d in opening.dispatch:
         invocation = perform(program, invocation, d.identity, QUOTE % "5.00")
@@ -393,30 +444,58 @@ def test_a_constraint_on_the_goals_own_field_gates_the_effect_beside_it() -> Non
     assert isinstance(blocked, Blocked)
     (reason,) = blocked.reasons
     assert isinstance(reason, Malformed)
-    assert reason.kind is composite.Catalogued
+    assert reason.kind is composite.Quotes
     assert all(not isinstance(r, composite.PingRequest) for r in short.intents.values())
 
 
 @pytest.mark.parametrize(
     ("program", "goal"),
     [
-        (composite.CATALOGUING_VIA_DESK, "CataloguedViaDesk"),
-        (composite.CATALOGUING_VIA_CHECKED_DESK, "CataloguedViaCheckedDesk"),
+        (composite.CATALOGUING_WHEN_QUOTED_VIA_DESK, "CataloguedWhenQuotedViaDesk"),
+        (composite.CATALOGUING_WHEN_QUOTED_VIA_CHECKED_DESK, "CataloguedWhenQuotedViaCheckedDesk"),
+        (composite.CATALOGUING_VIA_GATED_DESK, "CataloguedViaGatedDesk"),
     ],
 )
 def test_an_opaque_validator_on_a_wrapper_releases_nothing_a_constraint_withholds(
     program: Program, goal: str
 ) -> None:
-    """Beside a constrained field, the ping behind a plain wrapper waits for the quotes; behind
-    an opaque identity validator it must wait the same. Ranking opaque uncertainty with a
-    constraint would dispatch it: that fault is caught here and nowhere else."""
+    """Under the declared condition, the ping behind a plain wrapper waits for the quotes; behind
+    an opaque identity validator it must wait the same; with the conditional itself wrapped in a
+    plain fact it waits the same. Packaging changes what the paths are called and nothing about
+    what is demanded."""
     invocation = accept(program, InvocationId("cat"), composite.REVIEW)
     opening = frontier(evaluate(program, invocation))
     assert [type(d.request) for d in opening.dispatch] == [composite.QuoteRequest] * 3
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, composite.PingRequest)
-    assert deferred.until == (f"{goal}.quotes",)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.premise.startswith(f"{goal}.")
+    assert pending.operations == ("type_construction_program.composite.PingRequest",)
+    invocation = intend(invocation, opening.dispatch)
+    for d in opening.dispatch:
+        invocation = perform(program, invocation, d.identity, QUOTE % "5.00")
+    assert [type(d.request) for d in frontier(evaluate(program, invocation)).dispatch] == [
+        composite.PingRequest
+    ]
+
+
+@pytest.mark.parametrize(
+    "program",
+    [composite.CATALOGUING, composite.CATALOGUING_VIA_DESK, composite.CATALOGUING_VIA_CHECKED_DESK],
+)
+def test_a_plain_product_has_one_frontier_however_the_ping_is_packaged(program: Program) -> None:
+    """Without a declared condition, the ping beside the quotes is demanded jointly with them,
+    whether it sits on the goal, in a plain fact, or behind an opaque identity validator.
+    Packaging grants nothing and withholds nothing."""
+    invocation = accept(program, InvocationId("cat"), composite.REVIEW)
+    opening = frontier(evaluate(program, invocation))
+    assert sorted(type(d.request).__name__ for d in opening.dispatch) == [
+        "PingRequest",
+        "QuoteRequest",
+        "QuoteRequest",
+        "QuoteRequest",
+    ]
+    assert opening.withheld == ()
+    assert all(all(d.activations == () for d in why.demands) for why in opening.derived)
 
 
 def test_a_validator_that_alters_its_premise_does_not_alter_the_history() -> None:

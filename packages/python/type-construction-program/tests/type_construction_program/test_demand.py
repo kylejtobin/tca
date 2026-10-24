@@ -1,14 +1,14 @@
-"""Demand is rooted in the goal and decisions precede their dependent effects (foundations §7.1
-to §7.4; acceptance A1 to A5, A7).
+"""Demand is rooted in the goal and decisions precede the effects declared to depend on them
+(foundations §7.1 to §7.4; acceptance A1 to A5, A7).
 
-The declarations are ``decisions``. The hypothesis under test is the one the first slice held:
-a request whose premises are available and whose result the goal needs is justified. The first
-experiments break it: the welcome desk's ping needs nothing but the applicant and the goal needs
-it, yet the registrar may deny, and then the ping would have been performed for nothing. The
-rule that repairs it is causal: while a premise of a conjunction is undecided, only the requests
-that decide it are dispatched, with or without a fallback outcome. The later experiments bound
-the repair: independent necessary work stays concurrent, two decisions are made together, and a
-choice between two effects that nothing decides is reported, not guessed.
+The declarations are ``decisions``. The welcome desk's ping needs nothing but the applicant; the
+registrar may deny. Where the business declares the ping demanded only once the registrar
+allows, the ping waits for that decision, with or without a fallback outcome, and a denial
+never pings. Where it declares both jointly, both are asked at once, and a denial leaves the
+applicant pinged and not admitted: that is the program as declared, not a defect. The other
+experiments bound the rule: independent necessary work stays concurrent, two decisions are made
+together, a choice between two effects that nothing decides is reported, not guessed, and
+every request dispatched carries the derivation that demanded it.
 """
 
 import pytest
@@ -16,12 +16,14 @@ import pytest
 from type_construction.program import (
     AnsweredOtherwise,
     Blocked,
+    Built,
     Completed,
-    Decided,
-    Deferred,
+    Demand,
     Frontier,
     InvocationId,
+    Pending,
     Program,
+    Site,
     Unchosen,
     Undecidable,
     Unsolicited,
@@ -53,24 +55,64 @@ def requests(result: Frontier) -> list[type[object]]:
 
 
 def test_a_constructible_demanded_request_waits_for_the_decision_it_depends_on() -> None:
-    """No fallback: the goal needs both, and the registrar may still deny."""
+    """No fallback: the goal needs both, the registrar may still deny, and the business declared
+    the ping demanded only once the registrar allows."""
     program = decisions.ADMISSION
     invocation = accept(program, InvocationId("adm"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     assert requests(opening) == [decisions.CheckRequest]
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, decisions.PingRequest)
-    assert deferred.until == ("Granted.allowed",)
+    (pending,) = opening.withheld
+    assert pending == Pending(
+        premise="Granted.pinged",
+        condition="Granted.pinged.condition",
+        operations=("type_construction_program.decisions.PingRequest",),
+    )
 
-    invocation, _ = performing(program, invocation, ALLOWED)
+    invocation, check = performing(program, invocation, ALLOWED)
     decided = frontier(evaluate(program, invocation))
     assert requests(decided) == [decisions.PingRequest]
     assert decided.withheld == ()
-    assert decided.dispatch[0].identity == deferred.identity
+    (why,) = decided.derived
+    (demand,) = why.demands
+    assert demand.consumer == "Granted.pinged.result"
+    (activation,) = demand.activations
+    assert activation.conditional == "Granted.pinged"
+    assert activation.occurrence == Site(evidence=invocation.evidence[0].id)
+    assert invocation.evidence[0].answers == check.identity
 
     invocation, _ = performing(program, invocation, PINGED)
-    assert isinstance(evaluate(program, invocation), Completed)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Completed)
+    assert isinstance(result.goal, decisions.Granted)
+    assert result.goal.pinged.condition == result.goal.allowed
+    assert isinstance(result.goal.pinged.result, decisions.Pinged)
+
+
+def test_a_plain_product_demands_the_ping_jointly_with_the_check() -> None:
+    """The amendment, stated: allowed and pinged with nothing declared between them is joint
+    construction. Both are asked at once, and a denial leaves the applicant pinged and the goal
+    blocked. Where the business means the ping to wait, it declares so; see the test above."""
+    program = decisions.JOINT_ADMISSION
+    invocation = accept(program, InvocationId("jnt"), decisions.APPLICANT)
+    opening = frontier(evaluate(program, invocation))
+    assert sorted(requests(opening), key=lambda k: k.__name__) == [
+        decisions.CheckRequest,
+        decisions.PingRequest,
+    ]
+    assert opening.withheld == ()
+    assert [d.demands for d in opening.derived] == [
+        (Demand(consumer="Jointly.allowed"),),
+        (Demand(consumer="Jointly.pinged"),),
+    ]
+    invocation = intend(invocation, opening.dispatch)
+    (check,) = [d for d in opening.dispatch if isinstance(d.request, decisions.CheckRequest)]
+    (ping,) = [d for d in opening.dispatch if isinstance(d.request, decisions.PingRequest)]
+    invocation = perform(program, invocation, ping.identity, PINGED)
+    invocation = perform(program, invocation, check.identity, DENIED)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Blocked)
+    assert [type(r) for r in result.reasons] == [AnsweredOtherwise]
+    assert set(invocation.intents) == {check.identity, ping.identity}
 
 
 @pytest.mark.parametrize(
@@ -78,21 +120,23 @@ def test_a_constructible_demanded_request_waits_for_the_decision_it_depends_on()
     [
         (decisions.ADMISSION_VIA_DESK, "GrantedViaDesk"),
         (decisions.ADMISSION_VIA_CHECKED_DESK, "GrantedViaCheckedDesk"),
+        (decisions.ADMISSION_VIA_ENCLOSED, "GrantedViaEnclosed"),
     ],
 )
 def test_a_request_behind_a_wrapper_or_an_opaque_validator_still_waits_for_the_decision(
     program: Program, goal: str
 ) -> None:
     """Regression: with every construction counted as undecided, the plain wrapper's request was
-    taken for evidence-gathering and dispatched beside the registrar's check. An opaque identity
-    validator on the wrapper must release nothing the plain wrapper leaves withheld."""
+    taken for evidence-gathering and dispatched beside the registrar's check. Under the declared
+    condition, the ping in a plain wrapper, behind an opaque identity validator, or with the
+    conditional itself wrapped, waits the same and is released the same."""
     invocation = accept(program, InvocationId("adm"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     assert requests(opening) == [decisions.CheckRequest]
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert isinstance(deferred.request, decisions.PingRequest)
-    assert deferred.until == (f"{goal}.allowed",)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.premise.startswith(f"{goal}.")
+    assert pending.operations == ("type_construction_program.decisions.PingRequest",)
     invocation, _ = performing(program, invocation, ALLOWED)
     assert requests(frontier(evaluate(program, invocation))) == [decisions.PingRequest]
 
@@ -114,8 +158,9 @@ def test_with_a_fallback_the_branch_not_taken_performs_no_effect() -> None:
     invocation = accept(program, InvocationId("dec"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     assert requests(opening) == [decisions.CheckRequest]
-    assert [type(w) for w in opening.withheld] == [Unchosen]
-    assert isinstance(opening.withheld[0].request, decisions.PingRequest)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.operations == ("type_construction_program.decisions.PingRequest",)
 
     invocation, check = performing(program, invocation, DENIED)
     result = evaluate(program, invocation)
@@ -138,7 +183,7 @@ def test_two_necessary_requests_nothing_can_refute_are_dispatched_together() -> 
         decisions.PingRequest,
     ]
     assert opening.withheld == ()
-    assert all(j.decides == () for j in opening.justified)
+    assert all(d.activations == () for why in opening.derived for d in why.demands)
 
 
 def test_two_decisions_are_made_together() -> None:
@@ -149,9 +194,9 @@ def test_two_decisions_are_made_together() -> None:
         decisions.CheckRequest,
         decisions.ScreenRequest,
     ]
-    assert {j.decides for j in opening.justified} == {
-        (Decided(premise="Cleared.allowed"),),
-        (Decided(premise="Cleared.clear"),),
+    assert {why.demands for why in opening.derived} == {
+        (Demand(consumer="Cleared.allowed"),),
+        (Demand(consumer="Cleared.clear"),),
     }
     invocation = intend(invocation, opening.dispatch)
     (check,) = [d for d in opening.dispatch if isinstance(d.request, decisions.CheckRequest)]
@@ -164,22 +209,45 @@ def test_two_decisions_are_made_together() -> None:
     assert [type(r) for r in blocked.reasons] == [AnsweredOtherwise]
 
 
-def test_each_deciding_request_carries_the_decision_it_decides_through_the_facts_above() -> None:
-    """Two decisions inside one fact, and a mail beside that fact. The check decides the
-    registrar's answer and the screen the screening's, each its own and not the other's, however
-    many facts hold them; the mail decides nothing and waits for both."""
+def test_each_request_carries_every_path_that_demands_it_through_the_facts_above() -> None:
+    """Two decisions inside one fact, and a mail demanded once that fact is constructed. The
+    check is demanded by the registrar's premise and the screen by the screening's, each at its
+    own path, once as the goal's premise and once as the mail's condition; the mail is pending
+    until both are made, and then carries the fact's occurrence as what activated it."""
     program = decisions.PROCESSING
     invocation = accept(program, InvocationId("prc"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     (check,) = [d for d in opening.dispatch if isinstance(d.request, decisions.CheckRequest)]
     (screen,) = [d for d in opening.dispatch if isinstance(d.request, decisions.ScreenRequest)]
-    assert opening.why(check.identity).decides == (Decided(premise="Processed.cleared.allowed"),)
-    assert opening.why(screen.identity).decides == (Decided(premise="Processed.cleared.clear"),)
+    assert opening.why(check.identity).demands == (
+        Demand(consumer="Processed.cleared.allowed"),
+        Demand(consumer="Processed.mailed.condition.allowed"),
+    )
+    assert opening.why(screen.identity).demands == (
+        Demand(consumer="Processed.cleared.clear"),
+        Demand(consumer="Processed.mailed.condition.clear"),
+    )
     (mail,) = opening.withheld
-    assert isinstance(mail, Deferred)
-    assert isinstance(mail.request, decisions.MailRequest)
-    assert mail.until == ("Processed.cleared.allowed", "Processed.cleared.clear")
-    assert mail.unread == ()
+    assert mail == Pending(
+        premise="Processed.mailed",
+        condition="Processed.mailed.condition",
+        operations=("type_construction_program.decisions.MailRequest",),
+    )
+    invocation = intend(invocation, opening.dispatch)
+    invocation = perform(program, invocation, check.identity, ALLOWED)
+    assert requests(frontier(evaluate(program, invocation))) == [decisions.ScreenRequest]
+    invocation = perform(program, invocation, screen.identity, CLEAR)
+    released = frontier(evaluate(program, invocation))
+    (mailing,) = released.dispatch
+    assert isinstance(mailing.request, decisions.MailRequest)
+    (demand,) = released.why(mailing.identity).demands
+    (activation,) = demand.activations
+    assert activation.condition == "Processed.mailed.condition"
+    allowed, clear = invocation.evidence
+    assert activation.occurrence == Built(
+        kind="type_construction_program.decisions.Cleared",
+        parts=(("allowed", Site(evidence=allowed.id)), ("clear", Site(evidence=clear.id))),
+    )
 
 
 def test_a_choice_between_two_effects_nothing_decides_is_not_guessed() -> None:
@@ -208,11 +276,11 @@ def test_the_same_choice_decided_by_a_rating_performs_the_one_the_rating_picks(
     invocation = accept(program, InvocationId("rated"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     assert requests(opening) == [decisions.RateRequest]
-    assert {type(w.request) for w in opening.withheld} == {
+    assert all(isinstance(w, Unchosen) for w in opening.withheld)
+    assert {type(w.request) for w in opening.withheld if isinstance(w, Unchosen)} == {
         decisions.MailRequest,
         decisions.TextRequest,
     }
-    assert all(isinstance(w, Unchosen) for w in opening.withheld)
     invocation, _ = performing(program, invocation, rated(rating))
     decided = frontier(evaluate(program, invocation))
     assert requests(decided) == [sent]
@@ -252,9 +320,9 @@ def test_a_decision_nothing_is_sent_for_still_defers_the_request_that_depends_on
     opening = frontier(evaluate(program, invocation))
     assert opening.dispatch == ()
     assert [type(a) for a in opening.awaiting] == [Unsolicited]
-    (deferred,) = opening.withheld
-    assert isinstance(deferred, Deferred)
-    assert deferred.until == ("Endorsed.approved",)
+    (pending,) = opening.withheld
+    assert isinstance(pending, Pending)
+    assert pending.condition == "Endorsed.pinged.condition"
     invocation = admit(
         program, invocation, delivered(decisions.COMMITTEE, "c-1", '{"applicant": "ada"}')
     )
@@ -272,11 +340,10 @@ def test_an_alternative_one_member_of_which_nothing_can_refuse_withholds_nothing
     invocation = accept(program, InvocationId("res"), decisions.APPLICANT)
     opening = frontier(evaluate(program, invocation))
     assert requests(opening) == [decisions.MailRequest]
-    assert {type(w) for w in opening.withheld} == {Unchosen}
-    assert {type(w.request) for w in opening.withheld} == {
-        decisions.CheckRequest,
-        decisions.PingRequest,
-    }
+    (unchosen,) = [w for w in opening.withheld if isinstance(w, Unchosen)]
+    assert isinstance(unchosen.request, decisions.CheckRequest)
+    (pending,) = [w for w in opening.withheld if isinstance(w, Pending)]
+    assert pending.operations == ("type_construction_program.decisions.PingRequest",)
     assert [type(a) for a in opening.awaiting] == [Unsolicited]
 
 

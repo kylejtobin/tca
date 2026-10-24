@@ -16,6 +16,16 @@ accumulate, the evidence that closes it (``closed_by``). Whether a result comes 
 sending attempt or in a later delivery is not declared: it is observed, and the premise it
 satisfies is the same either way.
 
+``When[C, R]`` is the one construction relationship a business type declares beyond its
+composition: its holder demands ``R`` only once ``C`` is established. ``C`` is any declared class
+constructed through its own complete native boundary; what it checks, a validator, a constraint,
+a relation, is its own business and the evaluator reads none of it. Established, ``R`` is
+demanded; refused, the conditional is refused. A product without it demands every field jointly
+and orders nothing between them: a validator on a class that also holds an effect is a
+postcondition of that class, never prior authorization for the effect (foundations §7.2, §7.4,
+§8.2). A conditional whose condition is established only by the effects it governs declares an
+order that cannot hold, and the program is refused naming it.
+
 A ``Program`` is a goal, the input it accepts, its interactions, and the bindings of the goal's
 premises that the classes alone do not determine. Constructing one compiles the goal into a
 graph of construction relationships, ``Node``: where a value is found, which source says it,
@@ -31,13 +41,12 @@ import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Union, cast, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
-from annotated_types import BaseMetadata, Predicate
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.fields import FieldInfo
 
-from type_construction.world import Record, Refutable, Scalar
+from type_construction.world import Record, Scalar
 
 DECLARATION = ConfigDict(
     frozen=True,
@@ -162,318 +171,48 @@ def constant(kind: type[BaseModel]) -> bool:
     return not any(True for _ in premises(kind))
 
 
-class Decided(BaseModel):
-    """A decision the business declared may refuse the premise at ``premise``: a source that
-    may answer with another of its declared records, or a refutable condition over its
-    operands. The evaluator reads it: the premise is decided when the answer or the operands
-    are there, and the requests that supply them are what decides it."""
+class When[C: BaseModel, R](BaseModel):
+    """``R``, demanded only once ``C`` is established: the one construction relationship a
+    business type declares beyond what its fields already say.
+
+    A field typed ``When[Eligible, OrderShipped]`` says that this holder wants the shipment, and
+    wants it only after this eligibility has been constructed; the shipment is not asked for
+    while the eligibility is open, and never if it is refused. The condition is an ordinary
+    declared class, constructed through its own complete native boundary with whatever it
+    checks inside it; the evaluator reads nothing of it and needs nothing from it. The value holds
+    both, so the conclusion carries the condition that justified obtaining its result::
+
+        class Fulfilled(Fact):
+            shipment: When[Eligible, OrderShipped]
+
+    This is this consumer's demand, not the operation's eligibility: where every use of an
+    operation requires something, that something is a premise of the request the operation
+    sends (foundations §7.4). A product without ``When`` demands every field jointly and orders
+    nothing between them.
+    """
 
     model_config = DECLARATION
 
-    premise: str
+    condition: C
+    """What is established first."""
+    result: R
+    """What is demanded once it is."""
 
 
-class Bounded(BaseModel):
-    """A native constraint Pydantic interprets may refuse the field at ``premise``: a bound, a
-    length, a fixed tuple size. The evaluator reads it, and where the field's own schema runs
-    nothing but such constraints (``early``) judges it through Pydantic's own schema for the
-    field as soon as the field's value is there."""
-
-    model_config = DECLARATION
-
-    premise: str
-
-
-class Unread(BaseModel):
-    """A part of the construction at ``premise`` the evaluator locates but cannot read may
-    refuse it: a validator function anywhere in the field's or the class's schema, a
-    revalidated instance, a discriminator, a validated default, a custom schema or a post-init
-    hook of ``kind``. Whether it refuses anything, and over which premises, is known only when
-    the construction runs. It is neither a decision the evaluator can wait on knowingly nor
-    proof the construction holds."""
-
-    model_config = DECLARATION
-
-    premise: str
-    kind: type[BaseModel]
-
-
-type Judgement = Decided | Bounded | Unread
-"""One place a construction may be refused, at the premise where that is declared."""
-
-
-def unread(judgements: tuple[Judgement, ...]) -> tuple[Unread, ...]:
-    """The judgements the evaluator cannot read."""
-    return tuple(j for j in judgements if isinstance(j, Unread))
-
-
-def native(metadata: object) -> bool:
-    """Whether one piece of field metadata is a constraint Pydantic interprets natively, such as
-    a bound or a length, as opposed to a callback it runs."""
-    return isinstance(metadata, BaseMetadata) and not isinstance(metadata, Predicate)
-
-
-type Schema = dict[str, Any]
-"""One node of a core schema, as Pydantic built it."""
-
-VALUE_ONLY = frozenset(
-    {
-        "any",
-        "bool",
-        "bytes",
-        "complex",
-        "custom-error",
-        "date",
-        "datetime",
-        "decimal",
-        "dict",
-        "enum",
-        "float",
-        "frozenset",
-        "int",
-        "is-instance",
-        "is-subclass",
-        "list",
-        "literal",
-        "none",
-        "nullable",
-        "set",
-        "str",
-        "time",
-        "timedelta",
-        "tuple",
-        "union",
-        "url",
-        "uuid",
-    }
-)
-"""Core schema kinds whose verdict over a Python value is a function of that value, the schema
-and the configuration alone: they run no function of the business's, read no context, field
-name or sibling data, and transform nothing. Everything else is left to construction."""
-
-NESTED = ("schema", "items_schema", "choices", "keys_schema", "values_schema")
-"""The keys under which a core schema node holds the schemas it validates with."""
-
-FUNCTIONS = frozenset({"function-before", "function-after", "function-wrap"})
-"""Core schema kinds that run a function of the business's around another schema. A class's
-model validators that run after or around construction wrap its model node from outside, so a
-field typed as that class runs them again on the instance it is given."""
-
-
-def peeled(schema: Schema) -> Schema:
-    """The schema with the function wrappers around a model node removed: what a field typed as
-    a declared class runs beyond that class's own validators. Any other schema is returned as
-    it is."""
-    node = schema
-    while node["type"] in FUNCTIONS:
-        node = cast("Schema", node["schema"])
-    return node if node["type"] == "model" else schema
-
-
-@dataclass(frozen=True)
-class Modelled:
-    """A class's core schema read as a model: its fields' schemas by name, its core
-    configuration, the shared definitions its fields may refer to, and whether Pydantic hands
-    each field exactly what was given for it, which a model validator running before or around
-    field validation does not."""
-
-    fields: dict[str, Schema]
-    config: Schema
-    definitions: dict[str, Schema]
-    direct: bool
-    wrapped: bool
-    """Whether any validator of the business's runs around the fields' validation, before,
-    after or around it."""
-
-
-def modelled(kind: type[BaseModel]) -> Modelled | None:
-    """The class's core schema as a model, or ``None`` when it is a root model or supplies a
-    schema that is not a model's."""
-    top: Schema = cast("Schema", kind.__pydantic_core_schema__)
-    definitions: dict[str, Schema] = {}
-    if top["type"] == "definitions":
-        definitions = {d["ref"]: d for d in cast("list[Schema]", top["definitions"])}
-        top = cast("Schema", top["schema"])
-    wrapped = False
-    direct = True
-    while top["type"] in FUNCTIONS:
-        wrapped = True
-        direct = direct and top["type"] == "function-after"
-        top = cast("Schema", top["schema"])
-    if top["type"] != "model":
+def conditional(kind: type[BaseModel]) -> tuple[type[BaseModel], object] | None:
+    """The condition class and the result annotation of a ``When`` parametrization, or ``None``
+    for any other class."""
+    if not issubclass(kind, When):
         return None
-    inner = cast("Schema", top["schema"])
-    while inner["type"] in FUNCTIONS:
-        wrapped = True
-        direct = direct and inner["type"] == "function-after"
-        inner = cast("Schema", inner["schema"])
-    if inner["type"] != "model-fields":
+    metadata = kind.__pydantic_generic_metadata__
+    if metadata["origin"] is not When:
         return None
-    fields = {
-        name: cast("Schema", f["schema"])
-        for name, f in cast("dict[str, Schema]", inner["fields"]).items()
-    }
-    return Modelled(fields, cast("Schema", top.get("config", {})), definitions, direct, wrapped)
-
-
-def value_only(schema: Schema, definitions: dict[str, Schema], *, own: bool = False) -> bool:
-    """Whether a core schema judges a Python value by the value alone: it is one of
-    ``VALUE_ONLY`` and so is every schema it validates with, a reference is judged as what it
-    refers to, and a model schema as ``passed``. Any other kind, a function, a call, a default,
-    a tagged union whose tag is computed, is not. With ``own``, the validators a declared class
-    wraps around its own model node are set aside, for a value the evaluator constructs as that
-    class and so judges by that class's own judgements."""
-    if own:
-        schema = peeled(schema)
-    kind = schema["type"]
-    if kind == "definition-ref":
-        return value_only(definitions[schema["schema_ref"]], definitions, own=own)
-    if kind == "model":
-        return passed(schema, definitions, own=own)
-    return kind in VALUE_ONLY and nested_value_only(schema, definitions, own=own)
-
-
-def passed(schema: Schema, definitions: dict[str, Schema], *, own: bool) -> bool:
-    """Whether a model schema judges an instance by the value alone: one that does not
-    revalidate instances passes an instance of its class through, so nothing inside it runs;
-    one that revalidates, which Pydantic records in the node's own configuration, runs its
-    fields, which are judged in turn."""
-    config = cast("Schema", schema.get("config", {}))
-    revalidate = schema.get("revalidate_instances", config.get("revalidate_instances", "never"))
-    if revalidate == "never":
-        return True
-    fields = cast("Schema", schema["schema"])
-    return fields["type"] == "model-fields" and all(
-        value_only(cast("Schema", f["schema"]), definitions, own=own)
-        for f in cast("dict[str, Schema]", fields["fields"]).values()
-    )
-
-
-def nested_value_only(schema: Schema, definitions: dict[str, Schema], *, own: bool) -> bool:
-    """Whether every schema a node validates with, under ``NESTED``, judges by the value alone."""
-    for key in NESTED:
-        inner: object = schema.get(key)
-        if isinstance(inner, dict):
-            if not value_only(cast("Schema", inner), definitions, own=own):
-                return False
-        elif isinstance(inner, list):
-            for choice in cast("list[object]", inner):
-                node: object = (
-                    cast("tuple[object, ...]", choice)[0] if isinstance(choice, tuple) else choice
-                )
-                if not isinstance(node, dict) or not value_only(
-                    cast("Schema", node), definitions, own=own
-                ):
-                    return False
-    return True
-
-
-def field_schema(kind: type[BaseModel], name: str) -> tuple[Schema, Schema] | None:
-    """The core schema Pydantic runs for one field of the class, with the class's core
-    configuration, when that schema judges the field's value by the value alone and the class
-    hands the field exactly what it is given; else ``None``. Validating a value with this
-    schema under this configuration is then the judgement construction makes on the field: the
-    same schema object, the same configuration, and nothing in it that could read a context, a
-    field name, a sibling or run a function of the business's. A refutable class's conditions
-    are judged by constructing it, never here."""
-    if issubclass(kind, Refutable):
-        return None
-    found = modelled(kind)
-    if found is None or not found.direct:
-        return None
-    schema = found.fields[name]
-    if not value_only(schema, found.definitions):
-        return None
-    return schema, found.config
-
-
-def early(kind: type[BaseModel], name: str) -> bool:
-    """Whether the native constraints at a field are judged before the class constructs, with
-    the verdict Pydantic gives at construction: the field has such constraints and its schema
-    is Pydantic's own, judging by the value alone (``field_schema``)."""
-    return bool(constrained(kind, name)) and field_schema(kind, name) is not None
-
-
-def constrained(kind: type[BaseModel], name: str) -> bool:
-    """Whether a field carries a native constraint: constraint metadata, or a fixed tuple
-    size."""
-    info = kind.model_fields[name]
-    shape = collection(info.annotation)
-    return any(native(m) for m in info.metadata) or (shape is not None and shape[1] is not None)
-
-
-def hooked(kind: type[BaseModel]) -> bool:
-    """Whether the class, below Pydantic's own bases, runs a post-init hook: code after
-    construction that the schema does not show and the evaluator cannot read."""
-    for base in kind.__mro__:
-        if base is BaseModel or base is RootModel:
-            break
-        if "model_post_init" in vars(base):
-            return True
-    return False
-
-
-def whole(kind: type[BaseModel], path: str) -> tuple[Judgement, ...]:
-    """The judgements a class makes on its construction as a whole, over every premise at once:
-    its declared condition if it is refutable, which the evaluator reads; else what it cannot
-    read, by Pydantic's own resolved schema for the class: a validator running before, after or
-    around its fields, revalidation of instances, a schema that is not a model's, a post-init
-    hook, located at the class, and each validated default, located at its field. Empty for a
-    class with none of these, which is the absence of anything located, and then the class
-    constructs once its premises are there as the classes declared."""
-    if issubclass(kind, Refutable):
-        return (Decided(premise=path),)
-    found: list[Judgement] = []
-    rooted = RootModel in kind.__mro__
-    model = modelled(kind)
-    if (
-        (not rooted and (model is None or model.wrapped))
-        or (rooted and kind.__pydantic_core_schema__["type"] in FUNCTIONS)
-        or kind.model_config.get("revalidate_instances", "never") != "never"
-        or hooked(kind)
-    ):
-        found.append(Unread(premise=path, kind=kind))
-    for name, info in kind.model_fields.items():
-        if not info.is_required():
-            found.append(Unread(premise=f"{path}.{name}", kind=kind))
-    return tuple(found)
-
-
-def at_field(
-    kind: type[BaseModel], name: str, path: str, *, constructed: bool
-) -> tuple[Judgement, ...]:
-    """The judgements at one premise field of a class: a native constraint, which the evaluator
-    reads, and what it cannot read, which Pydantic's own resolved schema for the field shows:
-    anything beyond value-only judgement, a callback in the metadata, a decorated validator
-    naming the field, a discriminator, a nested instance revalidated with a validator of its
-    own. A field typed as a class runs that class's after and wrap validators again on the
-    instance it is given; where the evaluator constructs that instance (``constructed``) those
-    are the class's own judgements, located at the class, and not counted again here. A
-    refutable class's field metadata is its declared condition, judged as the whole."""
-    if issubclass(kind, Refutable):
-        return ()
-    found: list[Judgement] = []
-    if constrained(kind, name):
-        found.append(Bounded(premise=path))
-    model = modelled(kind)
-    if model is None or not value_only(model.fields[name], model.definitions, own=constructed):
-        found.append(Unread(premise=path, kind=kind))
-    return tuple(found)
-
-
-def made(node: Node) -> bool:
-    """Whether the premise at a node is constructed by the evaluator from its premises, as the
-    class declared, rather than found or heard: then the class's own judgements are located at
-    the construction."""
-    match node:
-        case Made():
-            return True
-        case Each(element=element):
-            return made(element)
-        case Choice(members=members):
-            return all(made(n) for _, n in members)
-        case Found() | Heard() | All():
-            return False
+    args = metadata["args"]
+    condition = declared(args[0])
+    if condition is None:
+        msg = f"{kind.__name__}: a condition is a declared class; {args[0]!r} is none"
+        raise ValueError(msg)
+    return condition, args[1]
 
 
 def contradictory(bindings: tuple[Binding, ...], root: type[BaseModel]) -> None:
@@ -731,22 +470,67 @@ class Each:
     """The node supplying the collection's container, when it is a received record."""
 
 
-type Node = Found | Heard | Made | Choice | All | Each
+@dataclass(frozen=True)
+class Conditional:
+    """A ``When``: ``result`` is demanded only once ``condition`` is constructed."""
+
+    kind: type[BaseModel]
+    condition: Node
+    result: Node
+
+
+type Node = Found | Heard | Made | Choice | All | Each | Conditional
 """One construction relationship: how a premise is obtained."""
+
+
+def within(node: Node) -> tuple[Node, ...]:
+    """The nodes a node is constructed from."""
+    inner: tuple[Node | None, ...]
+    match node:
+        case Found(held=held):
+            inner = (held,)
+        case Heard(request=request):
+            inner = (request,)
+        case Made(premises=premises):
+            inner = tuple(n for _, n in premises)
+        case Choice(members=members):
+            inner = tuple(n for _, n in members)
+        case All(closer=closer):
+            inner = (closer,)
+        case Each(element=element, closure=closure, holder=holder):
+            inner = (element, closure, holder)
+        case Conditional(condition=condition, result=result):
+            inner = (condition, result)
+    return tuple(n for n in inner if n is not None)
+
+
+def solicited(node: Node) -> frozenset[str]:
+    """The operations demanded under a node: the durable names of the requests sent for the
+    solicited receives it is constructed from, however deep."""
+    found: set[str] = set()
+    seen: set[Node] = set()
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if isinstance(current, Heard) and current.interaction.sends is not None:
+            found.add(qualified(current.interaction.sends))
+        pending.extend(within(current))
+    return frozenset(found)
 
 
 @dataclass
 class Graph:
     """What compiling a program established: the root node, the interactions by the request
-    they send, and, per node, the collections it varies over and the judgements located in its
-    construction."""
+    they send, per node the collections it varies over, and per conditional the operations it
+    gates: those demanded under its result and not under its condition."""
 
     root: Node
     sent: dict[str, Interaction]
     varies: dict[Node, frozenset[Collection]]
-    judgements: dict[Node, tuple[Judgement, ...]]
-    """Per node, every place the construction under it may be refused, at the path it is
-    declared, with ``*`` for each element of a collection; see ``Judgement``."""
+    gated: dict[Conditional, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -906,25 +690,20 @@ class Compiler:
     def __init__(self, program: Program) -> None:
         self.program = program
         self.varies: dict[Node, frozenset[Collection]] = {}
-        self.judgements: dict[Node, tuple[Judgement, ...]] = {}
+        self.gated: dict[Conditional, tuple[str, ...]] = {}
+        self.demanded: dict[str, list[str]] = {}
+        """Per operation, every path at which a receive it answers is demanded."""
 
     def compiled(self) -> Graph:
         program = self.program
         sent = {qualified(i.sends): i for i in program.interactions if i.sends is not None}
         walk = Walk(tuple((steps(b.premise), b.subject) for b in program.bound))
         root = self.compile(program.goal, (), program.goal.__name__, walk)
-        return Graph(root, sent, self.varies, self.judgements)
+        return Graph(root, sent, self.varies, self.gated)
 
-    def record(
-        self, node: Node, varies: frozenset[Collection], judgements: tuple[Judgement, ...] = ()
-    ) -> Node:
+    def record(self, node: Node, varies: frozenset[Collection]) -> Node:
         self.varies[node] = varies
-        self.judgements[node] = tuple(dict.fromkeys(judgements))
         return node
-
-    def judged(self, *nodes: Node | None) -> tuple[Judgement, ...]:
-        """The judgements located under the nodes given, once each."""
-        return tuple(dict.fromkeys(j for n in nodes if n is not None for j in self.judgements[n]))
 
     def compile(self, annotation: object, at: tuple[str, ...], path: str, walk: Walk) -> Node:
         """Compile one premise annotation at its path under the current root."""
@@ -943,7 +722,7 @@ class Compiler:
             )
             node = Choice(compiled)
             varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-            return self.record(node, varies, self.judged(*(n for _, n in compiled)))
+            return self.record(node, varies)
         shape = collection(annotation)
         if shape is not None:
             return self.many(shape[0], at, path, deeper)
@@ -982,7 +761,7 @@ class Compiler:
                 )
                 raise ValueError(msg)
             node = Each(inner, over)
-            return self.record(node, self.varies[inner] - {over}, self.judged(inner))
+            return self.record(node, self.varies[inner] - {over})
         msg = (
             f"{path}: bound to {accepts.__name__}.{subject}, which holds {there!r}, not"
             f" {annotation!r}"
@@ -993,9 +772,6 @@ class Compiler:
         """The node for one record a source says."""
         request: Node | None = None
         varies: frozenset[Collection] = frozenset()
-        judgements: tuple[Judgement, ...] = ()
-        if len(interaction.receives) > 1:
-            judgements = (Decided(premise=path),)
         over = self.program.element_collection(interaction)
         if over is not None:
             varies = frozenset({over})
@@ -1004,10 +780,10 @@ class Compiler:
             rooted = walk.rooted(interaction.bound)
             request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
             varies = varies | self.varies[request]
-            judgements = (*judgements, *self.judged(request))
+            self.demanded.setdefault(qualified(sends), []).append(path)
         if interaction.many:
             varies = varies | {Collection(kind, ())}
-        return self.record(Heard(interaction, kind, request), varies, judgements)
+        return self.record(Heard(interaction, kind, request), varies)
 
     def located(self, location: Location, path: str, walk: Walk) -> Node:
         """The node for a value found at a location, with the node that supplies its container
@@ -1019,7 +795,7 @@ class Compiler:
         if interaction is not None:
             held = self.compile(container, (), f"{path}.{container.__name__}", walk)
             varies = varies | self.varies[held]
-        return self.record(Found(location, held), varies, self.judged(held))
+        return self.record(Found(location, held), varies)
 
     def chosen(
         self, kind: type[BaseModel], locations: list[Location], path: str, walk: Walk
@@ -1089,7 +865,7 @@ class Compiler:
         for extra in (closure, holder):
             if extra is not None:
                 varies = varies | self.varies[extra]
-        return self.record(node, varies, self.judged(inner, closure, holder))
+        return self.record(node, varies)
 
     def all(
         self,
@@ -1114,7 +890,7 @@ class Compiler:
         over = self.program.element_collection(interaction)
         if over is not None:
             varies = varies | {over}
-        self.record(node, varies, self.judged(closing))
+        self.record(node, varies)
         return node
 
     def one(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
@@ -1141,12 +917,14 @@ class Compiler:
                 " declares a source for it; without a declared source it cannot be waited for"
             )
             raise ValueError(msg)  # noqa: TRY004  a validator's refusal is a ValueError
+        parts = conditional(kind)
+        if parts is not None:
+            return self.when(kind, parts, at, path, walk)
         empty = constant(kind)
         plain = Made(kind)
-        own = whole(kind, path)
         if issubclass(kind, RootModel):
             if empty:
-                return self.record(plain, frozenset(), own)
+                return self.record(plain, frozenset())
             msg = (
                 f"{path}: no input or received record holds a {kind.__name__}, and it is a"
                 " value, not constructed from premises"
@@ -1158,13 +936,44 @@ class Compiler:
         )
         node = Made(kind, compiled)
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-        judgements = (
-            *own,
-            *(
-                j
-                for name, n in compiled
-                for j in at_field(kind, name, f"{path}.{name}", constructed=made(n))
-            ),
-            *self.judged(*(n for _, n in compiled)),
-        )
-        return self.record(node, varies, judgements)
+        return self.record(node, varies)
+
+    def when(
+        self,
+        kind: type[BaseModel],
+        parts: tuple[type[BaseModel], object],
+        at: tuple[str, ...],
+        path: str,
+        walk: Walk,
+    ) -> Node:
+        """A conditional premise: the condition compiled at ``condition``, the result at
+        ``result``, and the operations the conditional gates, those demanded under the result
+        and not under the condition. A conditional that gates nothing because its condition
+        demands every operation its result does declares an order that cannot hold: the
+        condition would be established only by the effects it governs. It is refused, naming
+        where the condition demands them."""
+        condition_kind, result = parts
+        condition = self.compile(condition_kind, (*at, "condition"), f"{path}.condition", walk)
+        demanded = self.compile(result, (*at, "result"), f"{path}.result", walk)
+        under = solicited(demanded)
+        gated = under - solicited(condition)
+        if under and not gated:
+            prefix = f"{path}.condition"
+            where = ", ".join(
+                f"{operation.rsplit('.', 1)[-1]} at {p}"
+                for operation in sorted(under)
+                for p in self.demanded.get(operation, ())
+                if p.startswith(prefix)
+            )
+            msg = (
+                f"{path}: {kind.__name__} demands {result!r} only once"
+                f" {condition_kind.__name__} is established, and {condition_kind.__name__} is"
+                f" established only by the effects the conditional governs ({where}); a"
+                " condition cannot be established by the effect it gates, so the conditional"
+                " orders nothing. A validator that needs the effect's result is a postcondition"
+                " of the class that holds both, not prior authorization for the effect"
+            )
+            raise ValueError(msg)
+        node = Conditional(kind, condition, demanded)
+        self.gated[node] = tuple(sorted(gated))
+        return self.record(node, self.varies[condition] | self.varies[demanded])
