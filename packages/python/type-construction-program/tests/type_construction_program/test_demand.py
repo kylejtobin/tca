@@ -237,6 +237,25 @@ def test_a_decision_nothing_is_sent_for_still_defers_the_request_that_depends_on
     assert requests(frontier(evaluate(program, invocation))) == [decisions.PingRequest]
 
 
+def test_an_alternative_one_member_of_which_nothing_can_refuse_withholds_nothing_beside_it() -> (
+    None
+):
+    """Granted or withdrawn: the registrar may deny the grant, but the withdrawal needs nothing
+    and nothing can refuse it, so the alternative as a whole cannot be refused and the mail
+    beside it does not depend on the registrar's decision. The mail is dispatched. Inside the
+    alternative the grant's requests stay unchosen, as beside any passive alternative."""
+    program = decisions.RESOLUTION
+    invocation = accept(program, InvocationId("res"), decisions.APPLICANT)
+    opening = frontier(evaluate(program, invocation))
+    assert requests(opening) == [decisions.MailRequest]
+    assert {type(w) for w in opening.withheld} == {Unchosen}
+    assert {type(w.request) for w in opening.withheld} == {
+        decisions.CheckRequest,
+        decisions.PingRequest,
+    }
+    assert [type(a) for a in opening.awaiting] == [Unsolicited]
+
+
 def test_a_passive_alternative_beside_the_charge_leaves_the_charge_unchosen() -> None:
     """Recorded as a limit, not a resolution. Shipped and refused both need the charge; cancelled
     needs nothing but a delivery that may never come. The declarations do not say the charge is

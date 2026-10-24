@@ -5,44 +5,64 @@ holds the constructed goal. ``Frontier`` holds the requests justified now, the r
 outstanding, and the requests demanded but withheld, with why. ``Blocked`` holds structured
 reasons why the goal cannot be constructed from the declared sources however much evidence
 arrives: a declared condition refuted over the evidence, a source that answered with another
-member than the premise needs, a construction that failed, alternatives that both hold, or a
-choice between effects that nothing declared decides.
+member than the premise needs, a construction that failed, alternatives that both hold, a
+choice between effects that nothing declared decides, or requests withheld behind judgements
+that nothing can make before them.
 
 Demand is rooted in the goal and an effect is justified only when it is necessary (foundations
-§7.1, §7.2). Two rules, both over the graph the declarations compile to, and neither a property
+§7.1, §7.2). Three rules, all over the graph the declarations compile to, and none a property
 of any one node:
 
 - **Necessity across alternatives.** Where more than one member of a union is still live, a
   request is justified only if every live member needs it. A request one member needs and
   another does not is withheld as ``Unchosen``; if nothing else can advance the invocation,
   that is a block, not a wait: the declarations have not said which effect to perform.
-- **Decisions precede dependent effects.** What controls an open premise is kept apart in
-  ``Control``. A *declared* decision is one the business stated: a source that may answer with
-  another record, a declared refutable condition. A *constraint* is native metadata Pydantic
-  itself interprets, located on a field and checked by the evaluator, through Pydantic, as soon
-  as that field's value is there. In a conjunction the strongest control open governs: only the
-  requests under premises at that control are dispatched, since their results are what resolves
-  it and a control cannot require its own inputs as prior authority, and the rest are withheld
-  as ``Deferred`` naming what they wait on. This holds whether or not another branch exists for
-  the refuted case: a single remaining branch is not an established branch.
-- **Unproven construction is neither a control nor a grant.** A validator, computation or
-  revalidation the compiler locates but cannot interpret is resolved only by constructing. The
-  evaluator does not order effects by it, since that order would be invented from the model's
-  shape and not from a declared relationship, and does not treat the effects under it as
-  evidence-gathering, since that would be authority from ignorance. A class with such a part,
-  still open, is reported in the frontier as ``Unproven`` beside the effects it did not stop;
-  the relationship, if the business means one, is declared by making the class a premise of the
-  action (foundations §7.4), and then the action waits for it as for any premise. A plain class
-  is under no control and reported as nothing: that is the absence of anything recognized, not
-  a proof it constructs, and a construction that fails is reported when it fails.
+
+- **Decisions precede the effects that depend on them.** Each open premise of a conjunction
+  carries the judgements still to be made on it, at the places they are declared
+  (``Judgement``): a source that may answer otherwise or a refutable condition (``Decided``),
+  a native constraint at a field (``Bounded``), or a validator, default or schema the
+  evaluator cannot read (``Unread``). A request's result either feeds a judgement, when the
+  premise it supplies is under one, or it does not, and then performing it decides nothing:
+  its demand through the conjunction assumes every open judgement of the conjunction resolves
+  in its favour. So a request under a premise nothing can refuse waits for every judgement
+  the conjunction has open, named in ``Deferred``; requests whose results feed judgements
+  the evaluator reads are dispatched together, since each is the declared means of a decision
+  the goal needs, a decision cannot require its own inputs as prior authority (§7.3), and the
+  declarations order none of them before another (§7.2).
+
+- **An unread judgement grants nothing and settles nothing.** What a validator the evaluator
+  cannot read means is unknown: it may refuse, or it may be an identity. The effects beside
+  it are derived by taking both cases. A request feeding a readable decision is dispatched
+  either way, so it is dispatched. A request under a premise nothing can refuse must wait if
+  the unread part can refuse, so it waits, and ``Deferred`` names the unread judgement: the
+  dependency is unresolved, not established. A request feeding only an unread judgement,
+  beside a readable one, would be a deciding request if the unread part decides and a
+  dependent one if it does not, so it waits for the readable decision, again named as
+  unresolved. Beside premises nothing can refuse it is dispatched, since it would be either
+  way. Beside another unread judgement neither reading settles the order: both requests wait,
+  and if nothing else can advance the invocation that is reported as ``Undetermined``, naming
+  the judgements and the requests, for the business to declare the condition readably or to
+  put the judgement at a construction boundary before the effect (§8.2). Less knowledge never
+  releases an effect, and never invents an order.
 
 Independent necessary work stays concurrent: two premises nothing can refuse dispatch
-together, and two declared decisions dispatch their deciding requests together.
+together, and two readable decisions dispatch their deciding requests together.
+
+A native constraint is judged before its class constructs only where that is the same
+judgement Pydantic makes at construction (``early``): the field's value is there and nothing
+omitted, a callback at the field, a decorated validator, a model validator before or around
+field validation, a custom schema, can change the verdict. Otherwise the constraint is judged
+only when the class constructs, natively, and until then it is an open judgement like any
+other. A conclusion the evaluator cannot establish stays unknown; it is never made by running
+Pydantic on a fragment with the business's own validators stripped away.
 
 Evidence is owned by the history. Evaluation constructs from its own copy of each piece of
 evidence and, at the end, checks the copies still equal the history; a construction that
 altered a premise, through a validator that mutates what it is given, makes the evaluation
-``Blocked`` as ``Impure`` rather than a conclusion built on altered evidence.
+``Blocked`` as ``Impure`` rather than a conclusion built on altered evidence. A validator that
+returns a replacement is native behaviour: the constructed value holds the replacement and the
+history holds what was admitted.
 
 Construction is by occurrence, not by class. Each node of the graph is one construction
 relationship; evaluation is scoped, binding each collection in play to one element, and a node
@@ -77,24 +97,32 @@ from type_construction.world import Refusals, Refutable
 from .declaration import (
     EACH,
     All,
+    Bounded,
     Choice,
     Collection,
-    Control,
+    Decided,
     Each,
     Found,
     Heard,
     Interaction,
+    Judgement,
     Location,
     Made,
     Node,
     Program,
+    Refusability,
     Source,
-    collection,
+    Unread,
+    at_field,
     constant,
-    constrained,
-    constraint,
-    opaque,
+    early,
+    native,
     qualified,
+    refusability,
+    strongest,
+    unread,
+    weakest,
+    whole,
 )
 from .invocation import (
     Acknowledged,
@@ -185,6 +213,24 @@ class Undecidable(BaseModel):
         return hash((self.premise, self.members, self.operations))
 
 
+class Undetermined(BaseModel):
+    """Requests demanded and constructible are withheld behind judgements, and nothing else can
+    advance the invocation. Either the judgements are made only by constructing what needs
+    those very requests, or the evaluator cannot read them well enough to establish whether
+    the requests decide them or depend on them. The declarations do not determine the order
+    and the evaluator does not choose. ``judgements`` names them where they are declared;
+    ``operations`` the requests withheld. A declared relation the evaluator reads, or a
+    construction boundary that makes the judgement before the effect, resolves it."""
+
+    model_config = RESULT
+
+    judgements: tuple[Judgement, ...]
+    operations: tuple[str, ...]
+
+    def __hash__(self) -> int:
+        return hash((self.judgements, self.operations))
+
+
 class Impure(BaseModel):
     """A construction altered the evidence it was given: after evaluation, the evaluator's copy
     of the evidence named no longer equals the history. A validator that mutates what it is
@@ -198,7 +244,9 @@ class Impure(BaseModel):
         return hash(self.evidence)
 
 
-type Reason = Refutation | AnsweredOtherwise | Malformed | Indeterminate | Undecidable | Impure
+type Reason = (
+    Refutation | AnsweredOtherwise | Malformed | Indeterminate | Undecidable | Undetermined | Impure
+)
 
 
 class Solicited(BaseModel):
@@ -253,15 +301,27 @@ type Awaiting = Solicited | Unsolicited | Unresolved | Unclosed
 
 class Deferred(BaseModel):
     """A request whose premises are available and whose result the goal needs, withheld because
-    a premise of the same conjunction may yet be refused: by evidence still to come, or by a
-    native constraint at construction, and then the request would have been performed for
-    nothing. ``until`` names those premises."""
+    a premise of the same conjunction may yet be refused and the request's result does not
+    decide that. ``behind`` names the judgements it waits for, where they are declared.
+
+    With ``unread`` empty the dependency is established: the request decides nothing the
+    evaluator can read and the judgements behind it are read decisions. Otherwise it is
+    unresolved: an unread judgement, on the request's own premise or among those behind it,
+    may be a condition the request must wait for or an identity that binds it to nothing, and
+    the evaluator cannot tell which. It waits, and names what it cannot read.
+    """
 
     model_config = RESULT
 
     identity: EffectIdentity
     request: SerializeAsAny[BaseModel]
-    until: tuple[str, ...]
+    behind: tuple[Judgement, ...]
+    unread: tuple[Unread, ...] = ()
+
+    @property
+    def until(self) -> tuple[str, ...]:
+        """The premises whose judgements the request waits for, once each."""
+        return tuple(dict.fromkeys(j.premise for j in self.behind))
 
 
 class Unchosen(BaseModel):
@@ -277,21 +337,6 @@ class Unchosen(BaseModel):
 
 
 type Withheld = Deferred | Unchosen
-
-
-class Unproven(BaseModel):
-    """A construction with a validator, computation or revalidation the evaluator cannot
-    interpret, still open while the requests named were dispatched beside it. If the business
-    means those requests to wait for it, it declares the class a premise of their request."""
-
-    model_config = RESULT
-
-    premise: str
-    kind: type[BaseModel]
-    beside: tuple[str, ...]
-
-    def __hash__(self) -> int:
-        return hash((self.premise, self.kind, self.beside))
 
 
 class Completed(BaseModel):
@@ -312,7 +357,6 @@ class Frontier(BaseModel):
     dispatch: tuple[Dispatch, ...] = ()
     awaiting: tuple[Awaiting, ...] = ()
     withheld: tuple[Withheld, ...] = ()
-    unproven: tuple[Unproven, ...] = ()
 
     @model_validator(mode="after")
     def _some(self) -> Frontier:
@@ -343,25 +387,16 @@ class Available:
 
 @dataclass(frozen=True)
 class Open:
-    """The premise is not yet constructed, and declared work may supply it. ``pending`` names
-    the premises under it still under a control and which, see ``Control``; empty, no decision
-    the evaluator knows of controls the premise."""
+    """The premise is not yet constructed, and declared work may supply it. ``judgements`` are
+    the places under it still to be judged, where they are declared; ``refusable`` is what
+    they establish about the premise as a whole: for a conjunction the strongest, for an
+    alternative the weakest of its live members."""
 
     dispatch: dict[EffectIdentity, Dispatch]
     withheld: dict[EffectIdentity, Withheld]
     awaiting: dict[object, Awaiting]
-    pending: tuple[tuple[str, Control], ...] = ()
-    unproven: tuple[tuple[str, type[BaseModel], frozenset[EffectIdentity]], ...] = ()
-    """The open constructions under this premise whose outcome cannot be read, each with the
-    requests dispatched beside it so far."""
-
-    def tier(self) -> Control:
-        """The strongest control over this premise."""
-        return max((d for _, d in self.pending), default=Control.NONE)
-
-    def paths(self, tier: Control) -> tuple[str, ...]:
-        """The pending premises at one tier."""
-        return tuple(p for p, d in self.pending if d == tier)
+    judgements: tuple[Judgement, ...] = ()
+    refusable: Refusability = Refusability.ASSURED
 
     def needs(self) -> dict[EffectIdentity, Dispatch]:
         """Every request this premise needs performed, dispatched or deferred."""
@@ -400,6 +435,11 @@ def distinct(reasons: list[Reason]) -> tuple[Reason, ...]:
     return tuple(dict.fromkeys(reasons))
 
 
+def once(judgements: tuple[Judgement, ...]) -> tuple[Judgement, ...]:
+    """The judgements once each, in first-seen order."""
+    return tuple(dict.fromkeys(judgements))
+
+
 def bound(scope: Scope, over: Collection) -> Site | None:
     """The element a collection is bound to in a scope, if any."""
     for each, site in scope:
@@ -413,71 +453,155 @@ def binding(scope: Scope, over: Collection, site: Site) -> Scope:
     return tuple(sorted((*scope, (over, site)), key=lambda b: str(b[0])))
 
 
-def controlled(outcome: Outcome, path: str, how: Control) -> Open:
-    """An open outcome under the given control at this premise, added to what is pending deeper,
-    unless already pending there at least as strongly."""
-    if not isinstance(outcome, Open):
-        msg = f"{path}: only an open premise is pending"
-        raise TypeError(msg)
-    if how == Control.NONE or outcome.tier() >= how:
+def judged(outcome: Open, *judgements: Judgement) -> Open:
+    """The open outcome with judgements added at this premise."""
+    if not judgements:
         return outcome
-    return replace(outcome, pending=(*outcome.pending, (path, how)))
+    return replace(
+        outcome,
+        judgements=once((*outcome.judgements, *judgements)),
+        refusable=strongest(outcome.refusable, *(refusability(j) for j in judgements)),
+    )
 
 
-type Part = tuple[str, Outcome, Control]
-"""One premise of a conjunction: its path, its outcome, and how the construction holding it
-may refuse it on its own account, beyond what is pending inside it."""
+type Part = tuple[str, Outcome, tuple[Judgement, ...]]
+"""One premise of a conjunction: its path, its outcome, and the judgements the holding class
+makes at that premise's field which are still to be made."""
+
+
+@dataclass(frozen=True)
+class Standing:
+    """One premise of a conjunction that is open, or available and still judged at its field, as
+    the conjunction sees it: the judgements on it, and what they establish about it."""
+
+    path: str
+    outcome: Open | None
+    own: tuple[Judgement, ...]
+
+    @property
+    def judgements(self) -> tuple[Judgement, ...]:
+        inner = () if self.outcome is None else self.outcome.judgements
+        return once((*self.own, *inner))
+
+    @property
+    def refusable(self) -> Refusability:
+        inner = Refusability.ASSURED if self.outcome is None else self.outcome.refusable
+        return strongest(inner, *(refusability(j) for j in self.own))
+
+    def deferred(
+        self, behind: tuple[Judgement, ...], unresolved: tuple[Unread, ...]
+    ) -> dict[EffectIdentity, Withheld]:
+        """The requests dispatched under this premise, withheld behind the judgements named."""
+        if self.outcome is None:
+            return {}
+        return {
+            identity: Deferred(
+                identity=identity, request=d.request, behind=behind, unread=unresolved
+            )
+            for identity, d in self.outcome.dispatch.items()
+        }
 
 
 def conjoined(parts: list[Part]) -> Open | Refuted | Stuck | None:
     """How several premises' outcomes combine when all are needed: a malformed construction
-    outranks a refutation, which outranks open work; ``None`` when every one is available.
+    outranks a refutation, which outranks open work; ``None`` when every one is available, and
+    then the class constructs, which is what makes any judgement still open at a field.
 
-    Each open premise is under the strongest control of what is pending inside it and of what
-    the holding construction judges it by. The conjunction's governing control is the strongest
-    among them. Only the requests under premises at the governing control are dispatched: their
-    results are what resolves it, and a control cannot require its own inputs as prior
-    authority. Requests under the others are deferred until those premises are resolved:
-    demanded, not yet justified. With nothing pending, every request is dispatched."""
+    Otherwise the requests dispatched under each open premise are kept or withheld by the
+    rules in the module docstring, derived from the judgements still open across the
+    conjunction. Requests feeding a readable decision stand. Requests under a premise nothing
+    can refuse wait for every open judgement. Requests feeding only an unread judgement stand
+    when nothing else in the conjunction may refuse, wait for readable decisions as
+    unresolved, and wait for other unread judgements as unresolved too; in that last case
+    nothing may stand, and the block that follows names what was not established. A judgement
+    two premises share, one construction occurrence demanded at both, is not another judgement:
+    a request feeding it under one premise feeds it under the other.
+    """
     stuck = [r for _, o, _ in parts if isinstance(o, Stuck) for r in o.reasons]
     if stuck:
         return Stuck(distinct(stuck))
     refuted = [r for _, o, _ in parts if isinstance(o, Refuted) for r in o.reasons]
     if refuted:
         return Refuted(distinct(refuted))
-    opens = [(path, controlled(o, path, own)) for path, o, own in parts if isinstance(o, Open)]
+    standings = [
+        Standing(path, o if isinstance(o, Open) else None, own)
+        for path, o, own in parts
+        if isinstance(o, Open) or own
+    ]
+    opens = [s for s in standings if s.outcome is not None]
     if not opens:
         return None
-    governing = max(o.tier() for _, o in opens)
-    pending = tuple(dict.fromkeys(p for _, o in opens for p in o.pending))
-    until = tuple(dict.fromkeys(p for _, o in opens for p in o.paths(governing)))
-    dispatch: dict[EffectIdentity, Dispatch] = {}
+    governing = strongest(*(s.refusable for s in standings))
     withheld: dict[EffectIdentity, Withheld] = {}
     awaiting: dict[object, Awaiting] = {}
-    for _, o in opens:
-        awaiting |= o.awaiting
-        withheld |= o.withheld
-        if o.tier() < governing:
-            for identity, d in o.dispatch.items():
-                withheld[identity] = Deferred(identity=identity, request=d.request, until=until)
-        else:
-            dispatch |= o.dispatch
+    for s in opens:
+        if s.outcome is not None:
+            awaiting |= s.outcome.awaiting
+            withheld |= s.outcome.withheld
+    if governing == Refusability.READABLE:
+        dispatch, deferred = decided(standings, opens)
+    elif governing == Refusability.UNREAD:
+        dispatch, deferred = unsettled(standings, opens)
+    else:
+        dispatch = {k: d for s in opens if s.outcome for k, d in s.outcome.dispatch.items()}
+        deferred = {}
+    withheld |= deferred
     for identity in dispatch:
         withheld.pop(identity, None)
-    unread: dict[tuple[str, type[BaseModel]], frozenset[EffectIdentity]] = {}
-    for _, o in opens:
-        for path, kind, beside in o.unproven:
-            elsewhere = frozenset(dispatch) - frozenset(o.dispatch)
-            unread[path, kind] = unread.get((path, kind), frozenset()) | beside | elsewhere
-    unproven = tuple((path, kind, beside) for (path, kind), beside in unread.items())
-    return Open(dispatch, withheld, awaiting, pending, unproven)
+    judgements = once(tuple(j for s in standings for j in s.judgements))
+    return Open(dispatch, withheld, awaiting, judgements, governing)
+
+
+type Kept = tuple[dict[EffectIdentity, Dispatch], dict[EffectIdentity, Withheld]]
+"""The requests a conjunction dispatches and the requests it withholds."""
+
+
+def decided(standings: list[Standing], opens: list[Standing]) -> Kept:
+    """A readable decision governs: requests feeding one stand; the rest wait for every
+    judgement of the deciding premises, as unresolved where any of those, or their own, is
+    unread."""
+    deciding = [s for s in standings if s.refusable == Refusability.READABLE]
+    decisions = once(tuple(j for s in deciding for j in s.judgements))
+    dispatch: dict[EffectIdentity, Dispatch] = {}
+    withheld: dict[EffectIdentity, Withheld] = {}
+    for s in opens:
+        if s.outcome is not None and s.refusable == Refusability.READABLE:
+            dispatch |= s.outcome.dispatch
+        else:
+            withheld |= s.deferred(decisions, unread((*decisions, *s.judgements)))
+    return dispatch, withheld
+
+
+def unsettled(standings: list[Standing], opens: list[Standing]) -> Kept:
+    """Only unread judgements are open: a request feeding the one unread judgement stands, since
+    it would under either reading of it; a request feeding one unread judgement beside another
+    waits for the other, since one reading has it depend on it; a request feeding none waits
+    for them all."""
+    unsettled = [s for s in standings if s.refusable == Refusability.UNREAD]
+    dispatch: dict[EffectIdentity, Dispatch] = {}
+    withheld: dict[EffectIdentity, Withheld] = {}
+    for s in opens:
+        others = once(
+            tuple(
+                j
+                for u in unsettled
+                if u is not s
+                for j in unread(u.judgements)
+                if j not in s.judgements
+            )
+        )
+        if s.outcome is not None and s.refusable == Refusability.UNREAD and not others:
+            dispatch |= s.outcome.dispatch
+        else:
+            withheld |= s.deferred(others, unread((*others, *s.judgements)))
+    return dispatch, withheld
 
 
 def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome:
     """How alternatives combine: one constructed member is the premise; two are indeterminate;
     among live open members, a request is justified only if every one needs it, and a request
-    one needs and another does not is unchosen. The alternative is undecided only while every
-    live member is: a member nothing can refute will hold whatever the others do."""
+    one needs and another does not is unchosen. The alternative may be refused only if every
+    live member may be: a member nothing can refute will hold whatever the others do."""
     available = [(m, o) for m, o in members if isinstance(o, Available)]
     if len(available) == 1:
         return available[0][1]
@@ -498,8 +622,9 @@ def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome
 def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
     """How several live open members of an alternative combine: a request every member needs is
     necessary and dispatched when every member dispatches it; a request one member needs and
-    another does not is unchosen. The alternative may be refused only if every live member may,
-    so what is pending is what the members have pending, at the weakest tier among them."""
+    another does not is unchosen. The judgements open are the members'; what they establish
+    about the alternative is the weakest among the members, since it is refused only if every
+    member is."""
     members = tuple(m for m, _ in opens)
     needs = [o.needs() for _, o in opens]
     necessary = set(needs[0]).intersection(*(set(n) for n in needs[1:]))
@@ -520,14 +645,8 @@ def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
         if all(identity in o.dispatch for _, o in opens):
             dispatch[identity] = next(o.dispatch[identity] for _, o in opens)
             withheld.pop(identity, None)
-    weakest = min(o.tier() for _, o in opens)
-    pending = tuple(
-        dict.fromkeys(
-            (path, min(how, weakest)) for _, o in opens for path, how in o.pending if weakest
-        )
-    )
-    unproven = tuple(dict.fromkeys(u for _, o in opens for u in o.unproven))
-    return Open(dispatch, withheld, awaiting, pending, unproven)
+    judgements = once(tuple(j for _, o in opens for j in o.judgements))
+    return Open(dispatch, withheld, awaiting, judgements, weakest(*(o.refusable for _, o in opens)))
 
 
 def awaiting(interaction: Interaction, how: Awaiting, which: object) -> Open:
@@ -585,10 +704,10 @@ class Evaluator:
     def _received(self, node: Heard, path: str, scope: Scope) -> Outcome:
         """One record from a source, in this scope: the evidence answering this scope's request
         or correlated to this scope's element, else the work that supplies it. The receive is
-        undecided while the source may still answer with another member."""
+        a decision while the source may still answer with another member."""
         interaction, kind = node.interaction, node.kind
         said = self.invocation.said(interaction)
-        decision = len(interaction.receives) > 1
+        decision = Decided(premise=path) if len(interaction.receives) > 1 else None
         if interaction.many:
             site = bound(scope, Collection(kind, ()))
             if site is None:
@@ -605,21 +724,21 @@ class Evaluator:
                 receives=interaction.receives, source=interaction.source, element=element
             )
             waiting = awaiting(interaction, how, element)
-            return controlled(waiting, path, Control.DECLARED) if decision else waiting
+            return judged(waiting, decision) if decision else waiting
         return self._solicited(node, node.request, path, scope)
 
     def _solicited(self, node: Heard, sent: Node, path: str, scope: Scope) -> Outcome:
         """The answer to this scope's request, or the request's own outcome: the send to
         dispatch, the wait after an attempt, or the premises the request still lacks."""
         interaction, kind = node.interaction, node.kind
-        decision = len(interaction.receives) > 1
+        decision = Decided(premise=path) if len(interaction.receives) > 1 else None
         sends = interaction.sends
         if sends is None:
             msg = f"{path}: a request node without a send"
             raise RuntimeError(msg)
         request = self.construct(sent, f"{path}.{sends.__name__}", scope)
         if isinstance(request, Open):
-            return controlled(request, path, Control.DECLARED) if decision else request
+            return judged(request, decision) if decision else request
         if not isinstance(request, Available):
             return request
         if not isinstance(request.value, BaseModel):
@@ -634,7 +753,7 @@ class Evaluator:
             return self._answer(mine, kind, path)
         elements = tuple(site for over, site in scope if over in self.graph.varies[sent])
         outstanding = self._outstanding(interaction, identity, request.value, elements, path)
-        return controlled(outstanding, path, Control.DECLARED) if decision else outstanding
+        return judged(outstanding, decision) if decision else outstanding
 
     def _one(self, path: str, evidence: list[Evidence]) -> Evidence | None:
         """The one piece of evidence admitted for a receive occurrence, or none. Admission
@@ -719,7 +838,7 @@ class Evaluator:
         match self.construct(node.closer, f"{path}.closed_by", scope):
             case Open() as outcome:
                 waiting = awaiting(interaction, how, element)
-                merged = conjoined([(path, outcome, Control.NONE), (path, waiting, Control.NONE)])
+                merged = conjoined([(path, outcome, ()), (path, waiting, ())])
                 if merged is None:
                     msg = f"{path}: open premises combined to nothing"
                     raise RuntimeError(msg)
@@ -751,7 +870,8 @@ class Evaluator:
         """One construction per element of the collection the class varies over. The tuple is
         final only when the collection is: a collection source's tuple stays open until its
         closing evidence, while each element's work proceeds; and while it is open, elements
-        still to come may be refuted if any element can be."""
+        still to come are judged as each element is, by the judgements located in the element's
+        construction."""
         elements = self._elements(node, f"{path}.{node.over.container.__name__}", scope)
         if not isinstance(elements, Available):
             return elements
@@ -765,11 +885,10 @@ class Evaluator:
                 raise TypeError(msg)
             each = binding(scope, node.over, site)
             at = f"{path}[{index}]"
-            parts.append((at, self.construct(node.element, at, each), Control.NONE))
+            parts.append((at, self.construct(node.element, at, each), ()))
         if node.closure is not None:
             sealed = self.construct(node.closure, path, scope)
-            still = self.graph.control[node.element]
-            parts.append((f"{path}[{EACH}]", sealed, still))
+            parts.append((f"{path}[{EACH}]", sealed, self.graph.judgements[node.element]))
         pending = conjoined(parts)
         if pending is not None:
             return pending
@@ -814,47 +933,40 @@ class Evaluator:
         return Available(value, site)
 
     def _composed(self, node: Made, path: str, scope: Scope) -> Outcome:
-        """A class constructed from its premises through Pydantic. Each open premise is under the
-        control this class puts on it: a declared condition over every premise, a native
-        constraint on its field, or none the evaluator can read. A premise already available is
-        checked against its own field's native constraints at once, through Pydantic, so a
-        constraint the class states is respected before any effect beside it, not only when the
-        whole class constructs; a callback is never run early, and a refutable class's
-        constraints are its declared condition, judged by constructing it so that its refusal is
-        classified as its own. A class with a part the evaluator cannot read, still open, is
-        reported unproven. A constant is constructed the same way, since a default is validated
-        too."""
+        """A class constructed from its premises through Pydantic. Each premise carries the
+        judgements the class makes at its field: a native constraint, judged through Pydantic
+        as soon as the premise is there where nothing omitted can change the verdict, else
+        left to construction; and what the evaluator cannot read, always left to construction.
+        The class's judgements on the whole, its declared condition or an unread part, are
+        what its parent sees it refusable by. A constant is constructed the same way, since a
+        default is validated too."""
         kind = node.kind
         if constant(kind):
             return self._validated(kind, None, Built(kind=qualified(kind)), path)
         given: dict[str, object] = {}
         occurrences: list[tuple[str, Occurrence]] = []
         parts: list[Part] = []
-        bounded = constrained(kind)
         for name, premise in node.premises:
-            outcome = self.construct(premise, f"{path}.{name}", scope)
-            own = Control.NONE
-            if issubclass(kind, Refutable):
-                own = Control.DECLARED
-            elif name in bounded:
-                own = Control.CONSTRAINT
+            at = f"{path}.{name}"
+            outcome = self.construct(premise, at, scope)
+            own = at_field(kind, name, at)
             if isinstance(outcome, Available):
-                errors = None if issubclass(kind, Refutable) else checked(kind, name, outcome.value)
-                if errors is not None:
-                    reason = Malformed(premise=f"{path}.{name}", kind=kind, errors=errors)
-                    outcome = Stuck((reason,))
-                else:
+                if any(isinstance(j, Bounded) for j in own) and early(kind, name):
+                    errors = checked(kind, name, outcome.value)
+                    if errors is not None:
+                        outcome = Stuck((Malformed(premise=at, kind=kind, errors=errors),))
+                    own = tuple(j for j in own if not isinstance(j, Bounded))
+                if isinstance(outcome, Available):
                     given[name] = outcome.value
                     occurrences.append((name, outcome.occurrence))
-            parts.append((f"{path}.{name}", outcome, own))
+            parts.append((at, outcome, own))
         pending = conjoined(parts)
-        if isinstance(pending, Open) and opaque(kind) != frozenset():
-            unread = (path, kind, frozenset[EffectIdentity]())
-            return replace(pending, unproven=(*pending.unproven, unread))
-        if pending is not None:
-            return pending
-        occurrence = Built(kind=qualified(kind), parts=tuple(occurrences))
-        return self._validated(kind, given, occurrence, path)
+        if pending is None:
+            occurrence = Built(kind=qualified(kind), parts=tuple(occurrences))
+            return self._validated(kind, given, occurrence, path)
+        if isinstance(pending, Open):
+            return judged(pending, *whole(kind, path))
+        return pending
 
     def _validated(
         self, kind: type[BaseModel], given: dict[str, object] | None, occurrence: Built, path: str
@@ -880,22 +992,18 @@ class Evaluator:
 
 
 def checked(kind: type[BaseModel], name: str, value: object) -> tuple[str, ...] | None:
-    """The errors a field's own native constraints raise over an available premise, or ``None``
-    when the field has none or they hold. The field's annotation with its constraint metadata, a
-    bound, a length, a fixed tuple size, is what Pydantic will apply to the field at
-    construction; applying it here through Pydantic is the same judgement, made as soon as the
-    premise is there. Callbacks in the metadata, validators declared by decorator and model
-    validators run only at construction and are not run here: their outcome stays unproven."""
+    """The errors a field's native constraints raise over an available premise, or ``None``
+    when they hold. Sound only where ``early`` holds: then the field's annotation with its
+    constraint metadata is exactly what Pydantic applies to the field at construction, under
+    the class's own strictness, and applying it here through Pydantic is the same judgement,
+    made as soon as the premise is there."""
     info = kind.model_fields[name]
-    bounds = tuple(m for m in info.metadata if constraint(m))
-    fixed = collection(info.annotation)
-    if not bounds and (fixed is None or fixed[1] is None):
-        return None
+    bounds = tuple(m for m in info.metadata if native(m))
     judged: object = info.annotation
     if bounds:
         judged = Annotated[(info.annotation, *bounds)]  # pyright: ignore[reportInvalidTypeArguments, reportInvalidTypeForm]
     try:
-        TypeAdapter(judged).validate_python(value, strict=True)
+        TypeAdapter(judged).validate_python(value, strict=kind.model_config.get("strict"))
     except ValidationError as refusal:
         return tuple(e["msg"] for e in refusal.errors())
     return None
@@ -921,6 +1029,18 @@ def undecidable(withheld: dict[EffectIdentity, Withheld]) -> tuple[Reason, ...]:
     )
 
 
+def undetermined(withheld: dict[EffectIdentity, Withheld]) -> tuple[Reason, ...]:
+    """The deferred effects, when nothing else can advance the invocation, as the one reason
+    it is blocked: the judgements they wait behind cannot be made before them."""
+    stalled = [(identity, w) for identity, w in withheld.items() if isinstance(w, Deferred)]
+    if not stalled:
+        return ()
+    judgements = once(tuple(j for _, w in stalled for j in (*w.behind, *w.unread)))
+    judgements = tuple(sorted(judgements, key=lambda j: (j.premise, type(j).__name__)))
+    operations = tuple(sorted({identity.operation for identity, _ in stalled}))
+    return (Undetermined(judgements=judgements, operations=operations),)
+
+
 def evaluate(program: Program, invocation: Invocation) -> Evaluation:
     """The next justified work of an invocation, from its history."""
     graph = program.graph
@@ -935,22 +1055,14 @@ def evaluate(program: Program, invocation: Invocation) -> Evaluation:
                 msg = "a goal is a declared class"
                 raise TypeError(msg)
             return Completed(goal=value, occurrence=occurrence)
-        case Open(dispatch, withheld, awaited, _, unread):
+        case Open(dispatch, withheld, awaited):
             if dispatch or awaited:
                 return Frontier(
                     dispatch=tuple(dispatch.values()),
                     awaiting=tuple(awaited.values()),
                     withheld=tuple(withheld.values()),
-                    unproven=tuple(
-                        Unproven(
-                            premise=path,
-                            kind=kind,
-                            beside=tuple(sorted(i.operation for i in beside if i in dispatch)),
-                        )
-                        for path, kind, beside in unread
-                    ),
                 )
-            reasons = undecidable(withheld)
+            reasons = (*undecidable(withheld), *undetermined(withheld))
             if not reasons:
                 msg = "an open goal with nothing to dispatch, await or choose"
                 raise RuntimeError(msg)

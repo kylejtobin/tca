@@ -259,6 +259,23 @@ class Endorsed(Fact):
     pinged: Pinged
 
 
+class Withdrawal(Record):
+    applicant: Name
+
+
+class Withdrawn(Fact):
+    """The applicant withdrew: a passive alternative nothing can refuse."""
+
+    withdrawal: Withdrawal
+
+
+class Resolved(Fact):
+    """Granted or withdrawn, and the applicant mailed either way."""
+
+    outcome: Granted | Withdrawn
+    mailed: Mailed
+
+
 REGISTRAR = Source("registrar")
 COMMITTEE = Source("committee")
 DESK = Source("desk")
@@ -283,6 +300,8 @@ VETTED_CHECK = Interaction(
 COMMITTEE_DECISION = Interaction(
     source=COMMITTEE, receives=(Approved, Refused), correlated=BY_APPLICANT
 )
+APPLICANT_SOURCE = Source("applicant")
+WITHDRAWAL = Interaction(source=APPLICANT_SOURCE, receives=(Withdrawal,), correlated=BY_APPLICANT)
 
 ADMISSION = Program(goal=Granted, accepts=Admit, interactions=(CHECK, PING))
 """Allowed and pinged, with no outcome for a denial."""
@@ -301,5 +320,7 @@ CLEARANCE = Program(goal=Cleared, accepts=Admit, interactions=(CHECK, SCREEN))
 HANDLING = Program(goal=Handled, accepts=Admit, interactions=(CHECK, NOTIFY))
 VETTING = Program(goal=VettedGranted, accepts=Admit, interactions=(VETTED_CHECK, PING))
 ENDORSEMENT = Program(goal=Endorsed, accepts=Admit, interactions=(COMMITTEE_DECISION, PING))
+RESOLUTION = Program(goal=Resolved, accepts=Admit, interactions=(CHECK, PING, MAIL, WITHDRAWAL))
+"""Granted or withdrawn, with a mail beside the alternative."""
 
 APPLICANT = Admit(applicant=Applicant(name=Name("ada")))

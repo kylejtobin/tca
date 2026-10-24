@@ -10,12 +10,12 @@ an ordinary validator on the fact says so. Nothing here is written for the inter
 """
 
 from decimal import Decimal
-from typing import Annotated, Self
+from typing import Annotated, Self, cast
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import AfterValidator, BeforeValidator, Field, model_validator
 
 from type_construction.program import Binding, Correlation, Interaction, Program, Source
-from type_construction.world import Fact, Only, Record, Scalar, Value
+from type_construction.world import Equal, Fact, Only, Record, Scalar, Value
 
 
 class OrderId(Scalar[str]):
@@ -344,6 +344,130 @@ class GuardedDispatched(Fact):
     shipment: GuardedShipped
 
 
+class Matches(Equal[Paid, Total]):
+    """The capture equals the total: the same condition as ``Eligible`` states, as a declared
+    relation the evaluator reads."""
+
+
+class DeclaredEligible(Fact):
+    """An order whose capture matches its total, by a declared relation."""
+
+    order: Priced
+    payment: Captured
+    matched: Matches
+
+
+class DeclaredDispatched(Fact):
+    eligible: DeclaredEligible
+    shipment: OrderShipped
+
+
+class Doubly(Fact):
+    """Two constructions, each behind a validator the evaluator cannot read, each resolved only
+    by its own effect, and nothing declared between them."""
+
+    eligible: Eligible
+    desk: CheckedPingDesk
+
+
+class DoublyDeclared(Fact):
+    """The same, with the eligibility's condition declared as a relation."""
+
+    eligible: DeclaredEligible
+    desk: CheckedPingDesk
+
+
+class DoublyPlain(Fact):
+    """The same, with the desk's ping in a plain fact."""
+
+    eligible: Eligible
+    desk: PingDesk
+
+
+class Voucher(Record):
+    order: OrderId = Field(alias="order_id")
+    reviewer: Reviewer
+
+
+class CheckedVoucher(Fact):
+    """A reviewer's voucher behind an opaque identity validator, nothing sent for it."""
+
+    voucher: Voucher
+
+    @model_validator(mode="after")
+    def _same(self) -> Self:
+        return self
+
+
+class Vouched(Fact):
+    eligible: Eligible
+    vouched: CheckedVoucher
+
+
+def seconded[R](records: tuple[R, ...]) -> tuple[R, ...]:
+    """A before-validator that pads a lone record to two before the length is checked: native
+    Pydantic accepts one record where the bare constraint refuses it."""
+    return records if len(records) >= 2 else (*records, *records)
+
+
+class Seconded(Fact):
+    """At least two approvals after padding: the judgement at its own construction boundary."""
+
+    approvals: Annotated[tuple[OrderApproval, ...], BeforeValidator(seconded), Field(min_length=2)]
+
+
+class SecondedRelease(Fact):
+    seconded: Seconded
+    shipment: OrderShipped
+
+
+class Prefaced(Fact):
+    """At least two approvals, where a model validator running before field validation pads a
+    lone approval: the constraint is native and the padding is not at the field."""
+
+    approvals: tuple[OrderApproval, ...] = Field(min_length=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _second(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        given = cast("dict[str, object]", data)
+        approvals = given.get("approvals")
+        if not isinstance(approvals, tuple):
+            return given
+        lone = cast("tuple[object, ...]", approvals)
+        if len(lone) != 1:
+            return given
+        padded: dict[str, object] = {**given, "approvals": (*lone, *lone)}
+        return padded
+
+
+class PrefacedRelease(Fact):
+    prefaced: Prefaced
+    shipment: OrderShipped
+
+
+class SecondedCatalogue(Fact):
+    """At least two quotes after padding, judged on the goal's own field, and the desk pinged."""
+
+    order: Lined
+    quotes: Annotated[tuple[Quoted, ...], BeforeValidator(seconded), Field(min_length=2)]
+    pinged: Pinged
+
+
+class SecondedQuotes(Fact):
+    """At least two quotes after padding, at a construction boundary of their own."""
+
+    quotes: Annotated[tuple[Quoted, ...], BeforeValidator(seconded), Field(min_length=2)]
+
+
+class SecondedCatalogueViaFact(Fact):
+    order: Lined
+    quoted: SecondedQuotes
+    pinged: Pinged
+
+
 class Settled(Fact):
     covered: Covered
     shipment: OrderShipped
@@ -413,6 +537,7 @@ ORDER_CLOSING = Interaction(source=REVIEWERS, receives=(OrderReviewClosed,), cor
 ALIASED = Interaction(
     source=CARRIER, sends=AliasedRequest, receives=(AliasedAnswer,), correlated=BY_ORDER
 )
+VOUCHING = Interaction(source=REVIEWERS, receives=(Voucher,), correlated=BY_ORDER)
 
 SHIPPING = Program(
     goal=Shipments,
@@ -435,6 +560,29 @@ DECIDING_BY_SKU = Program(
 DISPATCHING = Program(goal=Dispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
 GUARDED_DISPATCHING = Program(
     goal=GuardedDispatched, accepts=FulfillOrder, interactions=(CAPTURE, GUARDED_SHIP)
+)
+DECLARED_DISPATCHING = Program(
+    goal=DeclaredDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
+)
+DOUBLING = Program(goal=Doubly, accepts=FulfillOrder, interactions=(CAPTURE, PING))
+DOUBLING_DECLARED = Program(goal=DoublyDeclared, accepts=FulfillOrder, interactions=(CAPTURE, PING))
+DOUBLING_PLAIN = Program(goal=DoublyPlain, accepts=FulfillOrder, interactions=(CAPTURE, PING))
+VOUCHED = Program(goal=Vouched, accepts=FulfillOrder, interactions=(CAPTURE, VOUCHING))
+SECONDING = Program(
+    goal=SecondedRelease,
+    accepts=FulfillOrder,
+    interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER),
+)
+PREFACING = Program(
+    goal=PrefacedRelease,
+    accepts=FulfillOrder,
+    interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER),
+)
+SECONDED_CATALOGUING = Program(
+    goal=SecondedCatalogue, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+SECONDED_CATALOGUING_VIA_FACT = Program(
+    goal=SecondedCatalogueViaFact, accepts=ReviewLines, interactions=(QUOTE, PING)
 )
 SETTLING = Program(goal=Settled, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
 RELEASING = Program(

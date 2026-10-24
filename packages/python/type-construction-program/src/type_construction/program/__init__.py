@@ -8,14 +8,26 @@ and ``Program``. ``invocation`` holds the history entries, ``EffectIdentity``, a
 ``accept``, ``intend``, ``admissible``, ``admit``, ``perform``, ``acknowledge``, ``failed`` and
 ``uncertain``.
 ``evaluation`` holds ``evaluate`` and its three results, ``Completed``, ``Frontier`` and
-``Blocked``; a frontier carries the requests withheld as well, ``Deferred`` behind an undecided
-premise or ``Unchosen`` among alternatives.
+``Blocked``; a frontier carries the requests withheld as well, ``Deferred`` behind the
+judgements still to be made on a premise beside it, named where they are declared, or
+``Unchosen`` among alternatives.
 
 Nothing here is a durable host. The history is in memory, no worker owns it, and no experiment
 on it demonstrates recovery, concurrency or stale-commit rejection.
 """
 
-from .declaration import Binding, Control, Correlation, Interaction, Program, Source
+from .declaration import (
+    Binding,
+    Bounded,
+    Correlation,
+    Decided,
+    Interaction,
+    Judgement,
+    Program,
+    Refusability,
+    Source,
+    Unread,
+)
 from .evaluation import (
     AnsweredOtherwise,
     Blocked,
@@ -31,7 +43,7 @@ from .evaluation import (
     Unchosen,
     Unclosed,
     Undecidable,
-    Unproven,
+    Undetermined,
     Unresolved,
     Unsolicited,
     Withheld,
@@ -92,13 +104,14 @@ __all__ = [
     "Attempted",
     "Binding",
     "Blocked",
+    "Bounded",
     "Built",
     "Claim",
     "Closed",
     "Completed",
     "Conflict",
-    "Control",
     "Correlation",
+    "Decided",
     "Deferred",
     "Delivered",
     "Delivery",
@@ -116,10 +129,12 @@ __all__ = [
     "Interaction",
     "Invocation",
     "InvocationId",
+    "Judgement",
     "Malformed",
     "NotAccepted",
     "Occurrence",
     "Program",
+    "Refusability",
     "Refusal",
     "Refutation",
     "Returned",
@@ -132,10 +147,11 @@ __all__ = [
     "Unclosed",
     "Uncorrelated",
     "Undecidable",
+    "Undetermined",
     "Unintended",
     "UnknownIntent",
     "Unmatched",
-    "Unproven",
+    "Unread",
     "Unrecognized",
     "Unrequested",
     "Unresolved",

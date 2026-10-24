@@ -27,7 +27,7 @@ from type_construction.program import (
     Site,
     Unclosed,
     Uncorrelated,
-    Unproven,
+    Unread,
     Unsolicited,
     accept,
     admit,
@@ -226,48 +226,55 @@ def test_a_selection_per_line_is_decided_by_that_lines_closure_alone() -> None:
     assert reason.premise == "AllDecided.lines[0].approval"
 
 
-def test_an_opaque_validator_orders_nothing_and_is_reported_unproven() -> None:
-    """The capture has one declared answer and no declared relation; only a model validator the
-    evaluator cannot read may refuse the fact. Nothing declared relates the shipment to it, so
-    the shipment is not withheld: an order invented from the validator's presence would make
-    model shape a scheduling instruction. The construction is reported unproven beside the
-    shipment it did not stop; a refusing validator then blocks."""
+def test_an_ordinary_validator_over_delayed_evidence_defers_the_dependent_effect() -> None:
+    """The capture has one declared answer and no declared relation; only a model validator may
+    refuse the fact. The shipment, which needs nothing but the order, must still wait."""
     program = composite.DISPATCHING
     invocation = accept(program, InvocationId("dsp"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
-    assert sorted(type(d.request).__name__ for d in opening.dispatch) == [
-        "CaptureRequest",
-        "ShipOrder",
-    ]
-    assert opening.withheld == ()
-    assert opening.unproven == (
-        Unproven(
-            premise="Dispatched.eligible",
-            kind=composite.Eligible,
-            beside=("type_construction_program.composite.ShipOrder",),
-        ),
-    )
-    (capture,) = [d for d in opening.dispatch if isinstance(d.request, composite.CaptureRequest)]
+    assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, composite.ShipOrder)
+    assert deferred.until == ("Dispatched.eligible",)
+    assert deferred.behind == (Unread(premise="Dispatched.eligible", kind=composite.Eligible),)
+    assert deferred.unread == deferred.behind
+
     short = perform(
-        program, intend(invocation, opening.dispatch), capture.identity, CAPTURED % "20.00"
+        program,
+        intend(invocation, opening.dispatch),
+        opening.dispatch[0].identity,
+        CAPTURED % "20.00",
     )
     blocked = evaluate(program, short)
     assert isinstance(blocked, Blocked)
     (reason,) = blocked.reasons
     assert isinstance(reason, Malformed)
     assert reason.kind is composite.Eligible
+    assert all(not isinstance(r, composite.ShipOrder) for r in short.intents.values())
+
+    exact = perform(
+        program,
+        intend(invocation, opening.dispatch),
+        opening.dispatch[0].identity,
+        CAPTURED % "50.00",
+    )
+    assert [type(d.request) for d in frontier(evaluate(program, exact)).dispatch] == [
+        composite.ShipOrder
+    ]
 
 
 def test_the_declared_relationship_makes_the_shipment_wait_for_eligibility() -> None:
-    """The smallest declarative extension: eligibility is a premise of the shipment request, as
-    an action's own requirement (foundations §7.4). Then the shipment waits, a refusing validator
-    blocks with the shipment never dispatched, and a passing one releases it."""
+    """A separate contract, not a repair of the one above: here the business means the shipment
+    to require eligibility universally, so eligibility is a premise of the shipment request, an
+    action's own requirement (foundations §7.4). The shipment then waits for the eligibility as
+    for any premise, nothing is withheld, a refusing validator blocks with the shipment never
+    dispatched, and a passing one releases it."""
     program = composite.GUARDED_DISPATCHING
     invocation = accept(program, InvocationId("gdsp"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
     assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
     assert opening.withheld == ()
-    assert [u.premise for u in opening.unproven] == ["GuardedDispatched.eligible"]
 
     short = perform(
         program,
@@ -321,26 +328,28 @@ def test_a_native_field_constraint_over_an_unclosed_source_defers_the_dependent_
     ]
 
 
-def test_an_annotated_after_validator_is_a_callback_not_a_constraint() -> None:
-    """An ``Annotated`` after-validator is a callback the evaluator cannot read: it is never run
-    early, orders nothing, and is reported unproven; when it refuses at construction, the block
-    is classified as malformed."""
+def test_an_annotated_after_validator_over_delayed_evidence_defers_the_dependent_effect() -> None:
     program = composite.SETTLING
     invocation = accept(program, InvocationId("set"), composite.PRICED)
     opening = frontier(evaluate(program, invocation))
-    assert sorted(type(d.request).__name__ for d in opening.dispatch) == [
-        "CaptureRequest",
-        "ShipOrder",
-    ]
-    assert [u.premise for u in opening.unproven] == ["Settled.covered"]
-    (capture,) = [d for d in opening.dispatch if isinstance(d.request, composite.CaptureRequest)]
+    assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
+    assert [type(w.request) for w in opening.withheld] == [composite.ShipOrder]
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert deferred.until == ("Settled.covered.payment",)
+    assert deferred.unread == (Unread(premise="Settled.covered.payment", kind=composite.Covered),)
     invocation = intend(invocation, opening.dispatch)
-    nothing = perform(program, invocation, capture.identity, CAPTURED % "0.00")
+    nothing = perform(program, invocation, opening.dispatch[0].identity, CAPTURED % "0.00")
     blocked = evaluate(program, nothing)
     assert isinstance(blocked, Blocked)
     (reason,) = blocked.reasons
     assert isinstance(reason, Malformed)
     assert reason.kind is composite.Covered
+    assert all(not isinstance(r, composite.ShipOrder) for r in nothing.intents.values())
+    some = perform(program, invocation, opening.dispatch[0].identity, CAPTURED % "50.00")
+    assert [type(d.request) for d in frontier(evaluate(program, some)).dispatch] == [
+        composite.ShipOrder
+    ]
 
 
 def test_a_constant_whose_default_its_constraint_refuses_blocks_with_a_structured_reason() -> None:
