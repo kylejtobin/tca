@@ -85,7 +85,7 @@ uncertain leaves it outstanding and not dispatchable; which is right is the capa
 recovery contract, not a business conclusion.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, ValidationError, model_validator
@@ -335,6 +335,19 @@ class Unchosen(BaseModel):
 type Withheld = Deferred | Unchosen
 
 
+class Justified(BaseModel):
+    """Why a request in the frontier stands: ``decides`` names the judgements the evaluator reads
+    that the request's result is an input of, so the request is the declared means of those
+    decisions. Empty, no judgement open anywhere the request is demanded withholds it: its
+    premises are established and nothing beside it may refuse the conjunctions that demand it,
+    or whatever may is over its own result alone and cannot be judged without it."""
+
+    model_config = RESULT
+
+    identity: EffectIdentity
+    decides: tuple[Judgement, ...] = ()
+
+
 class Completed(BaseModel):
     """The goal is constructed, from the occurrences named."""
 
@@ -353,13 +366,26 @@ class Frontier(BaseModel):
     dispatch: tuple[Dispatch, ...] = ()
     awaiting: tuple[Awaiting, ...] = ()
     withheld: tuple[Withheld, ...] = ()
+    justified: tuple[Justified, ...] = ()
+    """Why each request in ``dispatch`` stands, one per request."""
 
     @model_validator(mode="after")
     def _some(self) -> Frontier:
         if not self.dispatch and not self.awaiting:
             msg = "a frontier with nothing to dispatch and nothing awaited is not a frontier"
             raise ValueError(msg)
+        if [j.identity for j in self.justified] != [d.identity for d in self.dispatch]:
+            msg = "every request dispatched is justified, and nothing else is"
+            raise ValueError(msg)
         return self
+
+    def why(self, identity: EffectIdentity) -> Justified:
+        """Why the request with this identity stands."""
+        for j in self.justified:
+            if j.identity == identity:
+                return j
+        msg = f"{identity} is not dispatched in this frontier"
+        raise KeyError(msg)
 
 
 class Blocked(BaseModel):
@@ -392,6 +418,9 @@ class Open:
     withheld: dict[EffectIdentity, Withheld]
     awaiting: dict[object, Awaiting]
     judgements: tuple[Judgement, ...] = ()
+    grounds: dict[EffectIdentity, tuple[Judgement, ...]] = field(default_factory=dict)
+    """Per request dispatched, the read judgements it decides, gathered up through every
+    conjunction that demands it; see ``Justified``."""
 
     def needs(self) -> dict[EffectIdentity, Dispatch]:
         """Every request this premise needs performed, dispatched or deferred."""
@@ -453,6 +482,23 @@ def judged(outcome: Open, *judgements: Judgement) -> Open:
     if not judgements:
         return outcome
     return replace(outcome, judgements=once((*outcome.judgements, *judgements)))
+
+
+def decided(outcome: Open, decision: Decided | None) -> Open:
+    """The open outcome of a receive the source may answer otherwise: the decision is open at
+    the receive, and every request dispatched under it, the send itself or a request supplying
+    the send's premises, is a means of that decision."""
+    if decision is None:
+        return outcome
+    grounds = {
+        identity: once((*outcome.grounds.get(identity, ()), decision))
+        for identity in outcome.dispatch
+    }
+    return replace(
+        outcome,
+        judgements=once((*outcome.judgements, decision)),
+        grounds={**outcome.grounds, **grounds},
+    )
 
 
 type Part = tuple[str, Outcome, tuple[Judgement, ...]]
@@ -573,8 +619,12 @@ def conjoined(
     Otherwise each open premise's requests stand or are withheld by their relations to every
     judgement open across the conjunction, ``related``: at the premise, under another premise,
     or on the whole class (``whole``). Withheld requests name the judgements they wait for and,
-    where the relation is unsettled, the judgements that could not be read. The class's whole
-    judgements are open on the result as well, for its parent.
+    where the relation is unsettled, the judgements that could not be read. Requests that stand
+    carry the judgements they decide: those located at their premise's field or on this class,
+    whose input they supply directly, and those carried up from the conjunctions inside; a
+    judgement deeper under the premise is decided by the requests at its own level, not by every
+    request the premise holds. The class's whole judgements are open on the result as well, for
+    its parent.
     """
     stuck = [r for _, o, _ in parts if isinstance(o, Stuck) for r in o.reasons]
     if stuck:
@@ -593,12 +643,22 @@ def conjoined(
     dispatch: dict[EffectIdentity, Dispatch] = {}
     withheld: dict[EffectIdentity, Withheld] = {}
     awaiting: dict[object, Awaiting] = {}
+    grounds: dict[EffectIdentity, tuple[Judgement, ...]] = {}
     for s, o in opens:
         awaiting |= o.awaiting
         withheld |= o.withheld
         relations = related(s, whole, standings)
         if justified(relations):
             dispatch |= o.dispatch
+            decides = tuple(
+                r.judgement
+                for r in relations
+                if isinstance(r, Decides) and (r.judgement in s.own or r.judgement in whole)
+            )
+            for identity in o.dispatch:
+                grounds[identity] = once(
+                    (*grounds.get(identity, ()), *o.grounds.get(identity, ()), *decides)
+                )
             continue
         behind = once(tuple(r.judgement for r in relations if not isinstance(r, Decides)))
         because = tuple(
@@ -616,7 +676,7 @@ def conjoined(
     for identity in dispatch:
         withheld.pop(identity, None)
     judgements = once((*(j for s in standings for j in s.judgements), *whole))
-    return Open(dispatch, withheld, awaiting, judgements)
+    return Open(dispatch, withheld, awaiting, judgements, grounds)
 
 
 def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome:
@@ -663,14 +723,18 @@ def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
                 withheld[identity] = Unchosen(
                     identity=identity, request=d.request, premise=path, among=members
                 )
+    grounds: dict[EffectIdentity, tuple[Judgement, ...]] = {}
     for identity in necessary:
         if all(identity in o.dispatch for _, o in opens):
             dispatch[identity] = next(o.dispatch[identity] for _, o in opens)
             withheld.pop(identity, None)
+            grounds[identity] = once(
+                tuple(j for _, o in opens for j in o.grounds.get(identity, ()))
+            )
     judgements = once(tuple(j for _, o in opens for j in o.judgements))
     if any(not o.judgements for _, o in opens):
         judgements = ()
-    return Open(dispatch, withheld, awaiting, judgements)
+    return Open(dispatch, withheld, awaiting, judgements, grounds)
 
 
 def awaiting(interaction: Interaction, how: Awaiting, which: object) -> Open:
@@ -748,7 +812,7 @@ class Evaluator:
                 receives=interaction.receives, source=interaction.source, element=element
             )
             waiting = awaiting(interaction, how, element)
-            return judged(waiting, decision) if decision else waiting
+            return decided(waiting, decision)
         return self._solicited(node, node.request, path, scope)
 
     def _solicited(self, node: Heard, sent: Node, path: str, scope: Scope) -> Outcome:
@@ -762,7 +826,7 @@ class Evaluator:
             raise RuntimeError(msg)
         request = self.construct(sent, f"{path}.{sends.__name__}", scope)
         if isinstance(request, Open):
-            return judged(request, decision) if decision else request
+            return decided(request, decision)
         if not isinstance(request, Available):
             return request
         if not isinstance(request.value, BaseModel):
@@ -777,7 +841,7 @@ class Evaluator:
             return self._answer(mine, kind, path)
         elements = tuple(site for over, site in scope if over in self.graph.varies[sent])
         outstanding = self._outstanding(interaction, identity, request.value, elements, path)
-        return judged(outstanding, decision) if decision else outstanding
+        return decided(outstanding, decision)
 
     def _one(self, path: str, evidence: list[Evidence]) -> Evidence | None:
         """The one piece of evidence admitted for a receive occurrence, or none. Admission
@@ -1076,12 +1140,15 @@ def evaluate(program: Program, invocation: Invocation) -> Evaluation:
                 msg = "a goal is a declared class"
                 raise TypeError(msg)
             return Completed(goal=value, occurrence=occurrence)
-        case Open(dispatch, withheld, awaited):
+        case Open(dispatch, withheld, awaited, _, grounds):
             if dispatch or awaited:
                 return Frontier(
                     dispatch=tuple(dispatch.values()),
                     awaiting=tuple(awaited.values()),
                     withheld=tuple(withheld.values()),
+                    justified=tuple(
+                        Justified(identity=i, decides=grounds.get(i, ())) for i in dispatch
+                    ),
                 )
             reasons = (*undecidable(withheld), *undetermined(withheld))
             if not reasons:

@@ -24,7 +24,9 @@ from type_construction.program import (
     Decided,
     Deferred,
     Elements,
+    Frontier,
     InvocationId,
+    Justified,
     Malformed,
     Program,
     Refutation,
@@ -106,15 +108,20 @@ def test_the_same_condition_as_a_validator_or_a_relation_withholds_and_releases_
 
 def test_the_condition_moved_onto_the_goal_grants_the_shipment_no_authority() -> None:
     """The same condition as a validator on the goal holding the order, the payment and the
-    shipment. Natively it accepts and refuses the same business values as the nested form.
-    Flattened, the evaluator can no longer read that the condition is over the payment and not
-    the shipment: under one reading of the validator the shipment should wait for the capture,
-    under another the capture for the shipment. Neither request is dispatched, and the block
-    names the one judgement and both requests. Packaging reduced what can be read; it did not
+    shipment. Natively it accepts and refuses the same business values as the nested form. The
+    contract: the shipment is not performed before the condition is judged, in either form. In
+    the flattened form the evaluator can no longer read that the condition is over the payment
+    and not the shipment, so it cannot establish that the capture may go first either: under one
+    reading of the validator the shipment should wait for the capture, under another the capture
+    for the shipment. Nothing is dispatched. The consequence is a block that names the one
+    judgement and both requests; the resolution is the condition declared as a relation, nested
+    or flat, which the next test exercises. Packaging reduced what can be read; it did not
     release the shipment."""
     program = composite.FLAT_DISPATCHING
     invocation = accept(program, InvocationId("flat"), composite.PRICED)
     result = evaluate(program, invocation)
+    assert not isinstance(result, Frontier)
+    assert invocation.intents == {}
     assert isinstance(result, Blocked)
     (reason,) = result.reasons
     assert reason == Undetermined(
@@ -397,6 +404,76 @@ def test_a_revalidated_element_reading_the_context_is_not_judged_outside_it(
         Bounded(premise=f"{holder.__name__}.{name}"),
         Unread(premise=f"{holder.__name__}.{name}", kind=holder),
     )
+
+
+def test_notes_judged_at_their_own_boundary_release_the_shipment_and_equal_native() -> None:
+    """The business oracle for the context case: an order with one note, each note revalidated
+    with a context-reading validator wherever it is held. With the notes judged at a boundary of
+    their own, that fact constructs natively from the input at once, with the context
+    construction carries, the shipment is dispatched with nothing read to decide, and the goal
+    equals Pydantic's own construction over the same values."""
+    program = composite.NOTING
+    invocation = accept(program, InvocationId("note"), composite.TAKEN)
+    opening = frontier(evaluate(program, invocation))
+    (ship,) = opening.dispatch
+    assert isinstance(ship.request, composite.ShipOrder)
+    assert opening.withheld == ()
+    assert opening.why(ship.identity) == Justified(identity=ship.identity, decides=())
+    done = perform(program, intend(invocation, (ship,)), ship.identity, SHIPPED)
+    result = evaluate(program, done)
+    assert isinstance(result, Completed)
+    assert isinstance(result.goal, composite.Noting)
+    native = composite.Notes.model_validate(
+        {"notes": composite.TAKEN.notes}, context=Refusals(), by_name=True
+    )
+    assert result.goal.noted == native
+
+
+def test_notes_judged_on_the_goals_own_field_cannot_be_judged_before_the_shipment() -> None:
+    """The same notes judged on the goal's own field beside the shipment. The judgement needs
+    the whole goal, which needs the shipment; the evaluator will not make it from a stripped
+    schema, which would refuse what Pydantic accepts, and will not ship before a judgement that
+    may refuse. Nothing is dispatched and the block names the judgement and the request."""
+    program = composite.FLAT_NOTING
+    invocation = accept(program, InvocationId("flat-note"), composite.TAKEN)
+    result = evaluate(program, invocation)
+    assert not isinstance(result, Frontier)
+    assert invocation.intents == {}
+    assert isinstance(result, Blocked)
+    (reason,) = result.reasons
+    assert isinstance(reason, Undetermined)
+    assert operations(result) == ("ShipOrder",)
+    assert [j.premise for j in reason.judgements] == ["FlatNoting.notes", "FlatNoting.notes"]
+
+
+def test_why_each_request_stands_is_reported_with_it() -> None:
+    """Independent decisions carry the judgement each decides; a request nothing withholds
+    carries none; a request deciding a read judgement beside an unread one carries the read
+    judgement."""
+    program = composite.DECLARED_DISPATCHING
+    opening = frontier(evaluate(program, accept(program, InvocationId("why"), composite.PRICED)))
+    (capture,) = opening.dispatch
+    assert opening.why(capture.identity).decides == (
+        Decided(premise="DeclaredDispatched.eligible.matched"),
+    )
+
+    program = composite.DISPATCHING
+    opening = frontier(evaluate(program, accept(program, InvocationId("why"), composite.PRICED)))
+    (capture,) = opening.dispatch
+    assert opening.why(capture.identity).decides == ()
+
+    program = composite.DOUBLING_DECLARED
+    opening = frontier(evaluate(program, accept(program, InvocationId("why"), composite.PRICED)))
+    (capture,) = opening.dispatch
+    assert opening.why(capture.identity).decides == (
+        Decided(premise="DoublyDeclared.eligible.matched"),
+    )
+
+    program = composite.CATALOGUING_VIA_CHECKED_DESK
+    opening = frontier(evaluate(program, accept(program, InvocationId("why"), composite.REVIEW)))
+    assert {j.decides for j in opening.justified} == {
+        (Bounded(premise="CataloguedViaCheckedDesk.quotes"),)
+    }
 
 
 @pytest.mark.parametrize("count", [1, 2, 3])

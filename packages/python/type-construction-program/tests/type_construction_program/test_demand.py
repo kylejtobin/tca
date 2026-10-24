@@ -17,6 +17,7 @@ from type_construction.program import (
     AnsweredOtherwise,
     Blocked,
     Completed,
+    Decided,
     Deferred,
     Frontier,
     InvocationId,
@@ -137,6 +138,7 @@ def test_two_necessary_requests_nothing_can_refute_are_dispatched_together() -> 
         decisions.PingRequest,
     ]
     assert opening.withheld == ()
+    assert all(j.decides == () for j in opening.justified)
 
 
 def test_two_decisions_are_made_together() -> None:
@@ -147,6 +149,10 @@ def test_two_decisions_are_made_together() -> None:
         decisions.CheckRequest,
         decisions.ScreenRequest,
     ]
+    assert {j.decides for j in opening.justified} == {
+        (Decided(premise="Cleared.allowed"),),
+        (Decided(premise="Cleared.clear"),),
+    }
     invocation = intend(invocation, opening.dispatch)
     (check,) = [d for d in opening.dispatch if isinstance(d.request, decisions.CheckRequest)]
     (screen,) = [d for d in opening.dispatch if isinstance(d.request, decisions.ScreenRequest)]
@@ -156,6 +162,24 @@ def test_two_decisions_are_made_together() -> None:
     blocked = evaluate(program, invocation)
     assert isinstance(blocked, Blocked)
     assert [type(r) for r in blocked.reasons] == [AnsweredOtherwise]
+
+
+def test_each_deciding_request_carries_the_decision_it_decides_through_the_facts_above() -> None:
+    """Two decisions inside one fact, and a mail beside that fact. The check decides the
+    registrar's answer and the screen the screening's, each its own and not the other's, however
+    many facts hold them; the mail decides nothing and waits for both."""
+    program = decisions.PROCESSING
+    invocation = accept(program, InvocationId("prc"), decisions.APPLICANT)
+    opening = frontier(evaluate(program, invocation))
+    (check,) = [d for d in opening.dispatch if isinstance(d.request, decisions.CheckRequest)]
+    (screen,) = [d for d in opening.dispatch if isinstance(d.request, decisions.ScreenRequest)]
+    assert opening.why(check.identity).decides == (Decided(premise="Processed.cleared.allowed"),)
+    assert opening.why(screen.identity).decides == (Decided(premise="Processed.cleared.clear"),)
+    (mail,) = opening.withheld
+    assert isinstance(mail, Deferred)
+    assert isinstance(mail.request, decisions.MailRequest)
+    assert mail.until == ("Processed.cleared.allowed", "Processed.cleared.clear")
+    assert mail.unread == ()
 
 
 def test_a_choice_between_two_effects_nothing_decides_is_not_guessed() -> None:

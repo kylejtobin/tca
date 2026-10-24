@@ -204,6 +204,13 @@ class Cleared(Fact):
     clear: Clear
 
 
+class Processed(Fact):
+    """Two decisions inside one fact, and a mail beside them."""
+
+    cleared: Cleared
+    mailed: Mailed
+
+
 class NotifyRequest(Value):
     """What the program sends the desk about an allowed applicant: it requires the allowance."""
 
@@ -317,6 +324,7 @@ WELCOME = Program(goal=Welcomed, accepts=Admit, interactions=(PING, MAIL))
 NOTIFICATION = Program(goal=Notified, accepts=Admit, interactions=(MAIL, TEXT))
 RATED_NOTIFICATION = Program(goal=NotifiedByRating, accepts=Admit, interactions=(RATE, MAIL, TEXT))
 CLEARANCE = Program(goal=Cleared, accepts=Admit, interactions=(CHECK, SCREEN))
+PROCESSING = Program(goal=Processed, accepts=Admit, interactions=(CHECK, SCREEN, MAIL))
 HANDLING = Program(goal=Handled, accepts=Admit, interactions=(CHECK, NOTIFY))
 VETTING = Program(goal=VettedGranted, accepts=Admit, interactions=(VETTED_CHECK, PING))
 ENDORSEMENT = Program(goal=Endorsed, accepts=Admit, interactions=(COMMITTEE_DECISION, PING))

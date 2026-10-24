@@ -392,6 +392,27 @@ class Notes(Fact):
     notes: tuple[Noted, ...] = Field(min_length=1)
 
 
+class TakeNotes(Value):
+    """The command: ship an order with its notes, each note revalidated wherever it is held."""
+
+    order: Priced
+    notes: tuple[Noted, ...]
+
+
+class Noting(Fact):
+    """The notes judged at a construction boundary of their own, and the shipment."""
+
+    noted: Notes
+    shipment: OrderShipped
+
+
+class FlatNoting(Fact):
+    """The notes judged on the goal's own field, beside the shipment."""
+
+    notes: tuple[Noted, ...] = Field(min_length=1)
+    shipment: OrderShipped
+
+
 class Stamped(Value):
     """A stamp validated again wherever it is held, by a validator on one of its own fields that
     reads the validation's context: nothing wraps the class, the function is inside it."""
@@ -647,6 +668,8 @@ FLAT_DISPATCHING = Program(
 FLAT_DECLARED_DISPATCHING = Program(
     goal=FlatDeclared, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
 )
+NOTING = Program(goal=Noting, accepts=TakeNotes, interactions=(SHIP_ORDER,))
+FLAT_NOTING = Program(goal=FlatNoting, accepts=TakeNotes, interactions=(SHIP_ORDER,))
 DECLARED_DISPATCHING = Program(
     goal=DeclaredDispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER)
 )
@@ -705,5 +728,9 @@ REVIEW = ReviewLines(
 """Three lines, unique only by sku and warehouse together."""
 
 PRICED = FulfillOrder(order=Priced(id=OrderId("o-7"), total=Total(Decimal("50.00"))))
+TAKEN = TakeNotes.model_validate(
+    {"order": PRICED.order, "notes": ({"reviewer": Reviewer("ren")},)}, context={}
+)
+"""An order with one note, constructed under a context as its notes require."""
 ONE_LINE = ReviewLines(order=Lined(id=OrderId("o-7"), lines=(line("tea", "w1"),)))
 TALLY = Count(id=OrderId("o-7"), tally=Tally(counts=[1, 1]))
