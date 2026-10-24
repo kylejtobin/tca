@@ -17,6 +17,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
+    "annotated-types>=0.7,<1",
     "pydantic>=2.13,<3",
     "type-construction-world",
 ]

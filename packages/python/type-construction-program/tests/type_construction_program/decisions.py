@@ -10,8 +10,9 @@ consumer that wants the desk told after a denial, which the desk's own requireme
 """
 
 from decimal import Decimal
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from type_construction.program import Correlation, Interaction, Program, Source
 from type_construction.world import AtMost, Beyond, Fact, Record, Scalar, Value
@@ -66,6 +67,33 @@ class Granted(Fact):
 
     allowed: Allowed
     pinged: Pinged
+
+
+class Desk(Fact):
+    """The desk's ping, wrapped in an ordinary fact with no validator: plain composition."""
+
+    pinged: Pinged
+
+
+class GrantedViaDesk(Fact):
+    allowed: Allowed
+    desk: Desk
+
+
+class CheckedDesk(Fact):
+    """The desk's ping behind an opaque identity validator: it changes nothing and the evaluator
+    cannot know that."""
+
+    pinged: Pinged
+
+    @model_validator(mode="after")
+    def _same(self) -> Self:
+        return self
+
+
+class GrantedViaCheckedDesk(Fact):
+    allowed: Allowed
+    desk: CheckedDesk
 
 
 class Rejected(Fact):
@@ -258,6 +286,12 @@ COMMITTEE_DECISION = Interaction(
 
 ADMISSION = Program(goal=Granted, accepts=Admit, interactions=(CHECK, PING))
 """Allowed and pinged, with no outcome for a denial."""
+ADMISSION_VIA_DESK = Program(goal=GrantedViaDesk, accepts=Admit, interactions=(CHECK, PING))
+"""The same, with the ping wrapped in a plain fact."""
+ADMISSION_VIA_CHECKED_DESK = Program(
+    goal=GrantedViaCheckedDesk, accepts=Admit, interactions=(CHECK, PING)
+)
+"""The same, with the ping wrapped in a fact with an opaque identity validator."""
 DECISION = Program(goal=Decision, accepts=Admit, interactions=(CHECK, PING))
 """The same, with a fallback outcome for a denial."""
 WELCOME = Program(goal=Welcomed, accepts=Admit, interactions=(PING, MAIL))

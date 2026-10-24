@@ -15,7 +15,7 @@ Nothing here is a durable host. The history is in memory, no worker owns it, and
 on it demonstrates recovery, concurrency or stale-commit rejection.
 """
 
-from .declaration import Binding, Correlation, Interaction, Program, Source
+from .declaration import Binding, Control, Correlation, Interaction, Program, Source
 from .evaluation import (
     AnsweredOtherwise,
     Blocked,
@@ -23,6 +23,7 @@ from .evaluation import (
     Deferred,
     Evaluation,
     Frontier,
+    Impure,
     Indeterminate,
     Malformed,
     Refutation,
@@ -95,6 +96,7 @@ __all__ = [
     "Closed",
     "Completed",
     "Conflict",
+    "Control",
     "Correlation",
     "Deferred",
     "Delivered",
@@ -107,6 +109,7 @@ __all__ = [
     "Evidence",
     "Failed",
     "Frontier",
+    "Impure",
     "Indeterminate",
     "Intended",
     "Interaction",

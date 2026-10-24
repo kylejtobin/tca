@@ -18,9 +18,12 @@ from type_construction.program import (
     Completed,
     Deferred,
     Dispatch,
+    Impure,
     InvocationId,
     Malformed,
+    Program,
     Refusal,
+    Refutation,
     Site,
     Unclosed,
     Uncorrelated,
@@ -41,6 +44,7 @@ CAPTURED = '{"order_id": "o-7", "amount": "%s"}'
 ORDER_SHIPPED = '{"order_id": "o-7", "tracking": "1Z"}'
 ALIASED_ANSWER = '{"order_ref": "o-7", "tracking": "1Z"}'
 ORDER_APPROVAL = '{"order_id": "o-7", "reviewer": "%s"}'
+QUOTE = '{"order_id": "o-7", "amount": "%s"}'
 ORDER_CLOSED = '{"order_id": "o-7"}'
 APPROVED_O1 = '{"order_id": "o-1", "reviewer": "ren"}'
 
@@ -217,6 +221,7 @@ def test_a_selection_per_line_is_decided_by_that_lines_closure_alone() -> None:
     result = evaluate(program, invocation)
     assert isinstance(result, Blocked)
     (reason,) = result.reasons
+    assert isinstance(reason, Refutation)
     assert reason.premise == "AllDecided.lines[0].approval"
 
 
@@ -230,7 +235,7 @@ def test_an_ordinary_validator_over_delayed_evidence_defers_the_dependent_effect
     (deferred,) = opening.withheld
     assert isinstance(deferred, Deferred)
     assert isinstance(deferred.request, composite.ShipOrder)
-    assert deferred.until == ("Dispatched.eligible",)
+    assert deferred.until == ("Dispatched.eligible.payment",)
 
     short = perform(
         program,
@@ -267,7 +272,7 @@ def test_a_native_field_constraint_over_an_unclosed_source_defers_the_dependent_
     (deferred,) = opening.withheld
     assert isinstance(deferred, Deferred)
     assert isinstance(deferred.request, composite.ShipOrder)
-    assert deferred.until == ("Released.endorsed",)
+    assert deferred.until == ("Released.endorsed.approvals",)
 
     one = admit(program, invocation, delivered(composite.REVIEWERS, "a-1", ORDER_APPROVAL % "ren"))
     assert frontier(evaluate(program, one)).dispatch == ()
@@ -317,6 +322,72 @@ def test_a_constant_whose_default_its_constraint_refuses_blocks_with_a_structure
     assert isinstance(reason, Malformed)
     assert reason.kind is composite.BadLimit
     assert reason.premise == "Flawed.limit"
+
+
+def test_a_constraint_on_the_goals_own_field_gates_the_effect_beside_it() -> None:
+    """Regression: the constraint counted only when packaged in a separate fact; on the consumer
+    itself, the ping dispatched with the quotes."""
+    program = composite.CATALOGUING
+    invocation = accept(program, InvocationId("cat"), composite.REVIEW)
+    opening = frontier(evaluate(program, invocation))
+    assert [type(d.request) for d in opening.dispatch] == [composite.QuoteRequest] * 3
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, composite.PingRequest)
+    assert deferred.until == ("Catalogued.quotes",)
+    invocation = intend(invocation, opening.dispatch)
+    for d in opening.dispatch:
+        invocation = perform(program, invocation, d.identity, QUOTE % "5.00")
+    assert [type(d.request) for d in frontier(evaluate(program, invocation)).dispatch] == [
+        composite.PingRequest
+    ]
+
+    short = accept(program, InvocationId("cat-1"), composite.ONE_LINE)
+    opening = frontier(evaluate(program, short))
+    assert [type(d.request) for d in opening.dispatch] == [composite.QuoteRequest]
+    short = perform(
+        program, intend(short, opening.dispatch), opening.dispatch[0].identity, QUOTE % "5.00"
+    )
+    blocked = evaluate(program, short)
+    assert isinstance(blocked, Blocked)
+    (reason,) = blocked.reasons
+    assert isinstance(reason, Malformed)
+    assert reason.kind is composite.Catalogued
+    assert all(not isinstance(r, composite.PingRequest) for r in short.intents.values())
+
+
+@pytest.mark.parametrize(
+    ("program", "goal"),
+    [
+        (composite.CATALOGUING_VIA_DESK, "CataloguedViaDesk"),
+        (composite.CATALOGUING_VIA_CHECKED_DESK, "CataloguedViaCheckedDesk"),
+    ],
+)
+def test_an_opaque_validator_on_a_wrapper_releases_nothing_a_constraint_withholds(
+    program: Program, goal: str
+) -> None:
+    """Beside a constrained field, the ping behind a plain wrapper waits for the quotes; behind
+    an opaque identity validator it must wait the same. Ranking opaque uncertainty with a
+    constraint would dispatch it: that fault is caught here and nowhere else."""
+    invocation = accept(program, InvocationId("cat"), composite.REVIEW)
+    opening = frontier(evaluate(program, invocation))
+    assert [type(d.request) for d in opening.dispatch] == [composite.QuoteRequest] * 3
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, composite.PingRequest)
+    assert deferred.until == (f"{goal}.quotes",)
+
+
+def test_a_validator_that_alters_its_premise_does_not_alter_the_history() -> None:
+    """Regression: a construction ran a validator on the history's own object and changed it."""
+    program = composite.PADDING
+    invocation = accept(program, InvocationId("pad"), composite.TALLY)
+    result = evaluate(program, invocation)
+    assert invocation.input == composite.TALLY
+    assert isinstance(invocation.input, composite.Count)
+    assert invocation.input.tally.counts == [1, 1]
+    assert isinstance(result, Blocked)
+    assert result.reasons == (Impure(evidence=(0,)),)
 
 
 def test_native_aliases_on_a_request_and_a_fact_keep_their_meaning() -> None:

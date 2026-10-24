@@ -30,13 +30,15 @@ constructed, naming the places and the declaration that would tell them apart.
 import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from enum import IntEnum
 from functools import cached_property
 from typing import Any, Union, get_args, get_origin
 
+from annotated_types import BaseMetadata, Predicate
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.fields import FieldInfo
 
-from type_construction.world import Record, Scalar
+from type_construction.world import Record, Refutable, Scalar
 
 DECLARATION = ConfigDict(
     frozen=True,
@@ -159,6 +161,78 @@ def premises(kind: type[BaseModel]) -> Iterator[tuple[str, Any]]:
 def constant(kind: type[BaseModel]) -> bool:
     """Whether the class constructs from nothing: no required field."""
     return not any(True for _ in premises(kind))
+
+
+class Control(IntEnum):
+    """What controls whether a premise still open will be refused, which orders effects around
+    it. Stronger controls are resolved before effects under weaker ones are dispatched.
+
+    ``NONE``: no decision the evaluator knows of; a value found in admitted evidence, a receive
+    with one declared answer, a class the evaluator reads nothing from beyond its field types.
+    This is not a claim that the construction will succeed; it is the absence of a controlling
+    decision, and a construction that fails is reported when it fails. ``OPAQUE``: a validator,
+    computation or revalidation Pydantic will run at construction, which the compiler locates
+    but cannot interpret, so its outcome is unproven until the construction runs; it withholds
+    effects beside it and grants nothing to effects under it. ``CONSTRAINT``: a native constraint
+    Pydantic itself interprets, located on a field, which the evaluator checks as soon as the
+    field's value is there. ``DECLARED``: a decision the business stated, a source that may
+    answer with another record or a declared refutable condition.
+    """
+
+    NONE = 0
+    OPAQUE = 1
+    CONSTRAINT = 2
+    DECLARED = 3
+
+
+def constraint(metadata: object) -> bool:
+    """Whether one piece of field metadata is a constraint Pydantic interprets natively, such as
+    a bound or a length, as opposed to a callback it runs."""
+    return isinstance(metadata, BaseMetadata) and not isinstance(metadata, Predicate)
+
+
+def constrained(kind: type[BaseModel]) -> frozenset[str]:
+    """The premise fields a native constraint of the class judges: constraint metadata on the
+    field, or a fixed-length tuple. The evaluator can apply these to a field's value by itself,
+    through Pydantic, as soon as the value is there."""
+    fields: set[str] = set()
+    for name, info in kind.model_fields.items():
+        if any(constraint(m) for m in info.metadata):
+            fields.add(name)
+        shape = collection(info.annotation)
+        if shape is not None and shape[1] is not None:
+            fields.add(name)
+    return frozenset(fields)
+
+
+def opaque(kind: type[BaseModel]) -> frozenset[str] | None:
+    """The premise fields an opaque part of the class judges at construction, which the compiler
+    locates but cannot interpret: a callback in a field's metadata, a ``field_validator`` naming
+    the field, a discriminator. ``None`` when the whole model is judged, by a ``model_validator``,
+    revalidation of instances, a custom core schema, a post-init hook or a validated default,
+    since then no field can be left out. Empty when the class has none of these; that is the
+    absence of anything recognized, not a proof that construction succeeds."""
+    decorators = kind.__pydantic_decorators__
+    if decorators.model_validators or decorators.validators or decorators.root_validators:
+        return None
+    if kind.model_config.get("revalidate_instances", "never") != "never":
+        return None
+    for base in kind.__mro__:
+        if base is BaseModel or base is RootModel:
+            break
+        if "__get_pydantic_core_schema__" in vars(base) or "model_post_init" in vars(base):
+            return None
+    if any(not info.is_required() for info in kind.model_fields.values()):
+        return None
+    fields: set[str] = set()
+    for validator in decorators.field_validators.values():
+        if "*" in validator.info.fields:
+            return None
+        fields.update(validator.info.fields)
+    for name, info in kind.model_fields.items():
+        if info.discriminator is not None or any(not constraint(m) for m in info.metadata):
+            fields.add(name)
+    return frozenset(fields)
 
 
 def contradictory(bindings: tuple[Binding, ...], root: type[BaseModel]) -> None:
@@ -429,10 +503,8 @@ class Graph:
     root: Node
     sent: dict[str, Interaction]
     varies: dict[Node, frozenset[Collection]]
-    refutable: dict[Node, bool]
-    """Per node, whether it may yet be refused: by evidence still to come, or by its own
-    construction. Every construction from premises may be: it is a Pydantic validation the
-    compiler does not interpret (foundations §8.2), so it is known to hold only once it has."""
+    control: dict[Node, Control]
+    """Per node, the strongest control over it while open; see ``Control``."""
 
 
 @dataclass(frozen=True)
@@ -592,18 +664,18 @@ class Compiler:
     def __init__(self, program: Program) -> None:
         self.program = program
         self.varies: dict[Node, frozenset[Collection]] = {}
-        self.refutable: dict[Node, bool] = {}
+        self.control: dict[Node, Control] = {}
 
     def compiled(self) -> Graph:
         program = self.program
         sent = {qualified(i.sends): i for i in program.interactions if i.sends is not None}
         walk = Walk(tuple((steps(b.premise), b.subject) for b in program.bound))
         root = self.compile(program.goal, (), program.goal.__name__, walk)
-        return Graph(root, sent, self.varies, self.refutable)
+        return Graph(root, sent, self.varies, self.control)
 
-    def record(self, node: Node, varies: frozenset[Collection], *, refutable: bool) -> Node:
+    def record(self, node: Node, varies: frozenset[Collection], control: Control) -> Node:
         self.varies[node] = varies
-        self.refutable[node] = refutable
+        self.control[node] = control
         return node
 
     def compile(self, annotation: object, at: tuple[str, ...], path: str, walk: Walk) -> Node:
@@ -623,8 +695,8 @@ class Compiler:
             )
             node = Choice(compiled)
             varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-            refutable = all(self.refutable[n] for _, n in compiled)
-            return self.record(node, varies, refutable=refutable)
+            control = min(self.control[n] for _, n in compiled)
+            return self.record(node, varies, control)
         shape = collection(annotation)
         if shape is not None:
             return self.many(shape[0], at, path, deeper)
@@ -647,7 +719,7 @@ class Compiler:
         shape = collection(annotation)
         if there == annotation:
             location = Location(accepts, steps(subject))
-            return self.record(Found(location), location.entered(), refutable=False)
+            return self.record(Found(location), location.entered(), Control.NONE)
         if shape is not None and (held := collection(there)) is not None:
             over = Collection(accepts, steps(subject))
             if over in walk.bound:
@@ -663,7 +735,7 @@ class Compiler:
                 )
                 raise ValueError(msg)
             node = Each(inner, over)
-            return self.record(node, self.varies[inner] - {over}, refutable=self.refutable[inner])
+            return self.record(node, self.varies[inner] - {over}, self.control[inner])
         msg = (
             f"{path}: bound to {accepts.__name__}.{subject}, which holds {there!r}, not"
             f" {annotation!r}"
@@ -674,7 +746,7 @@ class Compiler:
         """The node for one record a source says."""
         request: Node | None = None
         varies: frozenset[Collection] = frozenset()
-        refutable = len(interaction.receives) > 1
+        control = Control.DECLARED if len(interaction.receives) > 1 else Control.NONE
         over = self.program.element_collection(interaction)
         if over is not None:
             varies = frozenset({over})
@@ -683,10 +755,10 @@ class Compiler:
             rooted = walk.rooted(interaction.bound)
             request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
             varies = varies | self.varies[request]
-            refutable = refutable or self.refutable[request]
+            control = max(control, self.control[request])
         if interaction.many:
             varies = varies | {Collection(kind, ())}
-        return self.record(Heard(interaction, kind, request), varies, refutable=refutable)
+        return self.record(Heard(interaction, kind, request), varies, control)
 
     def located(self, location: Location, path: str, walk: Walk) -> Node:
         """The node for a value found at a location, with the node that supplies its container
@@ -698,7 +770,7 @@ class Compiler:
         if interaction is not None:
             held = self.compile(container, (), f"{path}.{container.__name__}", walk)
             varies = varies | self.varies[held]
-        return self.record(Found(location, held), varies, refutable=False)
+        return self.record(Found(location, held), varies, Control.NONE)
 
     def chosen(
         self, kind: type[BaseModel], locations: list[Location], path: str, walk: Walk
@@ -765,12 +837,12 @@ class Compiler:
             holder = self.compile(over.container, (), f"{path}.{over.container.__name__}", walk)
         node = Each(inner, over, closure, holder)
         varies = self.varies[inner] - {over}
-        refutable = self.refutable[inner]
+        control = self.control[inner]
         for extra in (closure, holder):
             if extra is not None:
                 varies = varies | self.varies[extra]
-                refutable = refutable or self.refutable[extra]
-        return self.record(node, varies, refutable=refutable)
+                control = max(control, self.control[extra])
+        return self.record(node, varies, control)
 
     def all(
         self,
@@ -795,7 +867,7 @@ class Compiler:
         over = self.program.element_collection(interaction)
         if over is not None:
             varies = varies | {over}
-        self.record(node, varies, refutable=self.refutable[closing])
+        self.record(node, varies, self.control[closing])
         return node
 
     def one(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
@@ -826,7 +898,7 @@ class Compiler:
         plain = Made(kind)
         if issubclass(kind, RootModel):
             if empty:
-                return self.record(plain, frozenset(), refutable=True)
+                return self.record(plain, frozenset(), Control.NONE)
             msg = (
                 f"{path}: no input or received record holds a {kind.__name__}, and it is a"
                 " value, not constructed from premises"
@@ -838,4 +910,12 @@ class Compiler:
         )
         node = Made(kind, compiled)
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-        return self.record(node, varies, refutable=True)
+        control = max((self.control[n] for _, n in compiled), default=Control.NONE)
+        if issubclass(kind, Refutable):
+            control = Control.DECLARED
+        else:
+            if constrained(kind):
+                control = max(control, Control.CONSTRAINT)
+            if opaque(kind) != frozenset():
+                control = max(control, Control.OPAQUE)
+        return self.record(node, varies, control)

@@ -78,7 +78,8 @@ def test_each_role_is_its_own_occurrence_and_its_own_operation() -> None:
     assert isinstance(result.goal, transfer.Transferred)
     assert result.goal.debit.account == transfer.AccountNumber("acc-1")
     assert result.goal.credit.account == transfer.AccountNumber("acc-2")
-    assert result.goal.transfer is invocation.input
+    assert result.goal.transfer == invocation.input
+    assert result.goal.transfer is not invocation.input
 
 
 def test_a_confirmation_for_the_other_role_does_not_answer_this_one() -> None:

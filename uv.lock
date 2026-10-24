@@ -1541,12 +1541,14 @@ name = "type-construction-program"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction-program" }
 dependencies = [
+    { name = "annotated-types" },
     { name = "pydantic" },
     { name = "type-construction-world" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "annotated-types", specifier = ">=0.7,<1" },
     { name = "pydantic", specifier = ">=2.13,<3" },
     { name = "type-construction-world", editable = "packages/python/type-construction-world" },
 ]

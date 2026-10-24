@@ -20,6 +20,7 @@ from type_construction.program import (
     Deferred,
     Frontier,
     InvocationId,
+    Program,
     Unchosen,
     Undecidable,
     Unsolicited,
@@ -69,6 +70,30 @@ def test_a_constructible_demanded_request_waits_for_the_decision_it_depends_on()
 
     invocation, _ = performing(program, invocation, PINGED)
     assert isinstance(evaluate(program, invocation), Completed)
+
+
+@pytest.mark.parametrize(
+    ("program", "goal"),
+    [
+        (decisions.ADMISSION_VIA_DESK, "GrantedViaDesk"),
+        (decisions.ADMISSION_VIA_CHECKED_DESK, "GrantedViaCheckedDesk"),
+    ],
+)
+def test_a_request_behind_a_wrapper_or_an_opaque_validator_still_waits_for_the_decision(
+    program: Program, goal: str
+) -> None:
+    """Regression: with every construction counted as undecided, the plain wrapper's request was
+    taken for evidence-gathering and dispatched beside the registrar's check. An opaque identity
+    validator on the wrapper must release nothing the plain wrapper leaves withheld."""
+    invocation = accept(program, InvocationId("adm"), decisions.APPLICANT)
+    opening = frontier(evaluate(program, invocation))
+    assert requests(opening) == [decisions.CheckRequest]
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, decisions.PingRequest)
+    assert deferred.until == (f"{goal}.allowed",)
+    invocation, _ = performing(program, invocation, ALLOWED)
+    assert requests(frontier(evaluate(program, invocation))) == [decisions.PingRequest]
 
 
 def test_a_denial_blocks_and_the_dependent_request_was_never_dispatched() -> None:

@@ -216,6 +216,90 @@ class Endorsed(Fact):
     approvals: tuple[OrderApproval, ...] = Field(min_length=2)
 
 
+class QuoteRequest(Value):
+    """What the program sends the carrier for one line: a quote."""
+
+    order: OrderId
+    line: Line
+
+
+class Quote(Record):
+    order: OrderId = Field(alias="order_id")
+    amount: Paid
+
+
+class Quoted(Fact):
+    line: Line
+    quote: Quote
+
+
+class Pinged(Record):
+    order: OrderId = Field(alias="order_id")
+
+
+class PingRequest(Value):
+    order: OrderId
+
+
+class Catalogued(Fact):
+    """At least two lines quoted, by a constraint on the goal's own field, and the desk pinged.
+    The constraint is on the consumer itself, not packaged in a separate fact."""
+
+    order: Lined
+    quotes: tuple[Quoted, ...] = Field(min_length=2)
+    pinged: Pinged
+
+
+class PingDesk(Fact):
+    """The desk's ping in a plain fact."""
+
+    pinged: Pinged
+
+
+class CheckedPingDesk(Fact):
+    """The desk's ping behind an opaque identity validator."""
+
+    pinged: Pinged
+
+    @model_validator(mode="after")
+    def _same(self) -> Self:
+        return self
+
+
+class CataloguedViaDesk(Fact):
+    order: Lined
+    quotes: tuple[Quoted, ...] = Field(min_length=2)
+    desk: PingDesk
+
+
+class CataloguedViaCheckedDesk(Fact):
+    order: Lined
+    quotes: tuple[Quoted, ...] = Field(min_length=2)
+    desk: CheckedPingDesk
+
+
+class Tally(Value):
+    counts: list[int]
+
+
+class Count(Value):
+    """The command: a tally of counts, held in a list."""
+
+    id: OrderId
+    tally: Tally
+
+
+def padded(tally: Tally) -> Tally:
+    """A validator that alters what it is given: unsupported, and the thing a construction must
+    not be allowed to do to admitted evidence."""
+    tally.counts.append(1)
+    return tally
+
+
+class Padded(Fact):
+    tally: Annotated[Tally, AfterValidator(padded)]
+
+
 class BadLimit(Scalar[int]):
     """A constant whose default its own constraint refuses."""
 
@@ -300,6 +384,8 @@ CAPTURE = Interaction(
 SHIP_ORDER = Interaction(
     source=CARRIER, sends=ShipOrder, receives=(OrderShipped,), correlated=BY_ORDER
 )
+QUOTE = Interaction(source=CARRIER, sends=QuoteRequest, receives=(Quote,), correlated=BY_ORDER)
+PING = Interaction(source=CARRIER, sends=PingRequest, receives=(Pinged,), correlated=BY_ORDER)
 ORDER_APPROVALS = Interaction(
     source=REVIEWERS, receives=(OrderApproval,), correlated=BY_ORDER, closed_by=OrderReviewClosed
 )
@@ -332,6 +418,14 @@ RELEASING = Program(
     goal=Released, accepts=FulfillOrder, interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER)
 )
 FLAWED = Program(goal=Flawed, accepts=FulfillOrder)
+CATALOGUING = Program(goal=Catalogued, accepts=ReviewLines, interactions=(QUOTE, PING))
+CATALOGUING_VIA_DESK = Program(
+    goal=CataloguedViaDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+CATALOGUING_VIA_CHECKED_DESK = Program(
+    goal=CataloguedViaCheckedDesk, accepts=ReviewLines, interactions=(QUOTE, PING)
+)
+PADDING = Program(goal=Padded, accepts=Count)
 ALIASING = Program(goal=AliasedFact, accepts=FulfillOrder, interactions=(ALIASED,))
 
 
@@ -354,3 +448,5 @@ REVIEW = ReviewLines(
 """Three lines, unique only by sku and warehouse together."""
 
 PRICED = FulfillOrder(order=Priced(id=OrderId("o-7"), total=Total(Decimal("50.00"))))
+ONE_LINE = ReviewLines(order=Lined(id=OrderId("o-7"), lines=(line("tea", "w1"),)))
+TALLY = Count(id=OrderId("o-7"), tally=Tally(counts=[1, 1]))
