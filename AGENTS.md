@@ -15,7 +15,7 @@ The old request runtime has been removed. Its replacement is not built. Most of 
 
 Only Kyle's designated independent Codex reviewer may create, modify, delete, rename or supersede files under `docs/decisions/**`. Implementing agents, including Claude, must not edit those files or delegate such edits. Being a Codex implementation agent does not grant reviewer authority. Do not change this rule or create competing authoritative records elsewhere.
 
-Read [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md) and [0004](docs/decisions/0004-review-authority-and-outcome-evidence.md). They bind architectural behavior and acceptance. Implementers may submit evidence-backed proposals in their handoff, but may not weaken requirements or mark TODO outcomes complete. Routine implementation and experiments within the contract should proceed without a documentation approval detour.
+Read [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md) and [0004](docs/decisions/0004-review-authority-and-outcome-evidence.md). Use the [decision index](docs/decisions/README.md) to read the applicable binding decisions, including native construction (0005), evidence ownership (0006), and Python interpreter engineering (0007). These records bind architectural behavior and acceptance. Implementers may submit evidence-backed proposals in their handoff, but may not weaken requirements or mark TODO outcomes complete. Routine implementation and experiments within the contract should proceed without a documentation approval detour.
 
 ## Architectural principles
 
@@ -31,6 +31,10 @@ Read [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md
 - During cleanup, remove the specified machinery and do not build its replacement.
 - During later implementation, do not restore deleted abstractions to satisfy old APIs, tests or documentation. The previous implementation is in Git history for reference only.
 - The designated reviewer records architectural decisions and explicit supersession. Implementers provide executable evidence and proposals without editing decision records. Do not rewrite history to imply a decision was always current.
+
+## Reasoning and contract integrity
+
+Apply 0003's required reasoning as well as its behavioral laws. An unknown relationship is not established independence; a library call on stripped semantics is not faithful delegation; a category ranking is not causal evidence. Changing regression expectations, fixtures or README policy to fit the implementation changes the contract even when decision records are untouched. Follow 0004's contract-integrity rule; preserve disputed counterexamples for reviewer adjudication.
 
 ## Tests and typing
 

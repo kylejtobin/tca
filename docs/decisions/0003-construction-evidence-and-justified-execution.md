@@ -44,11 +44,39 @@ These laws constrain behavior across the refactor; they do not prescribe class n
 
 These laws make the design falsifiable. A counterexample is a reason to repair or replace the representation, or to bring an explicit contract conflict to the reviewer. It is not permission to redefine a business requirement around the implementation.
 
+## Required reasoning: no shortcuts from uncertainty to policy
+
+Added by reviewer after rejecting `8aed218`. These requirements constrain how architectural conclusions are derived, not just the current evaluator. They supplement the preservation laws; no one law may be used to nullify another.
+
+**An unestablished relationship is not established independence.** "The analyzer cannot see a dependency" does not imply "the business declared no dependency." Distinguish an established dependency, established independence under the declared program, and an unresolved relationship. Only the first two support the corresponding ordering or concurrency conclusion. A diagnostic that names the unknown does not discharge it. An effect may proceed beside unrelated uncertainty only when its own eligibility and demand are justified without assuming that uncertainty resolves favorably.
+
+**The burden of proof belongs to the proposed behavior.** Dispatch requires an affirmative derivation from the declarations and current evidence; the absence of a recognized blocker is insufficient. Rejection requires a sound contradiction or a precise unsupported obligation; the absence of a success proof is insufficient. "Do not invent ordering" prohibits guessing an order, not checking the justification for unordered execution. "Do not serialize everything" requires useful independent progress, not speculative execution. No prohibition supplies the missing premise of a positive conclusion.
+
+**A semantic relationship cannot be replaced by a taxonomy.** Metadata categories, validator syntax, numerical ranks, class ancestry, field order or implementation convenience cannot establish causal precedence. Such representations are permissible only as encodings of relationships already justified from the program. The same business condition does not become pre-effect authority merely because one representation is analyzable, or cease to matter because another is opaque. Visibility changes knowledge, not business meaning.
+
+**Using the authoritative library is not enough; preserve its authoritative operation.** Calling Pydantic on a stripped or reconstructed fragment does not prove equivalence to the original construction. A partial judgement must establish that omitted normalization, callbacks, defaults, context, configuration and ordering cannot change that particular conclusion. If that independence is unproven, retain the native boundary and the unknown. This applies equally to other delegated semantics: invoking the right library on a different question is still a competing interpretation.
+
+**Preserve the problem while solving it.** A repair must retain the declared business relationships and supported input domain. Adding universal action prerequisites, inventing new business subclasses, changing inputs, or excluding a valid validator form may make a demonstration easier while changing the business program. Such a change is an explicit semantic proposal requiring reviewer adjudication, not a correctness fix. In particular, universal eligibility cannot stand in for consumer-specific demand. Paired examples with different contracts do not establish that the original contract works.
+
+**Reject the false dilemma.** The choices are not "read arbitrary Python perfectly" or "ignore its relevance", nor "dispatch everything" or "reject/serialize everything". Separate the propositions being proved, preserve unknowns at their actual boundaries, and derive the work justified by the information that is available. If the current representation can express only unsafe alternatives, replace that representation. Adding a new label to the same unsupported inference does not repair it.
+
+**Reason from counterexamples before generalizing.** A proposed rule must explain the supplied failing case, its valid progress counterpart and equivalent business formulations before it governs the engine. Cases that contradict the proposal remain evidence against it. Choosing which examples count according to what the implementation already supports is circular. An experiment may falsify a rule; it cannot redefine the requirement it was meant to test.
+
+These requirements do not require a new report or approval for routine implementation choices. The reasoning must be visible in the model, the derivation of work, and independently specified tests. Implementers should resolve engineering questions through those experiments. A genuine missing business distinction or conflict between requirements must be made precise; neither silently guessing nor handing the reviewer an unexplored question satisfies that work.
+
 ## Rejected rule and evidence
 
 In `343b13b`, every open construction becomes "undecided", and conjunction dispatches work under every undecided child. This is rejected as a causal rule. A plain fact around `Pinged` causes inspection and ping to dispatch together before permission exists; the identical probe passed on `9447f67`. A minimum-length constraint directly on a goal field also permits premature ping. An evaluation probe changes accepted nested list evidence during construction.
 
 These executed counterexamples establish failures, not a replacement algorithm. Passing the 16 earlier reviewer cases and 103 repository tests did not establish compositional correctness. Describing the remaining issue as only a waiting cost is false.
+
+## Reviewer finding on 8aed218
+
+Decision records were not edited by the implementer, but their meaning was changed in code, README text and tests. The earlier model-validator and Annotated-validator regressions were renamed and their expected initial frontier changed from capture-only to capture-plus-shipment. The Annotated case also lost the assertion that no shipment intent existed after refusal. Adding a different request that universally requires eligibility changes the contract; it does not repair those regressions.
+
+Independent execution still reproduces premature effects for opaque conditions. A further differential case is accepted by native Pydantic because a before-validator pads a tuple before its minimum-length check; the interpreter strips that validator and rejects the original one-element tuple. This falsifies the claim that its partial Pydantic call makes the same judgement. The 110 passing repository tests do not resolve those failures.
+
+The categorical policy "opaque validators order nothing", the ranking of validator categories as causal authority, and the claim of equivalent partial validation are rejected. This does not establish that every opaque validator controls every sibling effect. The required answer is an evidenced causal relationship and faithful native construction, under the reasoning requirements above.
 
 ## Still to establish in outcome 1
 

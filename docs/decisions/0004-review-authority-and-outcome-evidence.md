@@ -10,6 +10,12 @@ The reviewer records decisions; implementers produce code, counterexamples and r
 
 This is a repository conduct and acceptance rule, not an assertion of filesystem or GitHub identity-based access control. Unauthorized decision-record changes are grounds to reject the submission.
 
+## Decisions are conjunctive obligations
+
+The [index](README.md) identifies the scope and status of each record. Applicable binding decisions must hold together. A sentence granting implementation freedom is not an exception to another record's required behavior. Only an explicit reviewer amendment can change a requirement; experimental text and derived documentation cannot.
+
+Use each record's problem, decision, non-authorizations and falsification evidence together. Do not quote an isolated prohibition to infer permission for the opposite behavior. Cross-record links identify simultaneous responsibilities, not optional alternatives. A proposed conflict must be demonstrated with the same business declarations, not manufactured by changing the problem.
+
 ## Preserve the target
 
 Read the complete foundations document for its causal and evidentiary requirements, then the current TODO and binding reviewer records. Distinguish requirements from open proposals and implementation history. No sentence in an experimental record can override a requirement merely because the implementation follows it. [0003](0003-construction-evidence-and-justified-execution.md) explicitly rejects 0002's demand rule.
@@ -39,6 +45,16 @@ Test the governing invariant and neighboring combinations, not only the reported
 Preserve Pydantic's genuine semantics: arbitrary field reordering is not an invariant when validators or defaults depend on prior fields. Provenance assertions must not assume transforming validators preserve input values. Expected results must not be calculated with the same engine helpers being tested.
 
 For each repaired invariant, demonstrate that a targeted incorrect implementation would fail the test. Use the rejected commit, a disposable fault injection, or an equivalent focused falsification. Passing test counts, import assertions and fixtures designed around implementation restrictions are not substitutes. Do not add an elaborate mutation framework merely to satisfy this rule.
+
+## Contract integrity includes tests and derived documentation
+
+Reviewer ownership is semantic, not merely a path restriction. Implementers must not change an accepted regression's required behavior in tests, fixtures, README prose, code comments, API descriptions or fault-injection expectations and then claim that decision records remain untouched. A test renamed from "withholds" to "dispatches" with inverted assertions is a contract change, even if a differently modeled guarded case is added beside it.
+
+Counterexamples under dispute remain failing evidence until the reviewer explicitly adjudicates their meaning. Implementers may add tests demonstrating their proposed alternative, clearly identified as a proposal, but must not remove or invert the existing oracle. Mechanical adaptations preserve the original inputs, relationships and behavioral assertion. Mutation testing checks whether tests reject faults defined by the contract; choosing one's preferred semantic alternative as the "fault" proves nothing about that contract.
+
+Architectural reasoning is accountable to all applicable requirements together. Quoting one sentence while abandoning another is not derivation. A claim that a requirement logically implies a new behavior must identify the connecting business relationship and be challenged by the strongest existing counterexample. A disclaimer, uncertainty label, passing suite or assertion of reviewer-record compliance cannot replace that missing argument.
+
+Feedback must address the recurring reasoning error and its other consequences, rather than produce an expanding exception list. Reviewers must also correct ambiguity in their own instructions and distinguish firm requirements from unresolved choices; implementers must not exploit that ambiguity to erase established evidence. This does not create a general pause for questions: proceed with faithful experiments and implementation within the contract, and surface only the specific conflict that evidence leaves unresolved.
 
 ## Required working behavior
 
