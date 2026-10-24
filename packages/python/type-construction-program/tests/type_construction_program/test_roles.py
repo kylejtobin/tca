@@ -91,6 +91,49 @@ def test_a_confirmation_for_the_other_role_does_not_answer_this_one() -> None:
         perform(program, invocation, debit.identity, confirmed("acc-2", "d-1"))
 
 
+def test_two_bindings_of_one_premise_to_different_places_are_refused_not_ordered() -> None:
+    """Regression: the first binding written won, and declaration order decided which account
+    the debit concerned."""
+    both = (
+        Binding(premise="account", subject="source"),
+        Binding(premise="account", subject="target"),
+    )
+    with pytest.raises(ValidationError) as refusal:
+        transfer.DEBIT.model_copy(update={"bound": both}).model_validate(
+            transfer.DEBIT.model_copy(update={"bound": both}).model_dump()
+        )
+    message = str(refusal.value)
+    assert "DebitRequest.account is bound to both source and target" in message
+    with pytest.raises(ValidationError) as refusal:
+        Program(
+            goal=transfer.Legs,
+            accepts=transfer.Transfer,
+            bound=(
+                Binding(premise="debit_side", subject="source"),
+                Binding(premise="debit_side", subject="target"),
+                Binding(premise="credit_side", subject="target"),
+            ),
+        )
+    assert "Legs.debit_side is bound to both source and target" in str(refusal.value)
+
+
+def test_a_premise_bound_by_name_is_not_swapped_by_another_fields_alias() -> None:
+    """Regression: construction by name left alias reading on, so a field whose alias is another
+    field's name took that field's premise while the recorded occurrence still named its own."""
+    program = transfer.LEGS
+    invocation = accept(program, InvocationId("legs"), transfer.TRANSFER)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Completed)
+    assert isinstance(result.goal, transfer.Legs)
+    assert result.goal.debit_side.number == transfer.AccountNumber("acc-1")
+    assert result.goal.credit_side.number == transfer.AccountNumber("acc-2")
+    assert isinstance(result.occurrence, Built)
+    parts = dict(result.occurrence.parts)
+    assert parts["debit_side"] == Site(evidence=0, path=("source",))
+    assert parts["credit_side"] == Site(evidence=0, path=("target",))
+    assert result.goal.model_dump(by_alias=True)["credit_side"] == {"number": "acc-1"}
+
+
 def test_a_binding_to_a_place_holding_another_class_is_refused() -> None:
     with pytest.raises(ValidationError) as refusal:
         Program(

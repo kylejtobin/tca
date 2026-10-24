@@ -17,12 +17,13 @@ of any one node:
   another does not is withheld as ``Unchosen``; if nothing else can advance the invocation,
   that is a block, not a wait: the declarations have not said which effect to perform.
 - **Decisions precede dependent effects.** A premise is undecided while evidence still to come
-  may refute it: a receive whose source may answer with another member, a declared condition
-  over an open premise, a selection over an unclosed collection. While any premise of a
-  conjunction is undecided, the requests under its decided premises are withheld as
-  ``Deferred``, and only the requests that resolve the undecided premises are dispatched. This
-  holds whether or not another branch exists for the refuted case: a single remaining branch is
-  not an established branch.
+  may refute it, or while its own construction may: a receive whose source may answer with
+  another member, and any class constructed from an open premise, since its construction is a
+  Pydantic validation this evaluator does not interpret and knows to hold only once it has. While
+  any premise of a conjunction is undecided, the requests under its decided premises are
+  withheld as ``Deferred``, and only the requests that resolve the undecided premises are
+  dispatched. This holds whether or not another branch exists for the refuted case: a single
+  remaining branch is not an established branch.
 
 Independent necessary work stays concurrent: two decided premises dispatch together, and two
 undecided premises dispatch their deciding requests together.
@@ -64,7 +65,6 @@ from .declaration import (
     Program,
     Source,
     constant,
-    fallible,
     qualified,
 )
 from .invocation import (
@@ -708,12 +708,14 @@ class Evaluator:
         return Available(value, site)
 
     def _composed(self, node: Made, path: str, scope: Scope) -> Outcome:
-        """A class constructed from its premises through Pydantic. A class whose construction may
-        refuse, over an open premise, is undecided: the condition, validator or computation may
-        not hold once the premise is, and the compiler does not read its body to know."""
+        """A class constructed from its premises through Pydantic, a validation this evaluator does
+        not interpret: a constraint, a validator, a computed field or a declared condition may
+        refuse it, and nothing here reads the schema to know. So a class over an open premise is
+        undecided until it is constructed, and a constant is constructed the same way, since a
+        default is validated too."""
         kind = node.kind
         if constant(kind):
-            return Available(kind(), Built(kind=qualified(kind)))
+            return self._validated(kind, None, Built(kind=qualified(kind)), path)
         given: dict[str, object] = {}
         occurrences: list[tuple[str, Occurrence]] = []
         parts: list[tuple[str, Outcome]] = []
@@ -724,7 +726,7 @@ class Evaluator:
                 given[name] = outcome.value
                 occurrences.append((name, outcome.occurrence))
         pending = conjoined(parts)
-        if isinstance(pending, Open) and fallible(kind):
+        if isinstance(pending, Open):
             return undecided(pending, path)
         if pending is not None:
             return pending
@@ -732,15 +734,20 @@ class Evaluator:
         return self._validated(kind, given, occurrence, path)
 
     def _validated(
-        self, kind: type[BaseModel], given: dict[str, object], occurrence: Built, path: str
+        self, kind: type[BaseModel], given: dict[str, object] | None, occurrence: Built, path: str
     ) -> Outcome:
         """The class validated by Pydantic over its constructed premises, supplied by field name
-        since they are the fields' values and not a party's payload, so a field's alias keeps
-        its native meaning at the boundary and does not bar construction: available, refuted by
-        its own declared condition, or malformed."""
+        and read by field name only: they are the fields' values, not a party's payload, so an
+        alias keeps its native meaning at the boundary and takes no part here, and a field whose
+        alias is another field's name receives its own premise. A constant, given nothing, is
+        constructed from its defaults, which are validated too. Available, refuted by its own
+        declared condition, or malformed."""
         refusals = Refusals()
         try:
-            value = kind.model_validate(given, context=refusals, by_name=True)
+            if given is None:
+                value = kind()
+            else:
+                value = kind.model_validate(given, context=refusals, by_alias=False, by_name=True)
         except ValidationError as refusal:
             messages = tuple(e["msg"] for e in refusal.errors())
             if issubclass(kind, Refutable) and kind.refuted(refusal, refusals):

@@ -36,7 +36,7 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.fields import FieldInfo
 
-from type_construction.world import Computation, Record, Refutable, Scalar
+from type_construction.world import Record, Scalar
 
 DECLARATION = ConfigDict(
     frozen=True,
@@ -161,21 +161,18 @@ def constant(kind: type[BaseModel]) -> bool:
     return not any(True for _ in premises(kind))
 
 
-def fallible(kind: type[BaseModel]) -> bool:
-    """Whether constructing the class from validated premises may refuse: a declared refutable
-    condition, a validator the class declares, or a computed field. The compiler does not
-    interpret a validator's body (foundations §8.2), so any of these makes the construction
-    undecided until it happens; a class with none constructs from valid premises."""
-    if issubclass(kind, Refutable):
-        return True
-    decorators = kind.__pydantic_decorators__
-    if decorators.model_validators or decorators.field_validators or decorators.validators:
-        return True
-    return any(
-        isinstance(metadata, Computation)
-        for info in kind.model_fields.values()
-        for metadata in info.metadata
-    )
+def contradictory(bindings: tuple[Binding, ...], root: type[BaseModel]) -> None:
+    """Refuse two bindings of one premise to different places: the declarations would then say
+    two things, and the order they were written in must not decide which."""
+    subjects: dict[str, str] = {}
+    for binding in bindings:
+        earlier = subjects.setdefault(binding.premise, binding.subject)
+        if earlier != binding.subject:
+            msg = (
+                f"{root.__name__}.{binding.premise} is bound to both {earlier} and"
+                f" {binding.subject}; one place per premise"
+            )
+            raise ValueError(msg)
 
 
 def resolve(kind: type[BaseModel], path: str) -> object:
@@ -274,6 +271,7 @@ class Interaction(BaseModel):
         if self.sends is not None:
             for binding in self.bound:
                 resolve(self.sends, binding.premise)
+            contradictory(self.bound, self.sends)
         return self
 
     def says(self, kind: type[BaseModel]) -> bool:
@@ -432,7 +430,9 @@ class Graph:
     sent: dict[str, Interaction]
     varies: dict[Node, frozenset[Collection]]
     refutable: dict[Node, bool]
-    """Per node, whether evidence still to come, or the construction itself, may refuse it."""
+    """Per node, whether it may yet be refused: by evidence still to come, or by its own
+    construction. Every construction from premises may be: it is a Pydantic validation the
+    compiler does not interpret (foundations §8.2), so it is known to hold only once it has."""
 
 
 @dataclass(frozen=True)
@@ -521,6 +521,7 @@ class Program(BaseModel):
         for binding in self.bound:
             resolve(self.goal, binding.premise)
             resolve(self.accepts, binding.subject)
+        contradictory(self.bound, self.goal)
         for interaction in self.interactions:
             self.element_collection(interaction)
         varies = self.graph.varies[self.graph.root]
@@ -825,7 +826,7 @@ class Compiler:
         plain = Made(kind)
         if issubclass(kind, RootModel):
             if empty:
-                return self.record(plain, frozenset(), refutable=False)
+                return self.record(plain, frozenset(), refutable=True)
             msg = (
                 f"{path}: no input or received record holds a {kind.__name__}, and it is a"
                 " value, not constructed from premises"
@@ -837,5 +838,4 @@ class Compiler:
         )
         node = Made(kind, compiled)
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
-        refutable = fallible(kind) or any(self.refutable[n] for _, n in compiled)
-        return self.record(node, varies, refutable=refutable)
+        return self.record(node, varies, refutable=True)

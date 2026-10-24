@@ -60,6 +60,14 @@ class Credited(Record):
     reference: Reference
 
 
+class Legs(Fact):
+    """Two sides of one class, each field named for the other's alias: by name, the debit side
+    is the source; by alias, the names would swap."""
+
+    debit_side: Account = Field(alias="credit_side")
+    credit_side: Account = Field(alias="debit_side")
+
+
 class Transferred(Fact):
     """The outcome: the transfer, its debit and its credit."""
 
@@ -87,6 +95,14 @@ CREDIT = Interaction(
 UNBOUND_DEBIT = DEBIT.model_copy(update={"bound": ()})
 
 TRANSFERRING = Program(goal=Transferred, accepts=Transfer, interactions=(DEBIT, CREDIT))
+LEGS = Program(
+    goal=Legs,
+    accepts=Transfer,
+    bound=(
+        Binding(premise="debit_side", subject="source"),
+        Binding(premise="credit_side", subject="target"),
+    ),
+)
 
 TRANSFER = Transfer(
     source=Account(number=AccountNumber("acc-1")),

@@ -10,9 +10,9 @@ an ordinary validator on the fact says so. Nothing here is written for the inter
 """
 
 from decimal import Decimal
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import Field, model_validator
+from pydantic import AfterValidator, Field, model_validator
 
 from type_construction.program import Binding, Correlation, Interaction, Program, Source
 from type_construction.world import Fact, Only, Record, Scalar, Value
@@ -185,6 +185,48 @@ class Eligible(Fact):
         return self
 
 
+def nonzero(payment: Captured) -> Captured:
+    """An ordinary after-validator in a field annotation, not a declared relation."""
+    if payment.amount.root == 0:
+        msg = "nothing was captured"
+        raise ValueError(msg)
+    return payment
+
+
+class Covered(Fact):
+    """An order and a capture that an annotated validator, not a declared relation, must
+    accept."""
+
+    order: Priced
+    payment: Annotated[Captured, AfterValidator(nonzero)]
+
+
+class OrderApproval(Record):
+    order: OrderId = Field(alias="order_id")
+    reviewer: Reviewer
+
+
+class OrderReviewClosed(Record):
+    order: OrderId = Field(alias="order_id")
+
+
+class Endorsed(Fact):
+    """At least two approvals, by a native field constraint and no declared selection."""
+
+    approvals: tuple[OrderApproval, ...] = Field(min_length=2)
+
+
+class BadLimit(Scalar[int]):
+    """A constant whose default its own constraint refuses."""
+
+    root: int = Field(gt=0, default=0)
+
+
+class Flawed(Fact):
+    order: Priced
+    limit: BadLimit
+
+
 class ShipOrder(Value):
     """What the program sends the carrier: it needs the order alone."""
 
@@ -198,6 +240,16 @@ class OrderShipped(Record):
 
 class Dispatched(Fact):
     eligible: Eligible
+    shipment: OrderShipped
+
+
+class Settled(Fact):
+    covered: Covered
+    shipment: OrderShipped
+
+
+class Released(Fact):
+    endorsed: Endorsed
     shipment: OrderShipped
 
 
@@ -248,6 +300,10 @@ CAPTURE = Interaction(
 SHIP_ORDER = Interaction(
     source=CARRIER, sends=ShipOrder, receives=(OrderShipped,), correlated=BY_ORDER
 )
+ORDER_APPROVALS = Interaction(
+    source=REVIEWERS, receives=(OrderApproval,), correlated=BY_ORDER, closed_by=OrderReviewClosed
+)
+ORDER_CLOSING = Interaction(source=REVIEWERS, receives=(OrderReviewClosed,), correlated=BY_ORDER)
 ALIASED = Interaction(
     source=CARRIER, sends=AliasedRequest, receives=(AliasedAnswer,), correlated=BY_ORDER
 )
@@ -271,6 +327,11 @@ DECIDING_BY_SKU = Program(
     goal=AllDecided, accepts=ReviewLines, interactions=(APPROVALS_BY_SKU, CLOSING_BY_SKU)
 )
 DISPATCHING = Program(goal=Dispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
+SETTLING = Program(goal=Settled, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
+RELEASING = Program(
+    goal=Released, accepts=FulfillOrder, interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER)
+)
+FLAWED = Program(goal=Flawed, accepts=FulfillOrder)
 ALIASING = Program(goal=AliasedFact, accepts=FulfillOrder, interactions=(ALIASED,))
 
 

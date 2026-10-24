@@ -24,6 +24,7 @@ from type_construction.program import (
     Site,
     Unclosed,
     Uncorrelated,
+    Unsolicited,
     accept,
     admit,
     evaluate,
@@ -39,6 +40,8 @@ CLOSED = '{"order_id": "o-7", "sku": "%s", "warehouse": "%s"}'
 CAPTURED = '{"order_id": "o-7", "amount": "%s"}'
 ORDER_SHIPPED = '{"order_id": "o-7", "tracking": "1Z"}'
 ALIASED_ANSWER = '{"order_ref": "o-7", "tracking": "1Z"}'
+ORDER_APPROVAL = '{"order_id": "o-7", "reviewer": "%s"}'
+ORDER_CLOSED = '{"order_id": "o-7"}'
 APPROVED_O1 = '{"order_id": "o-1", "reviewer": "ren"}'
 
 
@@ -251,6 +254,69 @@ def test_an_ordinary_validator_over_delayed_evidence_defers_the_dependent_effect
     assert [type(d.request) for d in frontier(evaluate(program, exact)).dispatch] == [
         composite.ShipOrder
     ]
+
+
+def test_a_native_field_constraint_over_an_unclosed_source_defers_the_dependent_effect() -> None:
+    """Regression: a fact with ``Field(min_length=2)`` and no declared selection was taken to
+    construct, and the shipment beside it was dispatched before the reviews closed."""
+    program = composite.RELEASING
+    invocation = accept(program, InvocationId("rel"), composite.PRICED)
+    opening = frontier(evaluate(program, invocation))
+    assert opening.dispatch == ()
+    assert {type(a) for a in opening.awaiting} == {Unsolicited, Unclosed}
+    (deferred,) = opening.withheld
+    assert isinstance(deferred, Deferred)
+    assert isinstance(deferred.request, composite.ShipOrder)
+    assert deferred.until == ("Released.endorsed",)
+
+    one = admit(program, invocation, delivered(composite.REVIEWERS, "a-1", ORDER_APPROVAL % "ren"))
+    assert frontier(evaluate(program, one)).dispatch == ()
+    closed_short = admit(program, one, delivered(composite.REVIEWERS, "c-1", ORDER_CLOSED))
+    blocked = evaluate(program, closed_short)
+    assert isinstance(blocked, Blocked)
+    (reason,) = blocked.reasons
+    assert isinstance(reason, Malformed)
+    assert reason.kind is composite.Endorsed
+    assert closed_short.intents == {}
+
+    two = admit(program, one, delivered(composite.REVIEWERS, "a-2", ORDER_APPROVAL % "kai"))
+    closed_enough = admit(program, two, delivered(composite.REVIEWERS, "c-1", ORDER_CLOSED))
+    assert [type(d.request) for d in frontier(evaluate(program, closed_enough)).dispatch] == [
+        composite.ShipOrder
+    ]
+
+
+def test_an_annotated_after_validator_over_delayed_evidence_defers_the_dependent_effect() -> None:
+    program = composite.SETTLING
+    invocation = accept(program, InvocationId("set"), composite.PRICED)
+    opening = frontier(evaluate(program, invocation))
+    assert [type(d.request) for d in opening.dispatch] == [composite.CaptureRequest]
+    assert [type(w.request) for w in opening.withheld] == [composite.ShipOrder]
+    invocation = intend(invocation, opening.dispatch)
+    nothing = perform(program, invocation, opening.dispatch[0].identity, CAPTURED % "0.00")
+    blocked = evaluate(program, nothing)
+    assert isinstance(blocked, Blocked)
+    (reason,) = blocked.reasons
+    assert isinstance(reason, Malformed)
+    assert reason.kind is composite.Covered
+    assert all(not isinstance(r, composite.ShipOrder) for r in nothing.intents.values())
+    some = perform(program, invocation, opening.dispatch[0].identity, CAPTURED % "50.00")
+    assert [type(d.request) for d in frontier(evaluate(program, some)).dispatch] == [
+        composite.ShipOrder
+    ]
+
+
+def test_a_constant_whose_default_its_constraint_refuses_blocks_with_a_structured_reason() -> None:
+    """Regression: a default-only class was constructed outside the validated path, and its
+    refused default escaped as an exception."""
+    program = composite.FLAWED
+    invocation = accept(program, InvocationId("flw"), composite.PRICED)
+    result = evaluate(program, invocation)
+    assert isinstance(result, Blocked)
+    (reason,) = result.reasons
+    assert isinstance(reason, Malformed)
+    assert reason.kind is composite.BadLimit
+    assert reason.premise == "Flawed.limit"
 
 
 def test_native_aliases_on_a_request_and_a_fact_keep_their_meaning() -> None:
