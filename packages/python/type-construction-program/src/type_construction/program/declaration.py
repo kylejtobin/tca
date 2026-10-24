@@ -165,24 +165,26 @@ def constant(kind: type[BaseModel]) -> bool:
 
 class Control(IntEnum):
     """What controls whether a premise still open will be refused, which orders effects around
-    it. Stronger controls are resolved before effects under weaker ones are dispatched.
+    it. The stronger control is resolved before effects under the weaker are dispatched.
 
-    ``NONE``: no decision the evaluator knows of; a value found in admitted evidence, a receive
-    with one declared answer, a class the evaluator reads nothing from beyond its field types.
-    This is not a claim that the construction will succeed; it is the absence of a controlling
-    decision, and a construction that fails is reported when it fails. ``OPAQUE``: a validator,
-    computation or revalidation Pydantic will run at construction, which the compiler locates
-    but cannot interpret, so its outcome is unproven until the construction runs; it withholds
-    effects beside it and grants nothing to effects under it. ``CONSTRAINT``: a native constraint
-    Pydantic itself interprets, located on a field, which the evaluator checks as soon as the
-    field's value is there. ``DECLARED``: a decision the business stated, a source that may
-    answer with another record or a declared refutable condition.
+    ``NONE``: no decision the evaluator can read; a value found in admitted evidence, a receive
+    with one declared answer, a class whose construction the evaluator reads nothing from. This
+    is not a claim that the construction will succeed; it is the absence of a control, and a
+    construction that fails is reported when it fails. ``CONSTRAINT``: a native constraint
+    Pydantic itself interprets, located on a field, which the evaluator checks through Pydantic
+    as soon as the field's value is there. ``DECLARED``: a decision the business stated, a source
+    that may answer with another record or a declared refutable condition.
+
+    A validator, computation or revalidation the compiler locates but cannot interpret is not a
+    control: its outcome is unproven until the construction runs, and the evaluator neither
+    orders effects by it, which would be an order invented from the model's shape, nor treats
+    the effects under it as evidence-gathering, which would be authority from ignorance. It is
+    reported as unproven beside the effects it did not stop (see ``opaque``).
     """
 
     NONE = 0
-    OPAQUE = 1
-    CONSTRAINT = 2
-    DECLARED = 3
+    CONSTRAINT = 1
+    DECLARED = 2
 
 
 def constraint(metadata: object) -> bool:
@@ -211,7 +213,8 @@ def opaque(kind: type[BaseModel]) -> frozenset[str] | None:
     the field, a discriminator. ``None`` when the whole model is judged, by a ``model_validator``,
     revalidation of instances, a custom core schema, a post-init hook or a validated default,
     since then no field can be left out. Empty when the class has none of these; that is the
-    absence of anything recognized, not a proof that construction succeeds."""
+    absence of anything recognized, not a proof that construction succeeds. This is reported,
+    not used to order effects: see ``Control``."""
     decorators = kind.__pydantic_decorators__
     if decorators.model_validators or decorators.validators or decorators.root_validators:
         return None
@@ -913,9 +916,6 @@ class Compiler:
         control = max((self.control[n] for _, n in compiled), default=Control.NONE)
         if issubclass(kind, Refutable):
             control = Control.DECLARED
-        else:
-            if constrained(kind):
-                control = max(control, Control.CONSTRAINT)
-            if opaque(kind) != frozenset():
-                control = max(control, Control.OPAQUE)
+        elif constrained(kind):
+            control = max(control, Control.CONSTRAINT)
         return self.record(node, varies, control)

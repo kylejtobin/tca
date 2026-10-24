@@ -19,18 +19,22 @@ of any one node:
 - **Decisions precede dependent effects.** What controls an open premise is kept apart in
   ``Control``. A *declared* decision is one the business stated: a source that may answer with
   another record, a declared refutable condition. A *constraint* is native metadata Pydantic
-  itself interprets, located on a field and checked by the evaluator as soon as that field's
-  value is there. *Opaque* uncertainty is a validator, computation or revalidation the compiler
-  locates but cannot interpret; it is resolved only by constructing. A class with none of these
-  is under no control the evaluator knows of; that is not a proof it constructs, only the
-  absence of a decision, so nothing under it is evidence-gathering and nothing beside it waits
-  for it. In a conjunction, the strongest control open governs: only the requests under
-  premises at that control are dispatched, since their results are what resolves it, and the
-  rest are withheld as ``Deferred`` naming what they wait on. Opaque uncertainty ranks below a
-  constraint and a declared decision, so an opaque validator never releases an effect a plain
-  class would leave withheld, and never withholds the requests that supply its own inputs. This
-  holds whether or not another branch exists for the refuted case: a single remaining branch is
-  not an established branch.
+  itself interprets, located on a field and checked by the evaluator, through Pydantic, as soon
+  as that field's value is there. In a conjunction the strongest control open governs: only the
+  requests under premises at that control are dispatched, since their results are what resolves
+  it and a control cannot require its own inputs as prior authority, and the rest are withheld
+  as ``Deferred`` naming what they wait on. This holds whether or not another branch exists for
+  the refuted case: a single remaining branch is not an established branch.
+- **Unproven construction is neither a control nor a grant.** A validator, computation or
+  revalidation the compiler locates but cannot interpret is resolved only by constructing. The
+  evaluator does not order effects by it, since that order would be invented from the model's
+  shape and not from a declared relationship, and does not treat the effects under it as
+  evidence-gathering, since that would be authority from ignorance. A class with such a part,
+  still open, is reported in the frontier as ``Unproven`` beside the effects it did not stop;
+  the relationship, if the business means one, is declared by making the class a premise of the
+  action (foundations §7.4), and then the action waits for it as for any premise. A plain class
+  is under no control and reported as nothing: that is the absence of anything recognized, not
+  a proof it constructs, and a construction that fails is reported when it fails.
 
 Independent necessary work stays concurrent: two premises nothing can refuse dispatch
 together, and two declared decisions dispatch their deciding requests together.
@@ -275,6 +279,21 @@ class Unchosen(BaseModel):
 type Withheld = Deferred | Unchosen
 
 
+class Unproven(BaseModel):
+    """A construction with a validator, computation or revalidation the evaluator cannot
+    interpret, still open while the requests named were dispatched beside it. If the business
+    means those requests to wait for it, it declares the class a premise of their request."""
+
+    model_config = RESULT
+
+    premise: str
+    kind: type[BaseModel]
+    beside: tuple[str, ...]
+
+    def __hash__(self) -> int:
+        return hash((self.premise, self.kind, self.beside))
+
+
 class Completed(BaseModel):
     """The goal is constructed, from the occurrences named."""
 
@@ -293,6 +312,7 @@ class Frontier(BaseModel):
     dispatch: tuple[Dispatch, ...] = ()
     awaiting: tuple[Awaiting, ...] = ()
     withheld: tuple[Withheld, ...] = ()
+    unproven: tuple[Unproven, ...] = ()
 
     @model_validator(mode="after")
     def _some(self) -> Frontier:
@@ -331,6 +351,9 @@ class Open:
     withheld: dict[EffectIdentity, Withheld]
     awaiting: dict[object, Awaiting]
     pending: tuple[tuple[str, Control], ...] = ()
+    unproven: tuple[tuple[str, type[BaseModel], frozenset[EffectIdentity]], ...] = ()
+    """The open constructions under this premise whose outcome cannot be read, each with the
+    requests dispatched beside it so far."""
 
     def tier(self) -> Control:
         """The strongest control over this premise."""
@@ -441,7 +464,13 @@ def conjoined(parts: list[Part]) -> Open | Refuted | Stuck | None:
             dispatch |= o.dispatch
     for identity in dispatch:
         withheld.pop(identity, None)
-    return Open(dispatch, withheld, awaiting, pending)
+    unread: dict[tuple[str, type[BaseModel]], frozenset[EffectIdentity]] = {}
+    for _, o in opens:
+        for path, kind, beside in o.unproven:
+            elsewhere = frozenset(dispatch) - frozenset(o.dispatch)
+            unread[path, kind] = unread.get((path, kind), frozenset()) | beside | elsewhere
+    unproven = tuple((path, kind, beside) for (path, kind), beside in unread.items())
+    return Open(dispatch, withheld, awaiting, pending, unproven)
 
 
 def chosen(path: str, members: list[tuple[type[BaseModel], Outcome]]) -> Outcome:
@@ -497,7 +526,8 @@ def live(path: str, opens: list[tuple[type[BaseModel], Open]]) -> Open:
             (path, min(how, weakest)) for _, o in opens for path, how in o.pending if weakest
         )
     )
-    return Open(dispatch, withheld, awaiting, pending)
+    unproven = tuple(dict.fromkeys(u for _, o in opens for u in o.unproven))
+    return Open(dispatch, withheld, awaiting, pending, unproven)
 
 
 def awaiting(interaction: Interaction, how: Awaiting, which: object) -> Open:
@@ -786,13 +816,14 @@ class Evaluator:
     def _composed(self, node: Made, path: str, scope: Scope) -> Outcome:
         """A class constructed from its premises through Pydantic. Each open premise is under the
         control this class puts on it: a declared condition over every premise, a native
-        constraint on its field, an opaque validator on its field or on the whole model, or none
-        the evaluator can read. A premise already available is checked against its own field's
-        native constraints at once, through Pydantic, so a constraint the class states is
-        respected before any effect beside it, not only when the whole class constructs; a
-        callback is never run early, and a refutable class's constraints are its declared
-        condition, judged by constructing it so that its refusal is classified as its own. A
-        constant is constructed the same way, since a default is validated too."""
+        constraint on its field, or none the evaluator can read. A premise already available is
+        checked against its own field's native constraints at once, through Pydantic, so a
+        constraint the class states is respected before any effect beside it, not only when the
+        whole class constructs; a callback is never run early, and a refutable class's
+        constraints are its declared condition, judged by constructing it so that its refusal is
+        classified as its own. A class with a part the evaluator cannot read, still open, is
+        reported unproven. A constant is constructed the same way, since a default is validated
+        too."""
         kind = node.kind
         if constant(kind):
             return self._validated(kind, None, Built(kind=qualified(kind)), path)
@@ -800,7 +831,6 @@ class Evaluator:
         occurrences: list[tuple[str, Occurrence]] = []
         parts: list[Part] = []
         bounded = constrained(kind)
-        unread = opaque(kind)
         for name, premise in node.premises:
             outcome = self.construct(premise, f"{path}.{name}", scope)
             own = Control.NONE
@@ -808,8 +838,6 @@ class Evaluator:
                 own = Control.DECLARED
             elif name in bounded:
                 own = Control.CONSTRAINT
-            elif unread is None or name in unread:
-                own = Control.OPAQUE
             if isinstance(outcome, Available):
                 errors = None if issubclass(kind, Refutable) else checked(kind, name, outcome.value)
                 if errors is not None:
@@ -820,6 +848,9 @@ class Evaluator:
                     occurrences.append((name, outcome.occurrence))
             parts.append((f"{path}.{name}", outcome, own))
         pending = conjoined(parts)
+        if isinstance(pending, Open) and opaque(kind) != frozenset():
+            unread = (path, kind, frozenset[EffectIdentity]())
+            return replace(pending, unproven=(*pending.unproven, unread))
         if pending is not None:
             return pending
         occurrence = Built(kind=qualified(kind), parts=tuple(occurrences))
@@ -904,12 +935,20 @@ def evaluate(program: Program, invocation: Invocation) -> Evaluation:
                 msg = "a goal is a declared class"
                 raise TypeError(msg)
             return Completed(goal=value, occurrence=occurrence)
-        case Open(dispatch, withheld, awaited):
+        case Open(dispatch, withheld, awaited, _, unread):
             if dispatch or awaited:
                 return Frontier(
                     dispatch=tuple(dispatch.values()),
                     awaiting=tuple(awaited.values()),
                     withheld=tuple(withheld.values()),
+                    unproven=tuple(
+                        Unproven(
+                            premise=path,
+                            kind=kind,
+                            beside=tuple(sorted(i.operation for i in beside if i in dispatch)),
+                        )
+                        for path, kind, beside in unread
+                    ),
                 )
             reasons = undecidable(withheld)
             if not reasons:

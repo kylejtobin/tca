@@ -327,6 +327,23 @@ class Dispatched(Fact):
     shipment: OrderShipped
 
 
+class GuardedShipOrder(Value):
+    """What the program sends the carrier when the business means the shipment to wait for
+    eligibility: the eligibility is a premise of the request, the declared relationship."""
+
+    eligible: Eligible
+
+
+class GuardedShipped(Record):
+    order: OrderId = Field(alias="order_id")
+    tracking: Tracking
+
+
+class GuardedDispatched(Fact):
+    eligible: Eligible
+    shipment: GuardedShipped
+
+
 class Settled(Fact):
     covered: Covered
     shipment: OrderShipped
@@ -384,6 +401,9 @@ CAPTURE = Interaction(
 SHIP_ORDER = Interaction(
     source=CARRIER, sends=ShipOrder, receives=(OrderShipped,), correlated=BY_ORDER
 )
+GUARDED_SHIP = Interaction(
+    source=CARRIER, sends=GuardedShipOrder, receives=(GuardedShipped,), correlated=BY_ORDER
+)
 QUOTE = Interaction(source=CARRIER, sends=QuoteRequest, receives=(Quote,), correlated=BY_ORDER)
 PING = Interaction(source=CARRIER, sends=PingRequest, receives=(Pinged,), correlated=BY_ORDER)
 ORDER_APPROVALS = Interaction(
@@ -413,6 +433,9 @@ DECIDING_BY_SKU = Program(
     goal=AllDecided, accepts=ReviewLines, interactions=(APPROVALS_BY_SKU, CLOSING_BY_SKU)
 )
 DISPATCHING = Program(goal=Dispatched, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
+GUARDED_DISPATCHING = Program(
+    goal=GuardedDispatched, accepts=FulfillOrder, interactions=(CAPTURE, GUARDED_SHIP)
+)
 SETTLING = Program(goal=Settled, accepts=FulfillOrder, interactions=(CAPTURE, SHIP_ORDER))
 RELEASING = Program(
     goal=Released, accepts=FulfillOrder, interactions=(ORDER_APPROVALS, ORDER_CLOSING, SHIP_ORDER)
