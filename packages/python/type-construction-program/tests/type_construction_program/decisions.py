@@ -9,15 +9,21 @@ the same two decided by a rating; two effects both needed with nothing to decide
 at once; a consumer that wants the desk told after a denial, which the desk's own requirement
 forbids; one operation demanded jointly and conditionally; a chain of conditions; a conditional
 inside an alternative.
+
+The conditional is a type, so it composes as types do: under a business name, as a generic
+subclass, under ``Annotated`` metadata, with a premise of its own beside it. Each form is the
+same relationship. A condition that may be established without the effect it governs, through
+one member of an alternative, is a condition; a relation over two business constants is a
+condition established from nothing, or refuted from nothing.
 """
 
 from decimal import Decimal
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationInfo, model_validator
 
 from type_construction.program import Correlation, Interaction, Program, Source, When
-from type_construction.world import AtMost, Beyond, Fact, Record, Scalar, Value
+from type_construction.world import AtMost, Beyond, Equal, Fact, Record, Scalar, Value
 
 
 class Name(Scalar[str]):
@@ -341,6 +347,201 @@ class Either(Fact):
     outcome: When[Allowed, Pinged] | Rejected
 
 
+class ApprovedPing(When[Allowed, Pinged]):
+    """The conditional ping under a business name: a subclass of the relationship, which has it
+    whole."""
+
+
+class Once[R](When[Allowed, R]):
+    """A conditional on the allowance, open in what it demands: a generic subclass."""
+
+
+class NotedPing(When[Allowed, Pinged]):
+    """The conditional ping with a premise of its own beside it: the applicant, held with the
+    condition, not behind it."""
+
+    applicant: Applicant
+
+
+class PingAndMail(When[Allowed, Pinged]):
+    """The conditional ping with an effect of its own beside it: the mail, demanded with the
+    condition, not behind it."""
+
+    mailed: Mailed
+
+
+class Admitted(Fact):
+    """Allowed, pinged once allowed, and mailed regardless: the mail is work the allowance does
+    not govern."""
+
+    allowed: Allowed
+    pinged: When[Allowed, Pinged]
+    mailed: Mailed
+
+
+class AdmittedByName(Fact):
+    allowed: Allowed
+    pinged: ApprovedPing
+    mailed: Mailed
+
+
+class AdmittedGenerically(Fact):
+    allowed: Allowed
+    pinged: Once[Pinged]
+    mailed: Mailed
+
+
+class AdmittedAnnotated(Fact):
+    """The conditional under ``Annotated`` metadata, outside and inside: native field metadata
+    the relationship carries along."""
+
+    allowed: Allowed
+    pinged: Annotated[
+        When[
+            Annotated[Allowed, Field(description="the registrar's allowance")],
+            Annotated[Pinged, Field(description="the desk's ping")],
+        ],
+        Field(description="the desk pinged once the registrar allows"),
+    ]
+    mailed: Mailed
+
+
+class AdmittedWithNote(Fact):
+    allowed: Allowed
+    pinged: NotedPing
+    mailed: Mailed
+
+
+class AdmittedWithMail(Fact):
+    """The mail inside the conditional's class, beside the condition: the same work, demanded
+    the same."""
+
+    allowed: Allowed
+    pinged: PingAndMail
+
+
+class Unparametrized(Fact):
+    """A conditional that leaves what it demands open: not a product, not a conditional, and
+    refused at declaration."""
+
+    allowed: Allowed
+    pinged: Once  # pyright: ignore[reportMissingTypeArgument]  the open form under test
+
+
+class Unapproved(Fact):
+    """Refused by the committee, and pinged by the desk regardless."""
+
+    refusal: Refused
+    pinged: Pinged
+
+
+class Vouched(Fact):
+    """The applicant vouched for: by the committee's approval, or, refused by the committee, by
+    the desk having been pinged. One member of the alternative needs the ping; the other does
+    not; the committee's one answer decides which can hold."""
+
+    via: Approved | Unapproved
+
+
+class PingedWhenVouched(Fact):
+    """The desk pinged once the applicant is vouched for. The condition may be established
+    without the ping, through the approval, so the conditional orders the ping after it; through
+    the other member the condition needs the very ping, which the committee's refusal leaves as
+    the one way to be vouched for."""
+
+    pinged: When[Vouched, Pinged]
+
+
+class Reached(Fact):
+    """Reached by having an applicant, or by the desk having been pinged: an alternative whose
+    members can both hold, since the applicant is always in the input."""
+
+    via: Applicant | Pinged
+
+
+class PingedWhenReached(Fact):
+    """The desk pinged once the applicant is reached: established at once from the input, and,
+    once the ping is there, established two ways at once."""
+
+    pinged: When[Reached, Pinged]
+
+
+class Fee(Scalar[Decimal]):
+    """What admission costs: a business constant."""
+
+    root: Decimal = Decimal("0")
+
+
+class Waiver(Scalar[Decimal]):
+    root: Decimal = Decimal("0")
+
+
+class Charge(Scalar[Decimal]):
+    root: Decimal = Decimal("25")
+
+
+class Waived(Equal[Fee, Waiver]):
+    """The fee equals the waiver: a relation over two business constants, constructed from
+    nothing, which holds."""
+
+    value: Fee = Fee()
+    bound: Waiver = Waiver()
+
+
+class Billed(Equal[Fee, Charge]):
+    """The fee equals the charge: the same kind of relation, which does not hold."""
+
+    value: Fee = Fee()
+    bound: Charge = Charge()
+
+
+class MailedFree(Fact):
+    waived: Waived
+    mailed: Mailed
+
+
+class TextedBilled(Fact):
+    billed: Billed
+    texted: Texted
+
+
+class NotifiedByFee(Fact):
+    """Mailed when the fee is waived, texted when it is charged: the constants decide."""
+
+    how: MailedFree | TextedBilled
+
+
+class MailedWhenWaived(Fact):
+    """The mail demanded once the waiver is established, from nothing."""
+
+    mailed: When[Waived, Mailed]
+
+
+class TextedWhenBilled(Fact):
+    """The text demanded once the charge is established, which from nothing it never is."""
+
+    texted: When[Billed, Texted]
+
+
+class Office(Scalar[str]):
+    """The office that answers: a business constant whose validator reads the construction's
+    context, as any native validator may."""
+
+    root: str = "front desk"
+
+    @model_validator(mode="after")
+    def _in_context(self, info: ValidationInfo) -> Self:
+        if info.context is None:
+            msg = "validated outside any context"
+            raise ValueError(msg)
+        return self
+
+
+class Staffed(Fact):
+    office: Office
+    pinged: Pinged
+
+
 class Pinging(Fact):
     """A fact of nothing but the ping."""
 
@@ -410,5 +611,23 @@ SHARING_REVERSED = Program(goal=SharedReversed, accepts=Admit, interactions=(CHE
 TWICE = Program(goal=Twice, accepts=Admit, interactions=(CHECK, PING))
 CHAINING = Program(goal=Chained, accepts=Admit, interactions=(CHECK, PING, MAIL))
 EITHER = Program(goal=Either, accepts=Admit, interactions=(CHECK, PING))
+ADMISSIONS = {
+    goal.__name__: Program(goal=goal, accepts=Admit, interactions=(CHECK, PING, MAIL))
+    for goal in (
+        Admitted,
+        AdmittedByName,
+        AdmittedGenerically,
+        AdmittedAnnotated,
+        AdmittedWithNote,
+        AdmittedWithMail,
+    )
+}
+"""One conditional in each of its forms, beside work it does not govern."""
+VOUCHING = Program(goal=PingedWhenVouched, accepts=Admit, interactions=(COMMITTEE_DECISION, PING))
+REACHING = Program(goal=PingedWhenReached, accepts=Admit, interactions=(PING,))
+FEES = Program(goal=NotifiedByFee, accepts=Admit, interactions=(MAIL, TEXT))
+WAIVED_MAILING = Program(goal=MailedWhenWaived, accepts=Admit, interactions=(MAIL,))
+BILLED_TEXTING = Program(goal=TextedWhenBilled, accepts=Admit, interactions=(TEXT,))
+STAFFING = Program(goal=Staffed, accepts=Admit, interactions=(PING,))
 
 APPLICANT = Admit(applicant=Applicant(name=Name("ada")))

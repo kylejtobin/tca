@@ -679,8 +679,8 @@ def test_a_condition_established_only_by_the_effect_it_gates_is_refused_at_decla
     """A validator that needs the shipment's result is a postcondition, not prior authorization.
     Declared as the shipment's condition, it would be established only by the shipment itself,
     so the conditional orders nothing; the program is refused, naming the conditional, the
-    operation and where the condition demands it. The evaluator does not validate part of the
-    condition to escape this."""
+    operation and where the condition and the result demand it. The evaluator does not validate
+    part of the condition to escape this."""
     with pytest.raises(ValidationError) as refusal:
         Program(
             goal=composite.Circular,
@@ -688,16 +688,19 @@ def test_a_condition_established_only_by_the_effect_it_gates_is_refused_at_decla
             interactions=(composite.CAPTURE, composite.SHIP_ORDER),
         )
     message = str(refusal.value)
-    assert "Circular.shipment" in message
-    assert "ShipmentChecked is established only by the effects the conditional governs" in message
-    assert "ShipOrder at Circular.shipment.condition.shipment" in message
+    assert "Circular.shipment:" in message
+    assert "every request the result demands is one the condition is established through" in message
+    assert "ShipOrder at Circular.shipment.condition.shipment and at Circular.shipment.result" in (
+        message
+    )
+    assert "orders nothing" in message
     assert "postcondition" in message
 
     with pytest.raises(ValidationError) as refusal:
         Program(goal=decisions.Vacuous, accepts=decisions.Admit, interactions=(decisions.PING,))
     message = str(refusal.value)
-    assert "Vacuous.pinged" in message
-    assert "PingRequest at Vacuous.pinged.condition.pinged" in message
+    assert "Vacuous.pinged:" in message
+    assert "PingRequest at Vacuous.pinged.condition.pinged and at Vacuous.pinged.result" in message
 
 
 def test_a_condition_per_element_releases_each_elements_effect_on_its_own() -> None:

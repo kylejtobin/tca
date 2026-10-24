@@ -17,14 +17,24 @@ sending attempt or in a later delivery is not declared: it is observed, and the 
 satisfies is the same either way.
 
 ``When[C, R]`` is the one construction relationship a business type declares beyond its
-composition: its holder demands ``R`` only once ``C`` is established. ``C`` is any declared class
-constructed through its own complete native boundary; what it checks, a validator, a constraint,
-a relation, is its own business and the evaluator reads none of it. Established, ``R`` is
-demanded; refused, the conditional is refused. A product without it demands every field jointly
-and orders nothing between them: a validator on a class that also holds an effect is a
-postcondition of that class, never prior authorization for the effect (foundations §7.2, §7.4,
-§8.2). A conditional whose condition is established only by the effects it governs declares an
-order that cannot hold, and the program is refused naming it.
+composition: its holder demands ``R`` only once ``C`` is established. It is a type, and composes
+as types do: a field typed ``When[Eligible, OrderShipped]``, a business class that subclasses it,
+a generic subclass of it, either under ``Annotated`` metadata, or a subclass with premises of its
+own beside the two, is the same relationship, read from the fields Pydantic resolves for the
+class; naming it or describing it changes nothing about it, and a conditional whose parameters
+are left open is refused, not read as a product. ``C`` and ``R`` are premises like any other, a
+class constructed through its own complete native boundary, an alternative, a collection; what a
+condition checks inside its boundary, a validator, a constraint, a relation, is its own business
+and the evaluator reads none of it. Established, ``R`` is demanded; refused, the conditional is
+refused. A product without it demands every field jointly and orders nothing between them: a
+validator on a class that also holds an effect is a postcondition of that class, never prior
+authorization for the effect (foundations §7.2, §7.4, §8.2). Whether a condition can be
+established before what the conditional governs is a question about request occurrences, not
+operation names: a condition established, every way it can be, only through the very occurrences
+its result demands would be established by the effects it governs, so the conditional orders
+nothing and the program is refused naming them; a condition with another way to be established,
+through one member of an alternative or through the same operation at another occurrence, is a
+condition (foundations §7.3, §7.6).
 
 A ``Program`` is a goal, the input it accepts, its interactions, and the bindings of the goal's
 premises that the classes alone do not determine. Constructing one compiles the goal into a
@@ -189,6 +199,13 @@ class When[C: BaseModel, R](BaseModel):
     operation requires something, that something is a premise of the request the operation
     sends (foundations §7.4). A product without ``When`` demands every field jointly and orders
     nothing between them.
+
+    The relationship is the class, not its spelling. A business name for it, a generic subclass,
+    ``Annotated`` metadata around it or on its arguments, or a premise declared beside the two
+    in a subclass, is read from the fields Pydantic resolves and means the same::
+
+        class ApprovedPing(When[Allowed, Pinged]): ...
+        class Once[R](When[Allowed, R]): ...
     """
 
     model_config = DECLARATION
@@ -199,20 +216,10 @@ class When[C: BaseModel, R](BaseModel):
     """What is demanded once it is."""
 
 
-def conditional(kind: type[BaseModel]) -> tuple[type[BaseModel], object] | None:
-    """The condition class and the result annotation of a ``When`` parametrization, or ``None``
-    for any other class."""
-    if not issubclass(kind, When):
-        return None
-    metadata = kind.__pydantic_generic_metadata__
-    if metadata["origin"] is not When:
-        return None
-    args = metadata["args"]
-    condition = declared(args[0])
-    if condition is None:
-        msg = f"{kind.__name__}: a condition is a declared class; {args[0]!r} is none"
-        raise ValueError(msg)
-    return condition, args[1]
+def conditional(kind: type[BaseModel]) -> bool:
+    """Whether a class declares a conditional: ``When`` itself, parametrized or not, or any class
+    that inherits from it, however it is named, generic or not."""
+    return issubclass(kind, When)
 
 
 def contradictory(bindings: tuple[Binding, ...], root: type[BaseModel]) -> None:
@@ -472,11 +479,14 @@ class Each:
 
 @dataclass(frozen=True)
 class Conditional:
-    """A ``When``: ``result`` is demanded only once ``condition`` is constructed."""
+    """A ``When``, under whatever name: ``result`` is demanded only once ``condition`` is
+    constructed, and ``premises`` are the fields a subclass declares beside the two, demanded
+    with the condition."""
 
     kind: type[BaseModel]
     condition: Node
     result: Node
+    premises: tuple[tuple[str, Node], ...] = ()
 
 
 type Node = Found | Heard | Made | Choice | All | Each | Conditional
@@ -499,33 +509,51 @@ def within(node: Node) -> tuple[Node, ...]:
             inner = (closer,)
         case Each(element=element, closure=closure, holder=holder):
             inner = (element, closure, holder)
-        case Conditional(condition=condition, result=result):
-            inner = (condition, result)
+        case Conditional(condition=condition, result=result, premises=premises):
+            inner = (condition, result, *(n for _, n in premises))
     return tuple(n for n in inner if n is not None)
 
 
-def solicited(node: Node) -> frozenset[str]:
-    """The operations demanded under a node: the durable names of the requests sent for the
-    solicited receives it is constructed from, however deep."""
-    found: set[str] = set()
-    seen: set[Node] = set()
-    pending = [node]
-    while pending:
-        current = pending.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        if isinstance(current, Heard) and current.interaction.sends is not None:
-            found.add(qualified(current.interaction.sends))
-        pending.extend(within(current))
-    return frozenset(found)
+def dependencies(
+    node: Node, memo: dict[Node, frozenset[Heard]], *, every: bool
+) -> frozenset[Heard]:
+    """The request occurrences a node is constructed through: the nodes of the solicited
+    receives under it, however deep. With ``every``, those every construction of the node passes
+    through, so an alternative contributes what all its members need; without, those some
+    construction may pass through. A class needs each of its premises, a collection each of its
+    elements and its closure, a conditional its condition and its result; an alternative is
+    whichever member holds. Two nodes equal in how they obtain a request are one occurrence, and
+    one operation requested from different premises is as many occurrences."""
+    if node in memo:
+        return memo[node]
+    own = frozenset[Heard]()
+    if isinstance(node, Heard) and node.interaction.sends is not None:
+        own = frozenset({node})
+    inner = [dependencies(n, memo, every=every) for n in within(node)]
+    if isinstance(node, Choice) and every and inner:
+        found = inner[0].intersection(*inner[1:])
+    else:
+        found = frozenset[Heard]().union(*inner)
+    memo[node] = own | found
+    return own | found
+
+
+def needed(node: Node) -> frozenset[Heard]:
+    """The request occurrences every construction of a node passes through."""
+    return dependencies(node, {}, every=True)
+
+
+def reachable(node: Node) -> frozenset[Heard]:
+    """The request occurrences some construction of a node may pass through."""
+    return dependencies(node, {}, every=False)
 
 
 @dataclass
 class Graph:
     """What compiling a program established: the root node, the interactions by the request
     they send, per node the collections it varies over, and per conditional the operations it
-    gates: those demanded under its result and not under its condition."""
+    gates: those of the request occurrences under its result that its condition is not
+    established through."""
 
     root: Node
     sent: dict[str, Interaction]
@@ -691,8 +719,8 @@ class Compiler:
         self.program = program
         self.varies: dict[Node, frozenset[Collection]] = {}
         self.gated: dict[Conditional, tuple[str, ...]] = {}
-        self.demanded: dict[str, list[str]] = {}
-        """Per operation, every path at which a receive it answers is demanded."""
+        self.placed: dict[Heard, list[str]] = {}
+        """Per request occurrence, every path at which the receive it answers is demanded."""
 
     def compiled(self) -> Graph:
         program = self.program
@@ -780,10 +808,12 @@ class Compiler:
             rooted = walk.rooted(interaction.bound)
             request = self.compile(sends, (), f"{path}.{sends.__name__}", rooted)
             varies = varies | self.varies[request]
-            self.demanded.setdefault(qualified(sends), []).append(path)
         if interaction.many:
             varies = varies | {Collection(kind, ())}
-        return self.record(Heard(interaction, kind, request), varies)
+        node = Heard(interaction, kind, request)
+        if request is not None:
+            self.placed.setdefault(node, []).append(path)
+        return self.record(node, varies)
 
     def located(self, location: Location, path: str, walk: Walk) -> Node:
         """The node for a value found at a location, with the node that supplies its container
@@ -917,9 +947,8 @@ class Compiler:
                 " declares a source for it; without a declared source it cannot be waited for"
             )
             raise ValueError(msg)  # noqa: TRY004  a validator's refusal is a ValueError
-        parts = conditional(kind)
-        if parts is not None:
-            return self.when(kind, parts, at, path, walk)
+        if conditional(kind):
+            return self.when(kind, at, path, walk)
         empty = constant(kind)
         plain = Made(kind)
         if issubclass(kind, RootModel):
@@ -938,42 +967,67 @@ class Compiler:
         varies = frozenset[Collection]().union(*(self.varies[n] for _, n in compiled))
         return self.record(node, varies)
 
-    def when(
-        self,
-        kind: type[BaseModel],
-        parts: tuple[type[BaseModel], object],
-        at: tuple[str, ...],
-        path: str,
-        walk: Walk,
-    ) -> Node:
-        """A conditional premise: the condition compiled at ``condition``, the result at
-        ``result``, and the operations the conditional gates, those demanded under the result
-        and not under the condition. A conditional that gates nothing because its condition
-        demands every operation its result does declares an order that cannot hold: the
-        condition would be established only by the effects it governs. It is refused, naming
-        where the condition demands them."""
-        condition_kind, result = parts
-        condition = self.compile(condition_kind, (*at, "condition"), f"{path}.condition", walk)
-        demanded = self.compile(result, (*at, "result"), f"{path}.result", walk)
-        under = solicited(demanded)
-        gated = under - solicited(condition)
-        if under and not gated:
-            prefix = f"{path}.condition"
-            where = ", ".join(
-                f"{operation.rsplit('.', 1)[-1]} at {p}"
-                for operation in sorted(under)
-                for p in self.demanded.get(operation, ())
-                if p.startswith(prefix)
-            )
+    def when(self, kind: type[BaseModel], at: tuple[str, ...], path: str, walk: Walk) -> Node:
+        """A conditional premise, read from the fields Pydantic resolved for the class, whatever
+        it is named or inherits from: the condition compiled at ``condition``, the result at
+        ``result``, and any premise the class declares beside them, demanded with the condition.
+        The conditional gates the request occurrences under its result that its condition is not
+        established through. One whose result demands only occurrences the condition is
+        established through, every way it can be, gates nothing: the condition would be
+        established by the very effects it governs, so the program is refused naming them. A
+        conditional with a parameter left open, or whose condition or result is not a premise, is
+        refused as well, since what it orders is not declared."""
+        parameters = kind.__pydantic_generic_metadata__["parameters"]
+        if parameters:
+            left = ", ".join(p.__name__ for p in parameters)
             msg = (
-                f"{path}: {kind.__name__} demands {result!r} only once"
-                f" {condition_kind.__name__} is established, and {condition_kind.__name__} is"
-                f" established only by the effects the conditional governs ({where}); a"
-                " condition cannot be established by the effect it gates, so the conditional"
-                " orders nothing. A validator that needs the effect's result is a postcondition"
-                " of the class that holds both, not prior authorization for the effect"
+                f"{path}: {kind.__name__} leaves {left} open; a conditional names what"
+                " establishes it and what it then demands"
             )
             raise ValueError(msg)
-        node = Conditional(kind, condition, demanded)
-        self.gated[node] = tuple(sorted(gated))
-        return self.record(node, self.varies[condition] | self.varies[demanded])
+        required = dict(premises(kind))
+        for name, otherwise in (
+            ("condition", "be established by nothing"),
+            ("result", "demand nothing once established"),
+        ):
+            if name not in required:
+                msg = (
+                    f"{path}: {kind.__name__}.{name} has a default, so the conditional would"
+                    f" {otherwise}; a conditional's condition and result are both premises"
+                )
+                raise ValueError(msg)
+        condition = self.compile(
+            required.pop("condition"), (*at, "condition"), f"{path}.condition", walk
+        )
+        result = self.compile(required.pop("result"), (*at, "result"), f"{path}.result", walk)
+        beside = tuple(
+            (name, self.compile(annotation, (*at, name), f"{path}.{name}", walk))
+            for name, annotation in required.items()
+        )
+        governed = reachable(result)
+        gated = governed - needed(condition)
+        if governed and not gated:
+            raise ValueError(self.vacuous(kind, path, governed))
+        node = Conditional(kind, condition, result, beside)
+        operations = {qualified(h.interaction.sends) for h in gated if h.interaction.sends}
+        self.gated[node] = tuple(sorted(operations))
+        varies = frozenset[Collection]().union(*(self.varies[n] for n in within(node)))
+        return self.record(node, varies)
+
+    def vacuous(self, kind: type[BaseModel], path: str, governed: frozenset[Heard]) -> str:
+        """Why a conditional that gates nothing is refused: each request occurrence its result
+        demands, and every place under the conditional that demands it, condition and result."""
+        where: list[str] = []
+        for heard in sorted(governed, key=lambda h: qualified(h.kind)):
+            sends = heard.interaction.sends
+            if sends is None:
+                continue
+            places = [p for p in self.placed[heard] if p.startswith(f"{path}.")]
+            where.append(f"{sends.__name__} at {' and at '.join(sorted(places))}")
+        return (
+            f"{path}: {kind.__name__} demands its result only once its condition is established,"
+            " and every request the result demands is one the condition is established through"
+            f" ({'; '.join(where)}), so the conditional orders nothing. A condition that needs an"
+            " effect's result is a postcondition of the class that holds both, not prior"
+            " authorization for the effect"
+        )

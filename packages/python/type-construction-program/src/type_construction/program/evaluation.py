@@ -19,10 +19,12 @@ Demand is rooted in the goal and propagated through the declared construction re
   authorization for the effect. Packaging, a wrapper, a flattening, an opaque or a readable
   formulation of the same check, changes nothing about what is demanded (decision 0003, law 3).
 
-- **A conditional is ordered demand.** ``When[C, R]`` demands ``C`` first, through its own
-  complete native construction, and demands ``R`` only once ``C`` is constructed. Until then
-  the operations under ``R`` are ``Pending``, named with the conditional and its condition. If
-  ``C`` is refused, nothing under ``R`` is ever demanded and the conditional is refused with it.
+- **A conditional is ordered demand.** ``When[C, R]``, under whatever name or subclass the
+  declarations give it, demands ``C`` first, through its own complete native construction, and
+  demands ``R`` only once ``C`` is constructed. Until then the operations under ``R`` are
+  ``Pending``, named with the conditional and its condition. If ``C`` is refused, nothing under
+  ``R`` is ever demanded and the conditional is refused with it. A premise a subclass declares
+  beside the two is demanded with the condition.
   The work that establishes ``C`` is justified by ``C``'s own demand and needs its own premises
   like any other; being useful to a decision exempts it from nothing (§7.3). Where every use of
   an operation requires something, that something is a premise of its request, and no consumer
@@ -49,7 +51,11 @@ premises, with ``Refusals`` as the validation context so that a refutable kind's
 told from a malformed construction, and nothing is judged before that: no constraint is run on
 a field alone, no validator is set aside, no fragment is rebuilt from an annotation. What
 Pydantic accepts with a padding before-validator, or a revalidated element reading the context,
-the evaluator accepts, because it only ever asks Pydantic the question the declaration asks.
+the evaluator accepts, because it only ever asks Pydantic the question the declaration asks. A
+class with no premise, a constant or a relation over constants, is constructed from nothing the
+same way, under the same context, so its own refusal is told from a malformed construction like
+any other's; a root model's omitted root is handed to Pydantic as Pydantic's own omitted-root
+marker, so the default is applied as natively as ``RootModel()`` applies it.
 
 Evidence is owned by the history. Evaluation constructs from its own copy of each piece of
 evidence and, at the end, checks the copies still equal the history; a construction that
@@ -69,10 +75,19 @@ identity. An attempt whose outcome is uncertain leaves it outstanding and not di
 which is right is the capability's recovery contract, not a business conclusion.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import cast
 
-from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    SerializeAsAny,
+    ValidationError,
+    model_validator,
+)
+from pydantic_core import PydanticUndefined
 
 from type_construction.world import Refusals, Refutable
 
@@ -91,7 +106,6 @@ from .declaration import (
     Node,
     Program,
     Source,
-    constant,
     qualified,
 )
 from .invocation import (
@@ -252,8 +266,9 @@ type Awaiting = Solicited | Unsolicited | Unresolved | Unclosed
 class Pending(BaseModel):
     """The result of a conditional is not yet demanded: its condition is open. ``premise`` is
     the conditional, ``condition`` the premise it waits for, and ``operations`` the requests the
-    conditional gates, those demanded under its result and not under its condition, none of
-    which is constructed or proposed until the condition is established."""
+    conditional gates, those under its result that its condition is not established through,
+    none of which this conditional constructs or proposes until the condition is established.
+    Another consumer that demands one of them on its own account proposes it on that account."""
 
     model_config = RESULT
 
@@ -511,6 +526,30 @@ type Part = tuple[str, Outcome]
 """One premise of a conjunction: its path and its outcome."""
 
 
+@dataclass
+class Gathering:
+    """The premises of one construction as they are constructed: the value and occurrence of
+    each that is available, by field name, and every outcome by path."""
+
+    given: dict[str, object] = field(default_factory=dict)
+    occurrences: list[tuple[str, Occurrence]] = field(default_factory=list)
+    parts: list[Part] = field(default_factory=list)
+
+    def add(self, name: str, at: str, outcome: Outcome) -> None:
+        if isinstance(outcome, Available):
+            self.given[name] = outcome.value
+            self.occurrences.append((name, outcome.occurrence))
+        self.parts.append((at, outcome))
+
+
+def omitted(kind: type[BaseModel]) -> object:
+    """What a construction from nothing hands Pydantic: no fields for a class of fields, and for
+    a root model no root, ``PydanticUndefined``, the marker ``RootModel`` itself validates when
+    its root is omitted, so the root's default is applied as the class's configuration says,
+    under the construction's context."""
+    return PydanticUndefined if issubclass(kind, RootModel) else {}
+
+
 def conjoined(parts: list[Part]) -> Open | Refuted | Stuck | None:
     """How several premises' outcomes combine when all are needed: a malformed construction
     outranks a refutation, which outranks open work; ``None`` when every one is available, and
@@ -649,34 +688,31 @@ class Evaluator:
         return chosen(path, outcomes)
 
     def _conditional(self, node: Conditional, path: str, scope: Scope, context: Context) -> Outcome:
-        """A conditional premise: the condition first, through its own construction; while it is
-        open, the result is pending and nothing under it is demanded; refused, the conditional
-        is refused; constructed, the result is demanded under one more activation, and the
-        conditional constructs natively from both."""
-        condition = self.construct(node.condition, f"{path}.condition", scope, context)
+        """A conditional premise: the condition first, through its own construction, with any
+        premise the class declares beside it; while the condition is open, the result is pending
+        and nothing under it is demanded; refused, the conditional is refused; constructed, the
+        result is demanded under one more activation, and the class constructs natively from all
+        of them."""
+        at = f"{path}.condition"
+        gathered = Gathering()
+        condition = self.construct(node.condition, at, scope, context)
         match condition:
-            case Available(value, occurrence):
-                activation = Activation(
-                    conditional=path, condition=f"{path}.condition", occurrence=occurrence
-                )
-                result = self.construct(
-                    node.result, f"{path}.result", scope, (*context, activation)
-                )
-                if not isinstance(result, Available):
-                    return result
-                given = {"condition": value, "result": result.value}
-                built = Built(
-                    kind=qualified(node.kind),
-                    parts=(("condition", occurrence), ("result", result.occurrence)),
-                )
-                return self._validated(node.kind, given, built, path)
+            case Available(occurrence=occurrence):
+                gathered.add("condition", at, condition)
+                activation = Activation(conditional=path, condition=at, occurrence=occurrence)
+                under = (*context, activation)
+                result = self.construct(node.result, f"{path}.result", scope, under)
+                gathered.add("result", f"{path}.result", result)
             case Open():
-                pending = Pending(
-                    premise=path, condition=f"{path}.condition", operations=self.graph.gated[node]
-                )
-                return replace(condition, withheld={**condition.withheld, path: pending})
+                pending = Pending(premise=path, condition=at, operations=self.graph.gated[node])
+                withheld = {**condition.withheld, path: pending}
+                gathered.add("condition", at, replace(condition, withheld=withheld))
             case Refuted() | Stuck():
-                return condition
+                gathered.add("condition", at, condition)
+        for name, premise in node.premises:
+            beside = f"{path}.{name}"
+            gathered.add(name, beside, self.construct(premise, beside, scope, context))
+        return self._built(node.kind, gathered, path)
 
     def _received(self, node: Heard, path: str, scope: Scope, context: Context) -> Outcome:
         """One record from a source, in this scope: the evidence answering this scope's request
@@ -911,42 +947,38 @@ class Evaluator:
 
     def _composed(self, node: Made, path: str, scope: Scope, context: Context) -> Outcome:
         """A class constructed from its premises through Pydantic, once every premise is there:
-        joint construction, nothing judged before it. A constant is constructed the same way,
-        since a default is validated too."""
-        kind = node.kind
-        if constant(kind):
-            return self._validated(kind, None, Built(kind=qualified(kind)), path)
-        given: dict[str, object] = {}
-        occurrences: list[tuple[str, Occurrence]] = []
-        parts: list[Part] = []
+        joint construction, nothing judged before it. A constant, with no premise, is
+        constructed the same way from nothing."""
+        gathered = Gathering()
         for name, premise in node.premises:
             at = f"{path}.{name}"
-            outcome = self.construct(premise, at, scope, context)
-            if isinstance(outcome, Available):
-                given[name] = outcome.value
-                occurrences.append((name, outcome.occurrence))
-            parts.append((at, outcome))
-        pending = conjoined(parts)
-        if pending is None:
-            occurrence = Built(kind=qualified(kind), parts=tuple(occurrences))
-            return self._validated(kind, given, occurrence, path)
-        return pending
+            gathered.add(name, at, self.construct(premise, at, scope, context))
+        return self._built(node.kind, gathered, path)
+
+    def _built(self, kind: type[BaseModel], gathered: Gathering, path: str) -> Outcome:
+        """The class constructed once every premise gathered is available, or what stands in
+        the way: the premises' open work, joint, or the first refusal or defect among them."""
+        pending = conjoined(gathered.parts)
+        if pending is not None:
+            return pending
+        occurrence = Built(kind=qualified(kind), parts=tuple(gathered.occurrences))
+        return self._validated(kind, gathered.given, occurrence, path)
 
     def _validated(
-        self, kind: type[BaseModel], given: dict[str, object] | None, occurrence: Built, path: str
+        self, kind: type[BaseModel], given: dict[str, object], occurrence: Built, path: str
     ) -> Outcome:
         """The class validated by Pydantic over its constructed premises, supplied by field name
         and read by field name only: they are the fields' values, not a party's payload, so an
         alias keeps its native meaning at the boundary and takes no part here, and a field whose
-        alias is another field's name receives its own premise. A constant, given nothing, is
-        constructed from its defaults, which are validated too. Available, refuted by its own
-        declared condition, or malformed."""
+        alias is another field's name receives its own premise. A class with no premise is
+        validated from nothing, its defaults applied natively, under the same context and with
+        the same classification of its refusal. Available, refuted by its own declared
+        condition, or malformed."""
         refusals = Refusals()
         try:
-            if given is None:
-                value = kind()
-            else:
-                value = kind.model_validate(given, context=refusals, by_alias=False, by_name=True)
+            value = kind.model_validate(
+                given or omitted(kind), context=refusals, by_alias=False, by_name=True
+            )
         except ValidationError as refusal:
             messages = tuple(e["msg"] for e in refusal.errors())
             if issubclass(kind, Refutable) and kind.refuted(refusal, refusals):

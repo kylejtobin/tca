@@ -727,6 +727,27 @@ class Circular(Fact):
     shipment: When[ShipmentChecked, OrderShipped]
 
 
+class CartDone(Fact):
+    """Every cart line shipped."""
+
+    cart: tuple[LineDone, ...]
+
+
+class GiftsAfterCart(Fact):
+    """The gifts shipped only once every cart line is: one operation on both sides of the
+    conditional, at distinct occurrences, the cart's lines and the gifts'."""
+
+    gifts: When[CartDone, tuple[LineDone, ...]]
+
+
+class CartAfterCart(Fact):
+    """The cart shipped only once the cart is shipped: the same occurrences on both sides, so the
+    condition is established by the very effects the conditional would govern, and the program
+    is refused at declaration."""
+
+    cart: When[CartDone, tuple[LineDone, ...]]
+
+
 class LineQuoted(Fact):
     """One line and its quote."""
 
@@ -901,6 +922,15 @@ CATALOGUING_VIA_GATED_DESK = Program(
 )
 QUOTED_SHIPPING = Program(
     goal=QuotedShipments, accepts=ReviewLines, interactions=(QUOTE, SHIP_LINE)
+)
+GIFTING = Program(
+    goal=GiftsAfterCart,
+    accepts=ProcessOrder,
+    interactions=(SHIP_LINE,),
+    bound=(
+        Binding(premise="gifts.condition.cart", subject="order.cart.lines"),
+        Binding(premise="gifts.result", subject="order.gifts.lines"),
+    ),
 )
 PADDING = Program(goal=Padded, accepts=Count)
 ALIASING = Program(goal=AliasedFact, accepts=FulfillOrder, interactions=(ALIASED,))
