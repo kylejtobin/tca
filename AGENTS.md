@@ -11,6 +11,12 @@ The old request runtime has been removed. Its replacement is not built. Most of 
 - `TODO.md` lists what is not done, in order.
 - `README.md` states what exists today.
 
+## Decision records and review authority
+
+Only Kyle's designated independent Codex reviewer may create, modify, delete, rename or supersede files under `docs/decisions/**`. Implementing agents, including Claude, must not edit those files or delegate such edits. Being a Codex implementation agent does not grant reviewer authority. Do not change this rule or create competing authoritative records elsewhere.
+
+Read [0003](docs/decisions/0003-construction-evidence-and-justified-execution.md) and [0004](docs/decisions/0004-review-authority-and-outcome-evidence.md). They bind architectural behavior and acceptance. Implementers may submit evidence-backed proposals in their handoff, but may not weaken requirements or mark TODO outcomes complete. Routine implementation and experiments within the contract should proceed without a documentation approval detour.
+
 ## Architectural principles
 
 - Business types remain the declarative program.
@@ -23,7 +29,7 @@ The old request runtime has been removed. Its replacement is not built. Most of 
 
 - During cleanup, remove the specified machinery and do not build its replacement.
 - During later implementation, do not restore deleted abstractions to satisfy old APIs, tests or documentation. The previous implementation is in Git history for reference only.
-- Record a new architectural decision when it is made. A decision may explicitly supersede an earlier one. Do not rewrite history to imply a decision was always current.
+- The designated reviewer records architectural decisions and explicit supersession. Implementers provide executable evidence and proposals without editing decision records. Do not rewrite history to imply a decision was always current.
 
 ## Tests and typing
 
@@ -63,4 +69,4 @@ Run `git`, `just`, `uv` and `docker` as the bare command, not behind `cd`, `&&` 
 
 ## Commits
 
-Fill in `.gitmessage`: the intended change, the reason, and the verification run. Name the relevant architecture section or acceptance requirement when one applies. A decision record is needed only when an architectural decision is made.
+Fill in `.gitmessage`: the intended change, the reason, and the verification run. Name the relevant architecture section or acceptance requirement when one applies. Architectural proposals and their evidence belong in the implementation handoff; only the designated reviewer writes the decision record.
