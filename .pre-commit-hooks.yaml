@@ -1,6 +1,0 @@
-- id: smell-check
-  name: smell-check
-  description: "Fails on procedure where TCA requires construction, read from the syntax tree by zone; needs only Python."
-  entry: .agents/skills/smell-check/smell-check
-  language: script
-  types: [python]

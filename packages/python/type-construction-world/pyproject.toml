@@ -1,7 +1,7 @@
 [project]
 name = "type-construction-world"
 version = "0.0.0"
-description = "The kinds a developer writes an application with: ten Pydantic classes, three ready-made types, and their configuration."
+description = "Retained declarative value and computation primitives: scalars, values, records, facts, derivations, relations and selections."
 requires-python = ">=3.14"
 license = "LicenseRef-BSD-3-Clause-Commons-Clause"
 license-files = ["LICENSE"]
@@ -18,7 +18,6 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.13,<3",
-    "pydantic-settings>=2.6,<3",
 ]
 import-names = ["type_construction.world"]
 import-namespaces = ["type_construction"]

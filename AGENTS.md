@@ -1,34 +1,35 @@
 # AGENTS.md
 
-This repository is Type Construction Architecture: a developer writes an application as subclasses of ten Pydantic classes, and an engine constructs them. Constructing a type is the computation. Refusal is the only control flow. The product is the modeling experience; the engine exists to make it true and never appear.
+TCA is a declarative application framework: Python/Pydantic business types declare evidence, rules, relationships and outcomes; a generic interpreter derives justified work for invocations that outlive requests and processes.
 
-You own this model. The measure of every decision is whether a developer says less, says it once, and says only their world.
+## Read before implementation
 
-## How to think
+Read the complete [foundations](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md).
 
-- Before any line, say what the thing is in the business, which states it can be in, and who owns it. The kind follows from the answers. A class with no answer to the first question is a step or a mechanism wearing a type; do not write it.
-- A rule is a type that cannot construct the wrong value: a constrained `Scalar`, or two scalars with disjoint constraints and a union of the facts that hold them. A check that confirms a value and returns the same type has thrown the knowledge away.
-- A choice is a union whose members each say fully what they are. A collection is a tuple. A failure is a refusal. An absence is a class. Each of these is a Pydantic construct the checker reads; an `if`, a loop, a `try`, a `None` or a validator is the same thing written as procedure.
-- Before adding a kind or a mechanism, name the discipline that already solved it and the Pydantic feature that already is it. When a line refuses, keep the kind and move its shape to what Pydantic constructs.
-- Every change is more type safe than what it replaces: the checker sees more, the proof refuses more, the page says less. Otherwise write that no more type safe strategy exists and what would refute that.
-- A red check is answered by modeling, not by narrowing. The second `isinstance` on the same data is the signal to stop and ask what the data is.
-- Procedure lives in two places and nowhere else: the engine, which asks Pydantic for every class not yet built and keeps what constructs, and a library kind's `perform`, where Python calls a client. The engine never computes an order, a scope or a plan; what a class needs is read from its fields when it is asked for.
+Earlier implementations and conversations are not alternate authority. Pydantic owns complete native construction; declared relationships own causal demand. Do not infer authorization from holder validators, field positions, callback signatures or partial validation.
 
-## How to work
+## Authority
 
-- Run every Pydantic behavior on the pinned version before writing it into code, a record or a skill. A claim without a run is not a decision.
-- Record a decision before reporting the code it decides: `docs/decisions/`, with Context, Rejected, Decision, Evidence and Consequences. A record states the current decision only; a replaced approach moves into Rejected. "Later", "next session" and "the loop will decide" are not decisions. The scenarios that pin a behavior live beside the package in `tests/features/`.
-- Run checks only as `just` declares them and report no other result. Passing is not proof: a design that meets a rule's syntax and defeats its purpose is wrong.
-- Lead every report with what is not done and why. A report whose first line is a pass is a defect in the report.
-- Write in software engineering language: classes, fields, calls, values and error types, each claim checkable. No metaphor.
-- Do the scope asked and nothing beyond it. One request, one scope; anything more waits to be asked for.
-- Run `git`, `just`, `uv` and `docker` as the bare command, never behind `cd`, `&&` or a pipe; the sandbox rules match the command as typed.
-- Commit with `.gitmessage` filled; name the records a change implements or amends when it touches `packages/python`.
+Routine implementation within the contract proceeds without another approval. A concrete conflict requires an executable counterexample and reviewer resolution. Review ownership does not make an impossible requirement feasible.
 
-## Where things are
+## Engineering behavior
 
-- `.agents/skills/tca-python-dev`: the developer's reference, what to write and what the engine does with it.
-- `.agents/skills/smell-check`: the seven line patterns that mark procedure on a page; `just check` runs it on every program.
-- `.agents/skills/tca-python-package`, `tca-infra`, `naming-guidelines`: packages, build, names.
-- `docs/product.md`: who this is for, the promise, the acceptance checks.
-- `docs/decisions/`: every decision with its evidence. `TODO.md`: what is not built, in order.
+Business scenarios exercise generic semantics; they do not become engine-specific branches. Preserve occurrence identity, source trust, native values, provenance and effect justification across boundaries. Use reusable native world primitives rather than application-validator boilerplate or a separate workflow.
+
+Use strict typing, focused semantic tests and checks; independent expected outcomes; actual native values and failure categories; no silent restriction of supported declarations or inversion of regression behavior. Do not substitute housekeeping, planning documents or unrequested frameworks for assigned implementation.
+
+## Reporting
+
+Name the commit, exact checks and their results, remaining failures and unverified guarantees. Distinguish source inspection, isolated experiments, repository checks and durable-host tests. Implementers do not declare success on an outcome or grant acceptance.
+
+## Repository checks
+
+Use the existing recipes:
+
+- `just check`: lint, formatting, strict typing, security checks and tests.
+- `just audit`: lockfile, dependency audit, code scanning and image pins.
+- `just build`: development image.
+- `just lock`: lockfile regeneration.
+- `just shell`: development shell.
+
+Targeted tests may use `uv run pytest <test-path> -q`. Run git, just, uv and docker as bare commands rather than hidden behind shell wrappers. Follow the commit template for intended change, reason and verification. Do not add routine documentation approval steps.

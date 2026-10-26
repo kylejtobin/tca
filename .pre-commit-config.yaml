@@ -30,4 +30,4 @@ repos:
         entry: uv run just audit
         language: system
         pass_filenames: false
-        files: ^(pyproject\.toml|uv\.lock|Dockerfile|compose\.yaml|packages/.*\.py)$
+        files: ^(pyproject\.toml|uv\.lock|Dockerfile|compose\.yaml|packages/.*(\.py|/pyproject\.toml))$

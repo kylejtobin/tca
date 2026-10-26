@@ -17,22 +17,17 @@ members = ["packages/python/*"]
 dev = [
     "bandit>=1.9.4",
     "basedpyright",
-    "import-linter",
-    "opentelemetry-distro>=0.58b0",
-    "opentelemetry-exporter-otlp-proto-http>=1.37",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.2",
     "pytest>=8",
-    "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "rust-just>=1.59.0",
-    "semgrep>=1.179.0",
 ]
+audit = ["semgrep>=1.179.0"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
-testpaths = ["packages/python", "tests"]
-asyncio_mode = "strict"
+testpaths = ["packages/python"]
 strict_config = true
 strict_markers = true
 xfail_strict = true
@@ -44,9 +39,7 @@ src = ["packages/python"]
 
 [tool.ruff.lint]
 select = ["E","W","F","I","N","UP","B","A","C4","PIE","RET","SIM","ARG","PTH","ERA","PL","TRY","RUF","ANN","S","FBT","TC","EM"]
-# UP046: Reply declares its fact covariant, which only a TypeVar can say; the new syntax infers
-# invariance for a field.
-ignore = ["ANN401","TRY003","TC001","TC002","TC003","UP046"]
+ignore = ["ANN401","TRY003","TC001","TC002","TC003"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S106", "ARG001", "PLR2004"]
@@ -58,7 +51,7 @@ runtime-evaluated-base-classes = ["pydantic.BaseModel","pydantic.RootModel"]
 known-first-party = ["type_construction"]
 
 [tool.basedpyright]
-include = ["packages/python", "tests"]
+include = ["packages/python"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 
@@ -67,24 +60,3 @@ targets = ["."]
 exclude_dirs = [".venv", "venv", "tests", "build", "dist", "htmlcov", ".git"]
 confidence = "LOW"
 severity = "LOW"
-
-[tool.importlinter]
-root_packages = ["type_construction.world", "type_construction.engine", "type_construction.cli", "type_construction.http", "type_construction.demo"]
-include_external_packages = true
-
-[[tool.importlinter.contracts]]
-name = "The world imports Pydantic and the standard library only"
-type = "forbidden"
-source_modules = ["type_construction.world"]
-forbidden_modules = ["type_construction.engine", "type_construction.cli", "type_construction.http", "type_construction.demo", "opentelemetry", "httpx", "fastapi"]
-
-[[tool.importlinter.contracts]]
-name = "A program imports the kinds, never the engine's body or a server"
-type = "forbidden"
-source_modules = ["type_construction.demo"]
-forbidden_modules = ["type_construction.cli", "type_construction.http"]
-
-[[tool.importlinter.contracts]]
-name = "The servers sit on the engine, which sits on the world"
-type = "layers"
-layers = ["type_construction.cli | type_construction.http", "type_construction.engine", "type_construction.world"]

@@ -15,6 +15,8 @@ description: Create or update docs/ADR.md with explicit human authorization, or 
 
 ## Authoring
 
+- Agents MUST read the current architecture document in full before authoring or reviewing decisions. Decisions MUST NOT contradict `docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`; a proposed architectural change requires explicit human approval and consistent updates to both documents.
+
 - Agents MUST maintain the current decision register in one file: `docs/ADR.md`.
 - Agents MUST create or update documentation only when the human user explicitly authorizes that documentation change. Development and review assignments do not grant this authorization.
 - Agents MUST write binding requirements using MUST and MUST NOT, with concrete subjects, actions, and boundaries.

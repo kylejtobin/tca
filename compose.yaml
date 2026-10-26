@@ -1,3 +1,5 @@
+# Development infrastructure only: a container for the checks and a local trace viewer. Neither is
+# the execution host of the architecture in docs/TCA_ARCHITECTURAL_FOUNDATIONS.md.
 services:
   dev:
     build:
@@ -9,7 +11,6 @@ services:
       - path: .env
         required: false
     environment:
-      PYDANTIC_AI_NO_BANNER: "1"
       OTEL_SERVICE_NAME: tca
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf

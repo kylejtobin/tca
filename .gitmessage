@@ -1,8 +1,12 @@
 <type>(<scope>): <imperative summary>
 
-<What changed and why, in the business's words where it has them.>
+<What changed and why, in a few sentences.>
+
+Verification: <the just recipes or targeted tests run, and anything not run.>
 
 # type: feat, fix, refactor, docs or chore.
 # Subject: imperative, specific, at most 72 characters.
-# Body: wrapped at 72 characters. Name the decision records a change
-# implements or amends, as 0042, when it touches packages/python.
+# Body: wrapped at 72 characters. Say what is intended and why. Name the
+# relevant section of docs/TCA_ARCHITECTURAL_FOUNDATIONS.md when one applies;
+# no decision record is required for every edit. Say plainly what was
+# not verified.

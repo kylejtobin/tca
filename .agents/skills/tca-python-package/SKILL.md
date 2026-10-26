@@ -1,6 +1,6 @@
 ---
 name: tca-python-package
-description: "Creates a new Python package in this workspace in the one shape every package has: pyproject, LICENSE, README, source module, tests package, and the two root edits. Use when a new package is needed, before any file in it is written by hand."
+description: "Creates a new Python package in this workspace in the one shape every package has: pyproject, LICENSE, README, source module, tests package, and its Dockerfile manifest copy. Use when a new package is needed, before any file in it is written by hand."
 ---
 
 # TCA Python Package
@@ -25,8 +25,8 @@ packages/python/type-construction-<name>/
     tests/type_construction_<name>/__init__.py   empty
 ```
 
-and makes the two root edits the workspace glob does not: the module joins `root_packages` under `[tool.importlinter]` in `pyproject.toml`, and the package's `pyproject.toml` gets its `COPY` line in the `Dockerfile` after the last one there. It refuses if the package directory exists and changes nothing.
+The root `pyproject.toml` declares the workspace glob `packages/python/*`, so the new package is a workspace member without an edit there. The script makes one root edit: the package's `pyproject.toml` gets its `COPY` line in the `Dockerfile`, after the last one there, so the image build can resolve the workspace from manifests. It refuses if the package directory exists and changes nothing.
 
-Afterwards: `uv add` the dependencies from inside the package directory, then `just lock`..
+Afterwards: `uv add` the dependencies from inside the package directory, then `just lock`.
 
-Tests are not included in the wheel. The world and the engine are `type-construction-world` and `type-construction-engine`, named like every other package.
+Tests are not included in the wheel. This skill does not prescribe which packages the project has or how they depend on each other.
