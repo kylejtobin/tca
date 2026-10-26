@@ -1,55 +1,47 @@
 ---
 name: tca-architecture-document
-description: Create, revise, or review TCA's architecture document using tailored arc42 and precise declarative engineering language. Use for architectural foundations, architecture.md, module boundaries, runtime contracts, or documenting an agreed architectural refinement.
+description: Write or review TCA's architecture document using tailored arc42 and precise declarative engineering language. Documentation edits require explicit human authorization.
 ---
 
 # TCA Architecture Document
 
-Write as a software architect responsible for a coherent, implementable design. Specify component responsibilities, relationships, contracts, and observable behavior in service of TCA's product.
+## Authorization
 
-## Establish the design
+Create or modify documentation only when the human user explicitly requests or authorizes that documentation change. Development, refactoring, bug fixes, passing tests, discovered inconsistencies, and this skill's invocation do not grant permission to edit documentation. Report discrepancies to the human; do not change requirements, add exceptions, or rewrite the design to accommodate implementation. Apply authorization only to the documents and changes it covers.
 
-Read the current user direction, relevant discussion, `docs/product.md`, and the architecture at `docs/TCA_ARCHITECTURAL_FOUNDATIONS.md` (or the user's designated successor). Consult applicable decisions for rationale and obligations. Reconstruct settled choices, their reasons, corrections, and actual open questions for each section.
+## Purpose and preparation
 
-Treat existing documents as revisable design evidence. Distinguish a contradiction in a proposed design from a departure from an earlier design. Preserve demonstrated improvements and identify genuine architectural amendments explicitly. Do not import old implementation details simply because they exist.
+Write as an architect specifying a coherent, implementable design. Read the human's current direction, relevant discussion, `docs/product.md`, and `docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`. Ground each section in established decisions and their reasoning. Separate agreed design from genuinely open choices and implementation evidence.
 
-Use the established TCA separation as context: independent world vocabulary, native Pydantic construction, execution declarations beside domain types, a Python interpreter separating construction from demand, independent provenance and admission, explanatory results, and a host that executes justified work. Read the current contract for exact semantics rather than duplicating them in this skill.
+Use current authorized architectural refinements rather than preserving historical mechanisms by default. A proposed design change requires explicit human authorization before it becomes documented policy.
 
-Resolve consequential choices before presenting a complete design. Define what each fact establishes, which boundary establishes it, and what behavior follows. Test the literal consequences across valid progress, refusal, composition, and later observations. Where library mechanics matter, verify them against the selected environment and primary documentation; label evidence accurately. Inspect code only when needed and within the user's scope.
+## Schema
 
-## Document schema
+Use [arc42](https://arc42.org/overview/), tailored to TCA. Record owner, status, date/version, and a reference to the product document.
 
-Use the twelve sections of [arc42](https://arc42.org/overview/), tailored to TCA. Record owner, date/version, document status, and a product-document reference.
+1. **Introduction and goals:** Architectural objectives and key quality goals.
+2. **Constraints:** Actual limits on architectural choices.
+3. **Context and scope:** System boundaries, users, interfaces, and external authorities.
+4. **Solution strategy:** Fundamental approach and rationale.
+5. **Building block view:** Components, responsibilities, contracts, and dependencies.
+6. **Runtime view:** Important execution scenarios and their interactions.
+7. **Deployment view:** Execution environments, infrastructure, and persistence boundaries.
+8. **Crosscutting concepts:** Shared construction, identity, ownership, evidence, permission, lifecycle, and security rules.
+9. **Architectural decisions:** Consequential choices and rationale; reference consistent ADRs.
+10. **Quality requirements:** Concrete scenarios and observable acceptance criteria.
+11. **Risks and technical debt:** Explicit weaknesses, uncertainties, and verification limits.
+12. **Glossary:** Stable definitions of essential terms.
 
-1. **Introduction and goals** — Architectural objectives and key quality goals; reference product intent.
-2. **Constraints** — Actual limits on architectural choices.
-3. **Context and scope** — Application/framework boundaries, users, interfaces, and external authorities.
-4. **Solution strategy** — Core design approach and why it fulfills the product.
-5. **Building block view** — Components, responsibilities, interfaces, and dependency direction.
-6. **Runtime view** — Important execution scenarios, including justified progress and failure behavior.
-7. **Deployment view** — Execution environments, infrastructure boundaries, and persistence responsibilities.
-8. **Crosscutting concepts** — Shared construction, ownership, identity, evidence, permission, lifecycle, security, and interface rules.
-9. **Architectural decisions** — Consequential choices and concise rationale; reference consistent ADRs without duplicating the specification.
-10. **Quality requirements** — Concrete behavioral scenarios and observable acceptance criteria.
-11. **Risks and technical debt** — Actual weaknesses, unresolved selections, and verification limits.
-12. **Glossary** — Stable definitions of essential terms.
+## Language
 
-Keep sections proportionate. Mark genuinely unselected technologies without inventing a stack. Do not convert the template into a roadmap or generic engineering checklist.
+Use concise, literal, declarative engineering language. Name the responsible component, condition, and consequence. State each rule once. Separate the rule from its rationale.
 
-## Language and precision
+Use tables for exact distinctions and diagrams for dependencies or meaningful execution sequences. Avoid em dashes, metaphors, slogans, conversation history, generic filler, and arbitrary function counts or line limits.
 
-Use concise, literal, declarative engineering language. Name the responsible component, condition, and consequence. Prefer “Admission establishes whether an observation supplies usable evidence” to metaphors about gates or foundations.
+Specify contracts precisely without inventing mechanisms or technology choices. State target requirements confidently; distinguish them from demonstrated implementation and executed checks. One document-status statement is sufficient.
 
-State each rule once and reference it where needed. Use tables for exact distinctions and diagrams for dependencies or significant interaction sequences. Keep rationale distinguishable from the rule it explains.
+## Review
 
-Specify the developer-visible and internal contracts precisely while leaving incidental implementation choices open. Avoid arbitrary line limits, function counts, speculative frameworks, narrative review history, diagnostic-string policies, and repeated warnings that the target is unimplemented. One status statement establishes the document's role.
+Check responsibilities and terminology across all sections. Follow important scenarios through the producer and consumer of each guarantee, including later observations. Preserve both safety and legitimate progress.
 
-Separate target requirements, implementation claims, and executed evidence. A model's successful construction does not establish source authority; a failed admission does not erase independently established execution facts. Preserve both safety and legitimate progress when explaining a boundary.
-
-## Review before delivery
-
-Trace representative histories through declarations, construction, admission, evaluation, dispatch, and subsequent observations. Check both the producer and consumer of every guarantee. Resolve ambiguity that would let an implementer satisfy examples while violating the contract.
-
-Confirm terminology, identity, conflict scope, retry permission, and component ownership agree across sections. Preserve independent work when one path is withheld. Do not call unresolved design choices implementation details or invent authority for an undefined policy.
-
-Ensure the result explains how the product is realized without restating the PRD or recounting the conversation. Keep acceptance criteria stable; identify new requirements as amendments. Deliver or edit only the requested artifacts, and name any remaining document inconsistency rather than silently reorganizing the repository.
+Make unresolved decisions visible. Never hide deviations in risks, caveats, unsupported-case lists, or new exceptions. Do not weaken acceptance criteria or convert implementation defects into architectural decisions. Keep the document focused on how the approved product is realized.
