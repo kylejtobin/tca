@@ -7,7 +7,7 @@
 <a href="#construction-current-status"><img src="https://img.shields.io/badge/Status-Under%20Construction-F59E0B?style=flat-square&labelColor=0d1117" alt="Status: Under Construction"></a>
 <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=0d1117" alt="Python 3.14+"></a>
 <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white&labelColor=0d1117" alt="Pydantic v2"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3%20%2B%20Commons%20Clause-22D3EE?style=flat-square&labelColor=0d1117" alt="License: BSD-3 + Commons Clause"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-22D3EE?style=flat-square&labelColor=0d1117" alt="License: Apache 2.0"></a>
 </p>
 
 ---
@@ -60,4 +60,4 @@ The product and architecture documents describe that design and its required beh
 
 ## License
 
-[BSD 3-Clause with the Commons Clause](LICENSE). Agent instructions and skills under `.agents/` use [Apache 2.0](.agents/LICENSE).
+[Apache License 2.0](LICENSE), for the whole repository, agent instructions and skills included.

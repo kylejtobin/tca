@@ -3,7 +3,7 @@ name = "type-construction-program"
 version = "0.0.0"
 description = "A declarative contract for durable business programs: typed relationships, a pure evaluator over recorded evidence, admission and an in-memory host."
 requires-python = ">=3.14"
-license = "LicenseRef-BSD-3-Clause-Commons-Clause"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]

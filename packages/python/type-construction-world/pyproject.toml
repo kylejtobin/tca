@@ -3,7 +3,7 @@ name = "type-construction-world"
 version = "0.0.0"
 description = "Retained declarative value and computation primitives: scalars, values, records, facts, derivations, relations and selections."
 requires-python = ">=3.14"
-license = "LicenseRef-BSD-3-Clause-Commons-Clause"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]
