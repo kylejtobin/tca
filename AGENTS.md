@@ -32,4 +32,4 @@ Use the existing recipes:
 - `just lock`: lockfile regeneration.
 - `just shell`: development shell.
 
-Targeted tests may use `uv run pytest <test-path> -q`. Run git, just, uv and docker as bare commands rather than hidden behind shell wrappers. Follow the commit template for intended change, reason and verification. Do not add routine documentation approval steps.
+Targeted tests may use `uv run pytest <test-path> -q`. Run git, just, uv and docker as bare commands rather than hidden behind shell wrappers. Read and follow [.gitmessage](.gitmessage) for commit, PR and squash messages. Do not add routine documentation approval steps.

@@ -12,16 +12,26 @@ This file MUST match `.agents/skills/tca-testing/AGENTS.md` byte for byte in eve
 
 ## Execution
 
-From the package directory:
+Setup, from the repository root, once per environment and against the lockfile, so an unfinished
+sibling package is never built: `uv sync --all-packages --no-install-workspace`, then
+`uv sync --package type-construction-<name> --inexact` for each package under test. A host tool
+of the same name is not the environment's; verify with `uv run which pytest`.
 
-- Package: `uv run --all-packages pytest tests -q`
-- Focused: `uv run --all-packages pytest tests -q -k '<test_name>'`
+From the package directory, through that package alone, so an unfinished sibling package neither
+blocks nor masks it:
+
+- Package: `uv run pytest tests -q`
+- Focused: `uv run pytest tests -q -k '<test_name>'`
 
 From the repository root:
 
 - Instruction parity: `python scripts/check_test_standards.py`
+- Package gate: `just check-package <name>` (the short name, as in `just check-package world`)
 - All tests: `uv run --all-packages pytest -q`
 - Repository gate: `just check`
+
+The repository gate and all-tests run build every package; while a package is unfinished they
+fail, and that failure MUST stay visible rather than be hidden by skips or stubs.
 
 ## Authority and completion
 

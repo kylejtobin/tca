@@ -26,6 +26,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 ### D-003: Keep validation deterministic (§2)
 
 - MUST: Validators compute deterministically from supplied values; engine-mediated validation uses `context=None`, with business information supplied through declared premises.
+- MUST: World computations and predicates use explicit policies independent of caller configuration, yielding the same result or failure category for the same declared inputs, native mode, and policy across construction, subsequent access, composition, and reconstruction; caller configuration and arithmetic flags remain unchanged on success and failure.
 - MUST NOT: Validators perform external effects or read ambient clocks, randomness, or mutable configuration.
 - WHY: The same declared inputs must retain their meaning across evaluation and recovery.
 
@@ -35,6 +36,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 - MUST: World models use frozen, strict configuration, forbid extra fields, revalidate supplied model instances, and leave arbitrary types disabled; declared collections use tuples and frozen sets, and closed vocabularies use enums.
 - MUST: Computations derive results from natively validated operands; comparisons and selections validate operands before evaluating their predicates.
+- MUST: Collection operations enforce their declared operand and result requirements for empty, singleton, and multiple-member inputs; member count MUST NOT bypass those requirements.
 - MUST NOT: Accept a supplied result as a substitute for computation or treat an observation-oriented type as authenticating its origin.
 - WHY: Constructed domain values express their declared meaning without asserting execution authority.
 
@@ -210,6 +212,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 ### D-030: Demonstrate guarantees through independent behavior (§10)
 
 - MUST: Tests assert public behavior independently of evaluator helpers, pair prevention with valid progress, exercise interacting guarantees, measure shared construction on graph-shaped examples, and compare memoized with equivalent uncached evaluation.
+- MUST: Tests establish the preconditions they claim to exercise: refusal-then-success cases demonstrate the candidate refusal, and post-construction environment changes occur after construction; critical safeguards demonstrate defect detection through targeted fault injection or mutation.
 - MUST: Verify native construction agreement for defaults, aliases, null, factories, nested validation, and replacement values, plus refusal, mixed errors, successful unions, and escaping programmer exceptions; verify the runtime identity, authority, progress, conflict, recovery, ownership, and closure decisions above.
 - MUST: Durable acceptance inject faults around intent commitment, dispatch, provider completion, recording, admission, and response delivery, including process loss and stale workers.
 - MUST NOT: Claim durable guarantees from isolated native construction probes.

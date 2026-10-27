@@ -49,7 +49,7 @@ The project now puts that responsibility in an engine. Python and Pydantic suppl
 
 TCA is in active architectural development and implementation. **There is not yet a working product ready to install and evaluate.**
 
-The repository contains value primitives and experimental execution code. Current work is establishing the contract that connects native construction, trusted evidence, and justified execution, including how those relationships survive delayed responses and interrupted work.
+The world package implements native values, computations, conditions, and selections. Its foundation has passed architectural review; additional adversarial tests and an independent package CI gate are the current pre-merge work. The engine is not yet implemented.
 
 The product and architecture documents describe that design and its required behavior. They are the best starting point for understanding and assessing the project.
 
@@ -57,6 +57,16 @@ The product and architecture documents describe that design and its required beh
 |---|---|
 | [Product definition](docs/product.md) | The developer experience, capabilities, scope, and intended value |
 | [Architecture](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md) | The components, contracts, and execution semantics |
+| [Architectural decisions](docs/ADR.md) | The binding engineering requirements |
+
+## 🚧 Roadmap
+
+- ✅ Native world values, computations, conditions, and selections.
+- Next: engine records and complete construction boundaries.
+- Then: declaration compiler, evaluation, evidence admission, and local execution.
+- Then: durable execution and recovery.
+
+See the [implementation plan](TODO.md) for the seven stages and their completion criteria.
 
 ## License
 

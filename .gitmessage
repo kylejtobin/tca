@@ -4,9 +4,17 @@
 
 Verification: <the just recipes or targeted tests run, and anything not run.>
 
-# type: feat, fix, refactor, docs or chore.
+# Applies to development commits, PR descriptions and squash messages.
+# Read and follow this standard even when supplying a message via CLI or API.
+# Type: feat, fix, refactor, test, docs or chore.
 # Subject: imperative, specific, at most 72 characters.
-# Body: wrapped at 72 characters. Say what is intended and why. Name the
-# relevant section of docs/TCA_ARCHITECTURAL_FOUNDATIONS.md when one applies;
-# no decision record is required for every edit. Say plainly what was
-# not verified.
+# Body: concise factual prose, wrapped at 72 characters. Describe the
+# concrete change and its reason for a reader without session context.
+# Cite the relevant architecture section or ADR for architectural changes.
+# Verification: state actual checks and results, failures and unverified
+# guarantees. Distinguish local execution from CI and reported evidence.
+# Exclude metaphors, promotional claims, personal or conversational details,
+# agent attribution, descriptions of effort and development-session logs.
+# Do not use em dashes or claim more than the evidence establishes.
+# Squash: write one message describing the complete reviewed outcome.
+# Do not concatenate development messages or recount abandoned approaches.
