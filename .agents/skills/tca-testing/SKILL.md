@@ -3,36 +3,43 @@ name: tca-testing
 description: Design, write, change, or review TCA unit, integration, and acceptance tests. Establish independent expectations, challenge failure boundaries and composition, and verify defect detection without preserving implementation accidents.
 ---
 
+---
+name: tca-testing
+description: Design, implement, revise, or review TCA unit, integration, and end-to-end acceptance tests. Apply correctness by construction, independent behavioral expectations, adversarial testing, and demonstrated defect detection without preserving implementation accidents.
+---
+
 # TCA Testing
 
-Use [AGENTS.md](AGENTS.md) as the canonical package test instruction file. Copy it unchanged to each package's `tests/AGENTS.md`; repository placement, commands, and authority belong there.
+Follow [AGENTS.md](AGENTS.md) for mandatory repository testing instructions. Keep that file synchronized with every package's `tests/AGENTS.md`.
 
-## Establish the contract
+## Establish correctness
 
-- Tests MUST identify the required behavior, its independent expected result, and a plausible defect they detect. Express these through names, inputs, and assertions; cite the governing requirement in the module docstring.
-- Expectations MUST come from the approved contract, explicit examples, or an independent reference. Tests MUST NOT calculate expected results through the implementation under test or preserve observed behavior merely because it exists.
-- Every changed guarantee MUST have valid-progress and failure-boundary coverage. Exercise applicable malformed inputs, missing evidence, conflicting claims, and interactions with other guarantees. Missing combinations MUST NOT be concealed behind isolated happy paths.
+- **Prevent defects by construction.** Identify guarantees enforced through declarative types, validated construction, and architectural invariants. Verify enforcement at the authoritative boundary; avoid duplicating those checks throughout the application. Report missing architectural guarantees rather than normalizing invalid constructions.
+- Derive expected behavior from approved contracts, explicit examples, or independent references. Never derive expected results from the implementation under test or preserve observed behavior merely because it exists.
+- For each changed guarantee, establish legitimate progress, meaningful failure boundaries, and a plausible defect the tests will detect. Exercise interactions between guarantees, not only isolated happy paths.
 
-## Choose the scope
+## Test at three layers
 
-| Type | Required scope and evidence |
-|---|---|
-| Unit | One rule or component; valid, boundary, and failure behavior with precise fault isolation. |
-| Integration | Real collaborating components; preservation of values, identity, state, and failures across their boundary. Substitute external systems only. |
-| Acceptance | Complete developer scenarios through public interfaces; required outcomes, justified progress, prohibited operations prevented, and consequential event sequences. No assertions about internal implementation structure. |
+| Layer | Required evidence | Applicable techniques |
+|---|---|---|
+| **Unit** | Individual rules, types, and components satisfy their contracts. | TDD, negative testing, boundary-value analysis, equivalence partitioning, property-based testing, fuzz testing, mutation testing. |
+| **Integration** | Real collaborating components preserve contracts, values, identity, state, and failure behavior across boundaries. | Contract testing, interface testing, state-transition testing, failure injection, transaction and recovery testing. |
+| **Acceptance (E2E)** | Complete developer workflows satisfy business requirements through public interfaces and the assembled application. | End-to-end testing, acceptance testing, regression testing, adversarial scenarios, business invariants, consequential event sequences. |
 
-Choose the smallest scope that establishes the guarantee. An acceptance scenario can integrate components; MUST NOT duplicate it solely to populate another category. Unit tests MAY target internal algorithms; their expectations MUST express required semantics rather than incidental layouts or call sequences.
+Select techniques according to the guarantee and its risks; techniques may apply across layers. Choose the smallest scope that provides meaningful evidence, but verify critical application outcomes end-to-end. Do not duplicate lower-level assertions merely to populate another layer.
 
-## Engineer the suite
+## Construct reliable tests
 
-- Tests MUST use explicit Arrange, Act, Assert structure and names stating condition and expected behavior. Keep consequential inputs and assertions visible. Share small setup helpers; MUST NOT build a second interpreter or testing framework.
-- Tests MUST run unattended, independently, and in any order. Own setup and cleanup; control time, randomness, filesystem, and external services. Generated failures MUST retain a reproducible seed or minimized example.
-- Use real values and real construction. Doubles MUST stop at the external boundary and MUST NOT supply the decision the test claims to verify. Assert actual external calls when testing execution permission.
-- Failures MUST identify the violated expectation and relevant inputs. Parameterize meaningful boundaries and event permutations. Keep fast focused checks available and run broader checks for interacting behavior.
+- Name tests for their conditions and expected behavior. Keep setup, actions, and assertions explicit; cite governing requirements in module docstrings.
+- Use real construction and real collaborating components. Isolate external dependencies where necessary, but never substitute the behavior being verified or supply the decision the test must establish.
+- Make tests independent, unattended, deterministic, and order-independent. Control time, randomness, filesystem, and external state. Preserve reproducible seeds or minimized counterexamples for generated failures.
+- Exercise valid behavior and relevant failures, including malformed inputs, conflicting evidence, boundary conditions, interrupted operations, and recovery where applicable. Verify resulting state and permitted side effects.
+- Assert required semantics, not incidental implementation structure, internal call sequences, or historical execution traces. Preserve confidence through refactoring and product evolution.
 
-## Challenge the evidence
+## Prove the tests work
 
-- Regression tests MUST fail on the reproduced defect and pass on the correction. Critical safeguards MUST undergo targeted fault injection or mutation, with the relevant test demonstrably failing for the intended reason.
-- Assess each mutation against the requirement before turning it into an assertion. A surviving mutant is a question about the contract or coverage, not permission to freeze current behavior.
-- Tests MUST NOT hide missing implementation or broken guarantees with skips, expected failures, swallowed exceptions, weaker assertions, or replacement mocks. Missing execution evidence remains unfinished work.
-- Passing counts, coverage, and mutation scores MUST NOT substitute for demonstrated behavior. Preserve both prevention and legitimate progress; a system that refuses everything MUST fail acceptance.
+- Reproduce regressions with a failing test before correcting the defect.
+- Challenge critical safeguards through targeted mutation testing or fault injection; establish that relevant defects cause meaningful failures.
+- Never conceal missing implementation or broken guarantees with skips, expected failures, swallowed exceptions, weakened assertions, or replacement mocks.
+- Treat coverage, test counts, and mutation scores as diagnostic evidence, not proof of correctness. A system that rejects everything must fail acceptance just as a system that permits everything must fail.
+- Optimize for the smallest maintainable suite that establishes convincing behavioral confidence.
