@@ -48,8 +48,9 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-006: Construct complete declared boundaries (§§2, 8)
 
-- MUST: One engine integration boundary delegates complete construction to Pydantic and retains its actual returned value and supplied-premise lineage; native nested revalidation remains intact.
-- MUST NOT: Reimplement Pydantic value semantics or substitute a standalone field-type adapter for complete holder construction.
+- MUST: One engine integration boundary delegates complete construction to Pydantic, including native defaults, aliases, constraints, nested revalidation, union selection, and world computations and conditions; retain its actual returned value and supplied-premise lineage.
+- MUST: Keep engine comparison of retained evidence separate from native construction.
+- MUST NOT: Replace or reinterpret native construction behavior or substitute a standalone field-type adapter for complete holder construction.
 - WHY: A second constructor would give declarations competing meanings.
 
 ### D-007: Preserve input and omission semantics (§8)
@@ -59,13 +60,14 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-008: Classify the actual native attempt (§8)
 
-- MUST: Return `Witness` on successful validation, `Refuted` when every reported validation error is `tca_refuted`, `Invalid` when any reported validation error has another type, and `Faulted` when a non-validation exception escapes.
+- MUST: Classify the native validation attempt as `Witness` on successful validation, `Refuted` when every reported validation error is `tca_refuted`, `Invalid` when any reported validation error has another type, and `Faulted` when a non-validation exception escapes.
 - MUST NOT: Infer hypothetical errors from paths Pydantic did not execute, override successful union construction because a candidate refused, or classify mixed refusal and malformed-input errors as `Refuted`.
 - WHY: Classification describes the constructor's actual outcome rather than engine speculation.
 
 ### D-009: Own retained values and envelopes (§§2, 8)
 
 - MUST: Check actual returned contents before publishing witnesses or retaining accepted or admitted values; supported contents are immutable scalars, owned enum values, tuples, frozen sets, and frozen models with recursively owned contents.
+- MUST: Raise a distinct engine ownership error when an engine ownership check fails, preventing publication or retention of the unowned content; keep this error separate from the native validation outcomes in D-008.
 - MUST: Copy caller-owned mappings before exposing read-only views, validate their contents, retain diagnostics as owned data, and keep raw envelopes as owned snapshots separate from business values; validation receives fresh working containers when required to protect history.
 - MUST NOT: Treat frozen wrappers as proof of deep ownership, retain live mutable exception objects, or permit validation to mutate retained history.
 - WHY: A revision must not change through an external writable alias.
@@ -146,6 +148,9 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-021: Separate result cardinality from authoritative conflict (§8)
 
+- MUST: Compare complete constructed results by type-sensitive structural equivalence, preserving exact types recursively and scalar representation distinctions, including Decimal sign, digits, and exponent and timestamp fields, fold, and zone; application normalization belongs to declared construction.
+- MUST: Comparison return a definite result for every pair of supported values independently of ambient configuration and process identity, with the same result across independent construction and faithful restoration.
+- MUST NOT: Normalize results during comparison or substitute native model equality or serialized-output equality without preserving every distinction required by this contract.
 - MUST: Fill a single-result occurrence with its first valid correlated result; add no second value for an equivalent valid result; preserve the admitted result and later claim as an evidence conflict when a materially different result is otherwise admissible.
 - MUST: Treat admitted result and definitive failure for the same attempt as incompatible, failure and success across different attempts as compatible, and uncertainty resolved by result or definitive failure as resolution.
 - MUST NOT: Create authoritative evidence conflicts from invalid or unauthorized claims or choose a winner by arrival order.
@@ -214,6 +219,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 - MUST: Tests assert public behavior independently of evaluator helpers, pair prevention with valid progress, exercise interacting guarantees, measure shared construction on graph-shaped examples, and compare memoized with equivalent uncached evaluation.
 - MUST: Tests establish the preconditions they claim to exercise: refusal-then-success cases demonstrate the candidate refusal, and post-construction environment changes occur after construction; critical safeguards demonstrate defect detection through targeted fault injection or mutation.
 - MUST: Verify native construction agreement for defaults, aliases, null, factories, nested validation, and replacement values, plus refusal, mixed errors, successful unions, and escaping programmer exceptions; verify the runtime identity, authority, progress, conflict, recovery, ownership, and closure decisions above.
+- MUST: Verify comparison consistency across independently constructed and faithfully restored values and histories, preservation of exact type and scalar representation distinctions, and agreement between equality and hashing wherever hashing is provided.
 - MUST: Durable acceptance inject faults around intent commitment, dispatch, provider completion, recording, admission, and response delivery, including process loss and stale workers.
 - MUST NOT: Claim durable guarantees from isolated native construction probes.
 - WHY: Passing isolated examples cannot establish compositional or durable correctness.
