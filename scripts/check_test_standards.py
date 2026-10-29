@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def check(root: Path) -> list[str]:
-    canonical = (root / ".agents/skills/tca-testing/AGENTS.md").read_bytes()
+    canonical = (root / ".agents/skills/tca-testing/TEST_DIR_AGENTS.md").read_bytes()
     failures = []
     packages = sorted((root / "packages/python").glob("*/pyproject.toml"))
     if not packages:
