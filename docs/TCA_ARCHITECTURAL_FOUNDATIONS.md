@@ -6,7 +6,7 @@
 **Structure:** arc42  
 **Product:** [TCA Product Definition](product.md)
 
-This document states the refined target design. It does not claim implementation acceptance. Where earlier architectural records conflict with the explicit decisions here, this document governs the target; those records require reconciliation.
+This document and the decision register in `ADR.md` specify the current target architecture. They do not establish implementation acceptance.
 
 ## 1. Introduction and goals
 
@@ -16,6 +16,8 @@ The architecture has two packages: `world` supplies reusable value semantics; `e
 
 The primary quality goals are:
 
+- **Single authored business model:** developers express business meaning once; TCA derives coordination without a second account of execution.
+- **Practical authoring:** application development, composition, extension, and diagnosis use the public model rather than engine internals.
 - **Correctness:** every operation has established demand, eligibility, and execution permission.
 - **Progress:** missing evidence permits justified acquisition; independent work remains concurrent.
 - **Composability:** shared dependencies, alternatives, collections, and repetition preserve their declared meaning.
@@ -30,12 +32,12 @@ Every framework mechanism must discharge a specific product or architectural obl
 
 - Python and Pydantic are the implementation foundation. Native construction is delegated to Pydantic rather than reconstructed inside the engine.
 - Application declarations, reusable primitives, and adapters are trusted code. TCA is not a Python sandbox.
-- Validators are deterministic over their supplied values, perform no external effects, and read no ambient clock, randomness, or mutable configuration. This guarantee concerns declared value semantics, not arbitrary subsequent Python behavior or incidental object-sharing patterns.
+- Native validation at the same complete boundary with the same supplied inputs, native mode, and declared policy is deterministic. Validators perform no external effects and read no ambient clock, randomness, or mutable configuration. Supplying an existing witness to another construction is a new native attempt, not a promise of equal output.
 - Engine-mediated validation uses `context=None`. Business information enters through declared premises.
 - The engine contains no application-specific branches.
 - Historical values must satisfy the supported ownership contract. Frozen wrappers alone do not establish ownership.
 - External systems retain authority over their permissions, transactions, and guarantees of repeat safety.
-- Function counts, line limits, and the number of graph variants are engineering observations, not architectural constraints.
+- Representations and mechanisms serve the declared program and its justified execution. Their incidental size, Python observability, or dependency on another mechanism supplies no additional business meaning.
 
 ## 3. Context and scope
 
@@ -53,6 +55,21 @@ The engine exposes declarations, observation ingress, evaluation results, and ho
 Trusted adapters establish external source identity and construct observations. External callers do not deserialize complete engine observations from the wire. A valid payload alone establishes neither source authority nor execution provenance.
 
 TCA coordinates application execution. Authoritative business storage, provider authorization, and external transaction semantics remain outside its authority.
+
+### Application authoring contract
+
+| Developer authors | TCA derives or manages |
+|---|---|
+| Business values, constraints, computations, conditions, and compositions through types | Complete native construction and actual outcomes |
+| Explicit supplying occurrences and relationships where type information does not establish them | Binding resolution, shared occurrence graph, and premise acquisition |
+| Conditional demand, capability contracts, permitted sources, correlations, and collection closure | Demand propagation, admission, justified proposals, dispatch coordination, and continuation |
+| Reusable value operations and capability adapters through public extension boundaries | Generic interpretation without application-specific engine changes |
+
+A business rule has one authoritative expression in the declared model. Application code does not restate it in transport handlers, workflow steps, or persistence coordination. Developers do not manually schedule dependencies or manage revisions, attempts, receiving registration, and recovery bookkeeping to express business behavior.
+
+Public types and declarations support reuse, nesting, alternatives, shared dependencies, and collection scopes without changing the meaning of the composed parts. Framework syntax preserves native annotations and metadata. The declaration contract specifies which relationships type information establishes, which require explicit declarations, how lexical resolution works, and how ambiguity is diagnosed. It does not require manually duplicating a dependency already established by that contract.
+
+Value extensions implement reusable world semantics through native construction; adapters implement external capability contracts. Neither extension introduces a second business workflow. Diagnostics identify application occurrences and relationships; routine application development does not require knowledge of engine records or worker mechanics.
 
 ## 4. Solution strategy
 
@@ -85,6 +102,8 @@ Relations validate their operands natively before evaluating predicates. A condi
 
 Comparisons, computations, and selections share a public vocabulary without requiring identical validator implementations. An observation-oriented type does not authenticate its own origin; the engine establishes its source relationship.
 
+World provides composable public types for value semantics through ordinary Python/Pydantic typing. Concrete validator arrangements, accessors, and stored derived fields are implementation choices constrained by native construction, validated operands, ownership, and prevention of caller-supplied substitute results. They do not impose universal idempotent revalidation on application types.
+
 ### Engine
 
 | Module | Responsibility |
@@ -110,6 +129,8 @@ The declaration vocabulary includes:
 
 The compiler resolves bindings lexically, preserves complete annotations and metadata, and diagnoses unknown sources, conflicting bindings, impossible projections, unsupported mutable declarations, and instantaneous construction cycles. Work requests require resolved premises. Multiple collection sources require an explicit relationship rather than an inferred join.
 
+The concrete declaration design must resolve type-directed binding, explicit occurrence references, annotation metadata, scope, defaults, and ambiguity together. Equal types do not establish shared identity or execution authority. Public syntax expresses the necessary relationships without requiring a separately authored copy of the compiled graph.
+
 The graph distinguishes accepted inputs, references, products, conditionals, choices, work, receives, and collections. Shared identity follows declared occurrences, not class equality.
 
 ## 6. Runtime view
@@ -131,6 +152,8 @@ A product demands its premises jointly. Field order and holder validators do not
 
 Native union construction over available values belongs to Pydantic. Selecting branch-specific external work belongs to the engine.
 
+Selection prerequisites are identified by explicit execution relationships. A condition's presence as a holder field alone does not make it a branch-selection prerequisite. Selection establishes justified branch work; it does not predetermine Pydantic's subsequent union outcome.
+
 While a choice is unresolved, acquire declared decision prerequisites under their own eligibility and preserve work independently justified across remaining alternatives. Withhold branch-specific result work.
 
 For conditional alternatives, select a branch when its conditions are established and every competitor is excluded by established condition refusal. Multiple qualifying branches are ambiguous. Malformed construction does not exclude a branch as a business decision.
@@ -149,7 +172,7 @@ A closed collection produces a finite tuple. A closer is scoped to its declared 
 
 ## 7. Deployment view
 
-Local and durable hosts share declaration, construction, admission, and evaluation semantics. A local host retains state in memory. A durable host preserves invocation state and resumes work without retaining the original request or coroutine.
+Local and durable hosts share declaration, construction, admission, and evaluation semantics. A local host retains state in memory. A durable host preserves invocation state and resumes work independently of the live initiating request or coroutine. Necessary construction inputs, native modes, and lineage may be retained as data.
 
 A host-specific reduction in supported construction modes or programs is an architectural contract change. Storage convenience does not authorize making Python-mode programs local-only.
 
@@ -164,7 +187,7 @@ The durable protocol is:
 
 A durable inbox retains early deliveries until their receiving relationship can be resolved. Retention is not admission.
 
-Worker coordination rejects stale commits and duplicate dispatch authorization. External execution is not atomic with local recording; recovery depends on capability guarantees.
+Worker coordination rejects stale commits and duplicate dispatch authorization. An outstanding authorization prevents another authorization of the same attempt even when dispatch is not established. Committed work remains discoverable for continuation across process loss; persistence and scheduling must close the gap between commitment and wakeup. External execution is not atomic with local recording; recovery depends on capability guarantees.
 
 Each invocation retains access to its executable artifact and compatible dependencies. An unavailable artifact produces a fault rather than recovery under current code. Migration is outside the initial design.
 
@@ -186,7 +209,9 @@ One integration boundary invokes Pydantic with the complete declared type and re
 
 Whole-value omission uses the complete boundary's native omission behavior. A standalone field-type adapter is not a substitute for holder defaults.
 
-Nested revalidation remains native behavior. Recovery must not accidentally normalize a serialized output again: retain original boundary inputs and mode, or use a versioned restoration representation with demonstrated fidelity.
+Each construction preserves the complete annotation and its metadata. Nested revalidation remains native behavior and its actual result is authoritative. Repeating construction from the same inputs is distinct from constructing a previously returned value again; the latter need not return an equal value.
+
+Recovery retains original boundary inputs and mode, or uses a versioned restoration representation with demonstrated fidelity. Restoring an established value preserves recorded meaning without accidentally applying normalization again. Subsequently supplying that restored value to an enclosing construction follows that boundary's native validation behavior.
 
 The chosen restoration protocol must specify what is retained, how native input modes are preserved, and how continuation recovers recorded meaning. Input replay requires a fidelity argument covering those boundaries; determinism and artifact pinning alone do not establish the protocol.
 
@@ -209,7 +234,7 @@ Check ownership before publishing every witness or retaining accepted or admitte
 
 Copy externally owned mappings before exposing read-only views, and validate their contents. Retained diagnostics use owned data rather than live mutable exception objects.
 
-Raw envelopes are owned snapshots separate from business values. Validation receives fresh working containers where needed; it cannot mutate retained history.
+Raw envelopes have a separate owned snapshot contract. Input dictionaries and lists may be represented faithfully without retaining external writable aliases; they need not satisfy the constructed business-value domain or use its restoration encoding. Validation receives fresh working containers where needed and cannot mutate retained history.
 
 Memoization is scoped to an evaluation and its relevant occurrence and demand context. Shared construction may be reused without bypassing native enclosing validation. No cache is independent business authority.
 
@@ -224,6 +249,8 @@ Evidence identity comes from admitted history. Collection members retain distinc
 Direct provenance comes from actual host dispatch. Delayed provenance requires an adapter-established source and a matching dispatched attempt for the stated effect. Supplied identifiers and arrival order alone establish nothing.
 
 Authorization to dispatch, evidence of actual dispatch, and evidence of external completion establish different facts. An authorization record alone proves neither dispatch nor completion. Failed payload construction or admission cannot erase provenance established independently.
+
+If execution may have occurred after authorization but dispatch evidence is absent, retain that uncertainty about the authorized attempt. Do not infer that no call occurred or manufacture direct dispatch provenance. Recovery of a new attempt requires the capability's repeat-safety or reconciliation contract.
 
 ### Observation meaning and permission
 
@@ -240,12 +267,14 @@ Permission is derived centrally:
 
 1. A relevant unresolved conflict withholds work as specified below.
 2. An admitted logical result prevents further attempts.
-3. Otherwise, no dispatched attempt permits the first attempt.
+3. Otherwise, no prior authorized attempt permits the first authorization; an outstanding authorization cannot be issued again.
 4. A definitive failure of the latest attempt permits the next.
 5. Uncertainty or an attributed answer without an admitted result follows recovery policy.
-6. An outstanding attempt or receipt alone waits.
+6. An outstanding authorization, dispatched attempt, or receipt alone waits unless established uncertainty invokes the recovery policy.
 
 Only established observations affect attempt knowledge. Earlier attempts do not repeatedly authorize retries after a new attempt starts.
+
+Permission accounts for authorization records to prevent duplicate calls without treating those records as proof of dispatch. A lost authorization-to-dispatch interval follows the uncertainty rule above, retaining what is known and unknown.
 
 Under `retry`, the capability guarantees repeat safety or provider idempotency using the stable logical effect identity. Under `reconcile`, no automatic redispatch occurs while uncertain; authoritative evidence must resolve it. No polling operation is inferred.
 
@@ -265,7 +294,7 @@ An admitted result and definitive failure attributed to the same attempt are inc
 
 An unresolved evidence conflict withholds further attempts for the disputed effect and any undispatched work relying on the disputed occurrence through its request, eligibility, or demand prerequisites. Committed but undispatched intents are rechecked and withheld. A shared operation may still proceed through an independent justification if its request and eligibility are unaffected.
 
-Previously dispatched work is not undone. Its observations remain recorded. Completed invocations are not silently reopened; later conflicts remain visible faults. Independent work continues. This design provides no automatic conflict winner or conflict-clearing mechanism.
+Previously dispatched work is not undone. Its observations remain recorded. Completed invocations are not silently reopened; later conflicts remain visible faults. Independent work continues. This design includes no engine operation for affirming a winner or clearing an authoritative conflict. External intervention supplies no new evidence authority by itself and does not establish non-completion or repeat safety. An engine conflict-resolution capability is an architectural extension requiring approval.
 
 ### Lifecycle, security, and interfaces
 
@@ -276,6 +305,8 @@ Cancellation stops new work and retains in-flight uncertainty and prior effects.
 Admission authority, business eligibility, and worker execution authority remain distinct. Database transactions and provider permissions are enforced at their owning systems.
 
 Interfaces derive schemas and explanations from declarations while preserving documented native input modes. Telemetry observes execution, does not control it, and excludes payloads and credentials by default.
+
+Declaration diagnostics name missing or ambiguous relationships in the public model. Runtime explanations identify the requested outcome, relevant occurrences, established evidence, failed construction, and outstanding prerequisites. Interface and extension code consume these same contracts instead of restating business rules.
 
 ## 9. Architectural decisions
 
@@ -292,12 +323,16 @@ Interfaces derive schemas and explanations from declarations while preserving do
 | Put explanations in results | Consumers inspect evidence and relationships rather than diagnostic names |
 | Share semantics across hosts | Persistence and scheduling do not create another business program |
 
-These decisions refine the earlier architecture. Individual ADRs may record rationale and evidence, but must not silently restore conflicting rules or duplicate this specification.
+The decision register records the governing commitments and rationale consistently with these contracts. Proposed implementations are assessed against both documents.
 
 ## 10. Quality requirements
 
 | Scenario | Required result |
 |---|---|
+| Business rule changes | One authoritative rule changes in the declared model; orchestration and transport code do not repeat the change |
+| Reuse, nesting, and extension | Composition preserves declared meaning, scopes, and native enclosing construction; new value operations or adapters require no application-specific engine branch |
+| Declaration authoring | Necessary relationships are expressible without manually reproducing the compiled graph; ambiguity is diagnosed rather than guessed |
+| Developer diagnosis | Explanations trace behavior through application types, occurrences, relationships, and evidence without requiring engine-internal knowledge |
 | Pure refusal, mixed errors, successful union, programmer exception | Correct construction classification |
 | Defaults, aliases, null, factories, nested validation, replacements | Agreement with native calls under matching inputs and `context=None` |
 | Missing, refused, and successful prerequisite | Acquisition, withholding, and release respectively; independent progress preserved |
@@ -307,13 +342,14 @@ These decisions refine the earlier architecture. Individual ADRs may record rati
 | Definitive failure and result for one attempt | Explicit conflict; affected undispatched work withheld |
 | Failure and success across different attempts | Compatible history |
 | Retry followed by reevaluation and late completion | No repeated permission; no further retry after completion; in-flight history retained |
-| Mutable replacement or caller mutation | No unowned witness and no historical mutation |
 | Repeated delivery identity | Delivery comparison distinguishes repetition from changed envelope content; collisions cannot replace admitted evidence |
 | Repeated otherwise admissible result | Result comparison distinguishes repetition from contradiction within its receiving contract |
 | Owned retained history | Caller mutation and validation working copies cannot change retained facts; ownership does not depend on record equality |
 | Durable continuation | The chosen restoration protocol preserves recorded meaning and supported native input modes under the pinned artifact |
 | Open and closed collections | Per-member progress, scoped closure, and stable final tuple |
 | Process loss and stale workers | Stable identities, retained effects, and rejection of stale commits |
+| Loss between authorization and established dispatch | No duplicate authorization, no invented dispatch fact, and capability-governed recovery |
+| Committed work before scheduling | Continuation discovers the work after process loss; a missing wakeup cannot strand it |
 
 Tests assert public behavior independently of evaluator helpers. Pair prevention with valid progress. Measure shared construction on graph-shaped examples and compare memoized behavior with equivalent uncached evaluation.
 
@@ -324,10 +360,9 @@ Durable acceptance requires fault injection around intent commitment, dispatch, 
 - The executable contract still requires composition testing; local fixes can preserve examples while breaking shared demand or alternatives.
 - Adapters must not report uncertainty as definitive failure or populate trusted fields directly from untrusted envelopes.
 - Ownership checks must cover actual replacement values and retained metadata, not only declared field types.
-- The durable codec, artifact packaging, storage backend, and worker coordination require implementation selection and evidence.
-- Unresolved authoritative conflicts require intervention; automatic resolution is outside this design.
+- The restoration representation and protocol, artifact packaging, storage backend, and worker coordination require concrete design selection and evidence.
+- Unresolved authoritative conflicts remain visible and withhold affected work; external intervention has no engine conflict-clearing authority under this design.
 - Isolated mechanics were checked on Pydantic 2.14.1. Repository compatibility must be verified against its selected lockfile.
-- Earlier ADRs and repository instructions need reconciliation where they conflict with this refinement. Their presence is not implementation acceptance.
 - Review findings must distinguish a violated rule from a newly discovered design problem. Changes to these rules are explicit architectural amendments.
 
 ## 12. Glossary
@@ -347,7 +382,7 @@ Durable acceptance requires fault injection around intent commitment, dispatch, 
 | Invocation | One accepted pursuit of an outcome |
 | Artifact | Immutable executable program and compatible dependencies |
 | Logical effect | One intended external operation, independent of physical retries |
-| Attempt | One physical dispatch of a logical effect |
+| Attempt | One numbered execution attempt for a logical effect; authorization alone does not establish dispatch |
 | Admission | Establishment of usable evidence from an observation |
 | Closure | Established completion boundary for an evolving source |
 | Conflict | Incompatible established claims retained without overwriting history |
