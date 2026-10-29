@@ -13,11 +13,11 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-001: Separate value semantics from execution (§§2–5)
 
-- MUST: World supplies scalar values, composite records, observation-oriented facts, computations, comparisons, finite selections, and the refusal protocol; engine supplies declarations, graph compilation, records, construction integration, evaluation, admission, and host operations.
-- MUST: Declared types and relationships own business meaning; Pydantic owns complete native construction; the engine supplies justified premises, interprets explicit execution relationships, records evidence, and derives justified work; every mechanism discharges a specific product or architectural obligation.
-- MUST NOT: Infer framework requirements from incidental Python distinctions or dependencies introduced by other mechanisms.
-- MUST NOT: World depend on execution concepts, or engine contain application-specific branches or require a separately authored business workflow.
-- WHY: Business values remain reusable while one generic engine interprets declared execution relationships.
+- MUST: Developers express business meaning once through declared types and relationships; world supplies reusable value semantics, Pydantic owns complete native construction, and the engine interprets explicit execution relationships, records evidence, and derives justified work.
+- MUST: The framework manage binding, demand, admission, attempts, dispatch coordination, and continuation without requiring applications to restate their business model as orchestration.
+- MUST: Every framework mechanism discharge a specific product or architectural obligation.
+- MUST NOT: World depend on execution concepts, the engine contain application-specific business branches, or incidental Python distinctions create additional framework requirements.
+- WHY: The declared business model must be the executable program rather than one representation alongside a separately authored workflow.
 
 ### D-002: Preserve trust and external authority (§§2–3, 8)
 
@@ -27,21 +27,21 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-003: Keep validation deterministic (§2)
 
-- MUST: Validators compute deterministically from supplied values; engine-mediated validation uses `context=None`, with business information supplied through declared premises.
-- MUST: World computations and predicates use explicit policies independent of caller configuration, yielding the same result or failure category for the same declared inputs, native mode, and policy across construction, subsequent access, composition, and reconstruction; caller configuration and arithmetic flags remain unchanged on success and failure.
+- MUST: Native construction at the same complete boundary with the same supplied inputs, native mode, and declared policy be deterministic; validators use supplied business premises and engine-mediated validation uses `context=None`.
+- MUST: World computations and predicates apply their declared policies to validated operands, independent of caller configuration, and leave caller configuration and arithmetic flags unchanged on success and failure.
 - MUST NOT: Validators perform external effects or read ambient clocks, randomness, or mutable configuration.
-- MUST NOT: Extend deterministic declared value semantics into a guarantee of arbitrary subsequent Python behavior or incidental object-sharing preservation.
-- WHY: The same declared inputs must retain their meaning across evaluation and recovery.
+- MUST NOT: Equate deterministic construction with idempotent revalidation of its output, or extend declared semantics into arbitrary subsequent Python behavior or incidental object-sharing preservation.
+- WHY: Each native attempt and declared computation must retain its own meaning without conflating different operations.
 
 ## World and native construction
 
 ### D-004: Use native world value semantics (§5)
 
-- MUST: World models use frozen, strict configuration, forbid extra fields, revalidate supplied model instances, and leave arbitrary types disabled; declared collections use tuples and frozen sets, and closed vocabularies use enums.
-- MUST: Computations derive results from natively validated operands; comparisons and selections validate operands before evaluating their predicates.
-- MUST: Collection operations enforce their declared operand and result requirements for empty, singleton, and multiple-member inputs; member count MUST NOT bypass those requirements.
-- MUST NOT: Accept a supplied result as a substitute for computation or treat an observation-oriented type as authenticating its origin.
-- WHY: Constructed domain values express their declared meaning without asserting execution authority.
+- MUST: World supply composable public value types, computations, conditions, and selections through ordinary Python/Pydantic typing; models use frozen, strict configuration, forbid extra fields, revalidate instances, and leave arbitrary types disabled; declared collections use tuples and frozen sets and closed vocabularies use enums.
+- MUST: Computations derive their results from natively validated operands; conditions and selections validate operands before applying their declared semantics; collection operations enforce operand and result requirements for empty, singleton, and multiple-member inputs.
+- MUST: Value extensions compose through the same native contracts without application-specific engine changes.
+- MUST NOT: Accept a caller-supplied result as a substitute for computation, treat observation-oriented types as authenticating origin, or impose a universal accessor, stored-field, or validator arrangement beyond these semantic requirements.
+- WHY: Reusable native value semantics must compose without becoming execution coordination or implementation-specific restrictions.
 
 ### D-005: Reserve structured condition refusal (§§5, 8)
 
@@ -51,10 +51,10 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-006: Construct complete declared boundaries (§§2, 8)
 
-- MUST: One engine integration boundary delegates complete construction to Pydantic, including native defaults, aliases, constraints, nested revalidation, union selection, and world computations and conditions; retain its actual returned value and supplied-premise lineage.
-- MUST: Keep engine comparison of retained evidence separate from native construction.
-- MUST NOT: Replace or reinterpret native construction behavior or substitute a standalone field-type adapter for complete holder construction.
-- WHY: A second constructor would give declarations competing meanings.
+- MUST: One engine integration boundary delegate complete construction to Pydantic, preserving the complete annotation and metadata, native defaults, aliases, constraints, nested revalidation, union selection, and world computations and conditions; retain the actual returned value and supplied-premise lineage.
+- MUST: Treat supplying an existing witness to another boundary as a new native construction attempt whose actual outcome is authoritative; keep retained-evidence comparison separate.
+- MUST NOT: Replace native behavior, assume equal output after revalidation, or substitute a standalone field-type adapter for complete holder construction.
+- WHY: Declarations retain one native value meaning across composition and execution.
 
 ### D-007: Preserve input and omission semantics (§8)
 
@@ -70,6 +70,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 ### D-009: Own retained values and envelopes (§§2, 8)
 
 - MUST: Ownership protect retained history from external writable aliases; judge it independently of comparison, canonicalization, serialization, and durable encoding.
+- MUST: Raw-envelope snapshots faithfully represent input containers, including dictionaries and lists, without retaining writable aliases; keep that contract separate from constructed business-value ownership and supply fresh working containers for validation.
 - MUST: Check actual returned contents before publishing witnesses or retaining accepted or admitted values; supported contents are immutable scalars, owned enum values, tuples, frozen sets, and frozen models with recursively owned contents.
 - MUST: Raise a distinct engine ownership error when an engine ownership check fails, preventing publication or retention of the unowned content; keep this error separate from the native validation outcomes in D-008.
 - MUST: Copy caller-owned mappings before exposing read-only views, validate their contents, retain diagnostics as owned data, and keep raw envelopes as owned snapshots separate from business values; validation receives fresh working containers when required to protect history.
@@ -80,10 +81,11 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-010: Compile explicit relationships (§5)
 
-- MUST: Declarations express supplying occurrences, conditional demand, interactions and their capability contracts, receives, member sources and closure, accepted inputs, goals, and pinned programs; compilation resolves bindings lexically and preserves complete annotations and metadata.
-- MUST: Diagnose unknown sources, conflicting bindings, impossible projections, unsupported mutable declarations, instantaneous construction cycles, and unresolved work-request premises; require an explicit relationship between multiple collection sources.
-- MUST NOT: Infer a join between collection sources.
-- WHY: Execution relationships must be established before runtime interpretation.
+- MUST: The public declaration contract specify supplying occurrences, conditional demand, capabilities, permitted receives, member sources and closure, accepted inputs, goals, and pinned programs; resolve type-directed binding, explicit references, lexical scope, metadata, defaults, and ambiguity coherently.
+- MUST: Compilation preserve complete annotations, derive the shared graph from that contract, and diagnose unknown sources, conflicting bindings, impossible projections, unsupported mutable declarations, instantaneous construction cycles, and unresolved work-request premises.
+- MUST: Multiple collection sources have an explicit relationship.
+- MUST NOT: Require applications to manually duplicate relationships already established by the declaration contract, infer business authority from equal types, or infer a collection join.
+- WHY: Developers declare necessary execution meaning while compilation supplies its mechanical representation.
 
 ### D-011: Preserve occurrence identity in a shared graph (§5)
 
@@ -106,10 +108,11 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-014: Separate union construction from work selection (§6)
 
-- MUST: Delegate native union construction over available values to Pydantic; while work selection is unresolved, acquire declared decision prerequisites under their own eligibility, preserve independently justified work, and withhold branch-specific result work.
+- MUST: Delegate native union construction over available values to Pydantic; identify branch-selection prerequisites through explicit execution relationships, not merely condition-valued holder fields.
+- MUST: While selection is unresolved, acquire decision prerequisites under their own eligibility, preserve independently justified work, and withhold branch-specific result work.
 - MUST: Select a conditional alternative only when its conditions are established and every competitor is excluded by established condition refusal; report multiple qualifying branches as ambiguous.
-- MUST NOT: Use malformed construction to exclude a business alternative.
-- WHY: Acquiring a decision and executing its selected branch are different judgments.
+- MUST NOT: Use malformed construction to exclude a business alternative or treat engine selection as predetermining a native union outcome.
+- WHY: Work selection interprets declared execution relationships while native construction remains authoritative for values.
 
 ### D-015: Bound caching and preserve explanations (§§4–5, 8)
 
@@ -169,22 +172,23 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 - MUST: An unresolved evidence conflict withhold further attempts for its effect and undispatched work relying on the disputed occurrence through request, eligibility, or demand prerequisites, including committed intents; preserve independent work and independent justifications whose request and eligibility are unaffected.
 - MUST: Retain previously dispatched work and its observations; expose later conflicts on completed invocations as visible faults.
-- MUST NOT: Undo dispatched work, silently reopen completed invocations, or automatically select or clear an authoritative conflict.
+- MUST NOT: Undo dispatched work or silently reopen completed invocations; include no engine winner-affirmation or conflict-clearing operation in this design. Adding such a capability requires an approved architectural amendment.
 - WHY: Disputed authority stops affected future execution without rewriting history or blocking unrelated progress.
 
 ### D-023: Preserve observation meanings (§§6, 8)
 
 - MUST: A receipt mean acknowledgement without business completion; a result mean a reported business outcome including negative answers; failed mean established non-completion and established repeat safety; uncertain mean completion is not established either way.
 - MUST: Treat timeouts, adapter exceptions, disconnects, local recording failures, and attributed answers without admitted results as uncertainty; permit an adapter's failed report only under the stronger capability guarantee.
-- MUST NOT: Treat a negative business answer as execution failure or a receipt as a completed result.
+- MUST NOT: Treat a negative business answer as execution failure or a receipt as a completed result; an operator identity or assertion alone MUST NOT establish external non-completion or repeat safety.
 - WHY: Recovery depends on what execution is established to have done.
 
 ### D-024: Derive permission centrally from independent facts (§8)
 
-- MUST: Apply permission in this order: relevant conflict withholds; admitted logical result stops further attempts; no dispatched attempt permits the first; definitive failure of the latest attempt permits the next; uncertainty or an attributed answer without admitted result follows recovery policy; outstanding attempt or receipt alone waits.
-- MUST: Derive attempt knowledge only from established observations and preserve equivalent permission across receipt and uncertainty arrival permutations.
-- MUST NOT: Maintain competing execution-status authority or reuse an earlier attempt to authorize repeated retries after a new attempt starts.
-- WHY: One derivation prevents contradictory or arrival-dependent execution permission.
+- MUST: Derive permission in this order: relevant conflict withholds; admitted logical result stops further attempts; no prior authorized attempt permits first authorization; definitive failure of the latest attempt permits the next; established uncertainty follows recovery policy; otherwise outstanding authorization, dispatch, or receipt waits.
+- MUST: An outstanding authorization prevent duplicate authorization of its attempt without proving dispatch; an unresolved authorization-to-dispatch interval retain uncertainty and recover under the capability contract.
+- MUST: Attempt knowledge use established observations, preserve equivalent permission across receipt and uncertainty permutations, and retain independently established facts.
+- MUST NOT: Infer either actual dispatch or established non-execution from missing dispatch evidence, maintain competing execution-status authority, or reuse an earlier attempt to authorize retries after a new attempt starts.
+- WHY: Permission must prevent duplicate calls while preserving uncertainty and legitimate recovery.
 
 ### D-025: Recover under the capability contract (§§6, 8)
 
@@ -198,6 +202,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 ### D-026: Dispatch only currently justified committed work (§§4, 6–8)
 
 - MUST: The host evaluate, commit intent, record attempt before dispatch, execute through adapters, record observations and admission results, and advance revisions; recheck justification at its authoritative dispatch decision.
+- MUST: Outstanding authorization prevent duplicate dispatch authorization; the host retain discoverable committed work across process loss between commitment and scheduling, and recover uncertain execution under D-024 and D-025.
 - MUST: Cancellation stop new work while retaining in-flight uncertainty and prior effects; caller disconnection remain distinct from cancellation.
 - MUST NOT: Have the host independently select business branches or claim that a subsequently recorded conflict or cancellation prevented an already authorized external call.
 - WHY: Host sequencing must preserve the evaluator's authority at the execution boundary.
@@ -206,7 +211,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 - MUST: Treat host-specific reductions in supported construction modes or programs as architectural contract changes.
 - MUST NOT: Make supported Python-mode programs local-only as an incidental persistence choice.
-- MUST: Local and durable hosts share declaration, construction, admission, and evaluation semantics; durable execution load pinned artifacts and revisions, commit intents and required receiving state against the expected revision, retain observations and admission, and resume without the original request or coroutine.
+- MUST: Local and durable hosts share declaration, construction, admission, and evaluation semantics; durable execution load pinned artifacts and revisions, commit intents and required receiving state against the expected revision, retain observations and admission, and resume independently of the live initiating request or coroutine; necessary construction inputs and modes may be retained as data.
 - MUST: Durable inboxes retain early deliveries until their receiving relationship resolves, and worker coordination reject stale commits and duplicate dispatch authorization.
 - MUST NOT: Treat inbox retention as admission or introduce a second application workflow through persistence or scheduling.
 - WHY: Durability changes execution mechanics without changing the business program.
@@ -216,29 +221,34 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 - MUST: Specify the concrete continuation and restoration protocol, what it retains, how it preserves supported native input modes, and the fidelity argument establishing preservation of recorded meaning.
 - MUST NOT: Treat determinism and artifact pinning alone as a complete restoration protocol or demonstration of fidelity.
 - MUST: Each invocation retain access to its executable artifact and compatible dependencies; unavailable artifacts produce faults; restoration retain original boundary inputs and mode or use a versioned representation with demonstrated fidelity.
-- MUST NOT: Recover under current code in place of a missing pinned artifact or accidentally normalize serialized output again.
+- MUST: Distinguish faithful restoration of established values from subsequent native construction using those values; preserve native behavior at that subsequent boundary without requiring idempotent revalidation.
+- MUST NOT: Recover under current code in place of a missing pinned artifact, accidentally normalize serialized output again during restoration, or require a custom value codec instead of another demonstrated faithful representation.
 - WHY: Recovery must preserve the meaning of work already in progress.
 
 ### D-029: Project interfaces without competing semantics (§§3, 8)
 
-- MUST: Direct calls, CLI, APIs, and event ingress project the engine's declarations, observations, results, and host operations; derive schemas and explanations from declarations and preserve documented native input modes; distinguish commands, queries, and events by role rather than transport.
+- MUST: Direct calls, CLI, APIs, and event ingress project the same declarations, observations, results, and host operations; derive schemas and explanations from declarations, preserve native input modes, and distinguish commands, queries, and events by role.
+- MUST: Declaration diagnostics and runtime explanations identify application types, occurrences, relationships, evidence, construction outcomes, and unresolved prerequisites without requiring routine developers to understand engine records or worker mechanics.
+- MUST: Public value and adapter extension contracts permit reusable semantics and capabilities without changing the generic engine or restating business rules in interface code.
 - MUST: Telemetry observe execution without controlling it and exclude payloads and credentials by default.
-- WHY: Interfaces and observability must preserve the same application contract.
+- WHY: Public authoring, extension, and diagnosis must preserve one executable business model across interfaces.
 
 ## Verification and decision governance
 
 ### D-030: Demonstrate guarantees through independent behavior (§10)
 
+- MUST: Verify that a business rule is authored and changed once, public declarations express required relationships without reproducing the compiled graph, composition preserves scope and native validation, extensions require no application-specific engine branch, and explanations trace the public model.
 - MUST: Tests assert public behavior independently of evaluator helpers, pair prevention with valid progress, exercise interacting guarantees, measure shared construction on graph-shaped examples, and compare memoized with equivalent uncached evaluation.
 - MUST: Tests establish the preconditions they claim to exercise: refusal-then-success cases demonstrate the candidate refusal, and post-construction environment changes occur after construction; critical safeguards demonstrate defect detection through targeted fault injection or mutation.
 - MUST: Verify native construction agreement for defaults, aliases, null, factories, nested validation, and replacement values, plus refusal, mixed errors, successful unions, and escaping programmer exceptions; verify the runtime identity, authority, progress, conflict, recovery, ownership, and closure decisions above.
 - MUST: Verify delivery repetition and collision behavior, result repetition and contradiction behavior, historical ownership against writable aliases, and restoration fidelity under the chosen protocol as separate contracts; these checks do not require universal record or history equality.
 - MUST: Durable acceptance inject faults around intent commitment, dispatch, provider completion, recording, admission, and response delivery, including process loss and stale workers.
-- MUST NOT: Claim durable guarantees from isolated native construction probes.
+- MUST NOT: Claim durable guarantees from isolated native construction probes or present specified future tests and written walkthroughs as executed verification.
 - WHY: Passing isolated examples cannot establish compositional or durable correctness.
 
 ### D-031: Keep implementation choices distinct from architectural changes (§§7, 9, 11)
 
-- MUST: Reviewers distinguish a violated rule from a newly discovered design problem; architectural amendments require explicit human approval and consistent architecture and register updates; reconcile obsolete records rather than treating them as alternate authority.
-- MUST NOT: Present storage, scheduler, topology, durable codec, artifact packaging, or worker coordination choices as already decided by the architecture when they remain open, or introduce migration into the initial design.
+- MUST: New restrictions on supported declarations, new evidence authority, and new conflict-resolution capabilities be identified as architectural amendments rather than implementation conveniences.
+- MUST: Reviewers distinguish a violated rule from a newly discovered design problem; architectural amendments require explicit human approval and consistent architecture and register updates; the current architecture and register remain mutually consistent.
+- MUST NOT: Present storage, scheduler, topology, restoration representation and protocol, artifact packaging, or worker coordination choices as already decided by the architecture when they remain open, or introduce migration into the initial design.
 - WHY: Open implementation work cannot silently change approved guarantees.
