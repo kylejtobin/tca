@@ -2,7 +2,7 @@
 
 **Status:** Target architecture  
 **Owner:** Kyle Tobin  
-**Date:** October 26, 2026  
+**Date:** October 28, 2026\
 **Structure:** arc42  
 **Product:** [TCA Product Definition](product.md)
 
@@ -168,7 +168,7 @@ The storage backend, scheduler, and deployment topology remain unselected. Estab
 
 ### Native construction
 
-One integration boundary invokes Pydantic with the complete declared type and retains its actual returned value.
+One integration boundary invokes Pydantic with the complete declared type and retains its actual returned value. Pydantic applies native defaults, aliases, constraints, nested revalidation, union selection, and world validators that compute values and evaluate conditions. The engine supplies inputs and classifies the actual outcome; it does not replace or reinterpret native construction behavior. Comparing retained evidence is a separate engine responsibility.
 
 | Input | Construction policy |
 |---|---|
@@ -241,6 +241,10 @@ Admission checks the pinned artifact, established source, native construction, a
 
 Deduplication identifies delivery within its source and receiving namespace, then compares role, mode, relationship, and owned envelope content with type-sensitive equivalence. An identity collision with different content is recorded as a rejected delivery conflict; it cannot replace admitted evidence.
 
+Result equivalence is type-sensitive structural equivalence of complete constructed content. Comparison preserves exact types recursively and scalar representation distinctions, including Decimal sign, digits, and exponent and timestamp fields, fold, and zone. Thus `Decimal("2.5")` and `Decimal("2.50")` are different results. Applications normalize immaterial differences through declared construction; the engine does not normalize them during comparison.
+
+Comparison returns a definite result for every pair of supported values, independently of ambient configuration and process identity, and preserves its result across independent construction and faithful restoration. Native model equality or equality of serialized outputs is not sufficient unless it preserves all distinctions required by this contract. Delivery and result comparison may share the structural comparison mechanism while comparing their respective content.
+
 For a single-result occurrence, the first valid correlated result fills it. A later equivalent valid result adds no second value. A materially different otherwise admissible result creates an evidence conflict while preserving the admitted result and the later claim. Invalid or unauthorized claims do not create authoritative evidence conflicts.
 
 An admitted result and definitive failure attributed to the same attempt are incompatible established claims. Failure of one attempt and success of another are compatible. Uncertainty followed by an established result or definitive failure is resolution, not contradiction.
@@ -290,6 +294,7 @@ These decisions refine the earlier architecture. Individual ADRs may record rati
 | Failure and success across different attempts | Compatible history |
 | Retry followed by reevaluation and late completion | No repeated permission; no further retry after completion; in-flight history retained |
 | Mutable replacement or caller mutation | No unowned witness and no historical mutation |
+| Independent construction and faithful restoration | Equivalent retained content compares consistently; exact type and scalar representation differences remain distinguishable; hashing, where provided, agrees with equality |
 | Open and closed collections | Per-member progress, scoped closure, and stable final tuple |
 | Process loss and stale workers | Stable identities, retained effects, and rejection of stale commits |
 
