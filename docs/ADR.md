@@ -14,6 +14,8 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 ### D-001: Separate value semantics from execution (§§2–5)
 
 - MUST: World supplies scalar values, composite records, observation-oriented facts, computations, comparisons, finite selections, and the refusal protocol; engine supplies declarations, graph compilation, records, construction integration, evaluation, admission, and host operations.
+- MUST: Declared types and relationships own business meaning; Pydantic owns complete native construction; the engine supplies justified premises, interprets explicit execution relationships, records evidence, and derives justified work; every mechanism discharges a specific product or architectural obligation.
+- MUST NOT: Infer framework requirements from incidental Python distinctions or dependencies introduced by other mechanisms.
 - MUST NOT: World depend on execution concepts, or engine contain application-specific branches or require a separately authored business workflow.
 - WHY: Business values remain reusable while one generic engine interprets declared execution relationships.
 
@@ -28,6 +30,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 - MUST: Validators compute deterministically from supplied values; engine-mediated validation uses `context=None`, with business information supplied through declared premises.
 - MUST: World computations and predicates use explicit policies independent of caller configuration, yielding the same result or failure category for the same declared inputs, native mode, and policy across construction, subsequent access, composition, and reconstruction; caller configuration and arithmetic flags remain unchanged on success and failure.
 - MUST NOT: Validators perform external effects or read ambient clocks, randomness, or mutable configuration.
+- MUST NOT: Extend deterministic declared value semantics into a guarantee of arbitrary subsequent Python behavior or incidental object-sharing preservation.
 - WHY: The same declared inputs must retain their meaning across evaluation and recovery.
 
 ## World and native construction
@@ -66,6 +69,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-009: Own retained values and envelopes (§§2, 8)
 
+- MUST: Ownership protect retained history from external writable aliases; judge it independently of comparison, canonicalization, serialization, and durable encoding.
 - MUST: Check actual returned contents before publishing witnesses or retaining accepted or admitted values; supported contents are immutable scalars, owned enum values, tuples, frozen sets, and frozen models with recursively owned contents.
 - MUST: Raise a distinct engine ownership error when an engine ownership check fails, preventing publication or retention of the unowned content; keep this error separate from the native validation outcomes in D-008.
 - MUST: Copy caller-owned mappings before exposing read-only views, validate their contents, retain diagnostics as owned data, and keep raw envelopes as owned snapshots separate from business values; validation receives fresh working containers when required to protect history.
@@ -109,6 +113,8 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-015: Bound caching and preserve explanations (§§4–5, 8)
 
+- MUST: Keep reusable construction outcomes separate from consumer-specific demand and authorization; preserve surviving independent justifications when another consumer is blocked.
+- MUST NOT: Transfer authorization between consumers through cached construction outcomes.
 - MUST: Represent internal graph nodes, records, and results with typed Python structures; return explanations as evidence and relationship structures; scope memoization to the evaluation and relevant occurrence and demand context while preserving enclosing native validation.
 - MUST NOT: Use caches as independent business authority or interpret diagnostic strings to recover execution decisions.
 - WHY: Optimization and presentation must not become alternate sources of execution meaning.
@@ -130,6 +136,8 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-018: Establish provenance independently of admission (§§3–4, 8)
 
+- MUST: Distinguish dispatch authorization, evidence of actual dispatch, and evidence of external completion; preserve independently established provenance when payload construction or admission fails.
+- MUST NOT: Treat dispatch authorization alone as proof of actual dispatch or completion.
 - MUST: Trusted adapters establish source identity and construct observations; direct provenance comes from actual host dispatch, and delayed provenance requires an established source and matching dispatched attempt for the stated effect.
 - MUST: Record observations, provenance, admission, and conflicts independently; retain provenance when an attributed return supplies no admitted result.
 - MUST NOT: Deserialize trusted observation envelopes wholesale from external input or establish authority from a valid payload, supplied identifiers, or arrival order alone.
@@ -142,15 +150,16 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-020: Deduplicate within the receiving namespace (§8)
 
-- MUST: Identify delivery within its source and receiving namespace, comparing role, mode, relationship, and owned envelope contents with type-sensitive equivalence; record same-identity different-content collisions as rejected delivery conflicts.
+- MUST: Identify delivery within its source and receiving namespace, comparing role, mode, relationship, and owned envelope contents under the delivery comparison contract; record same-identity different-content collisions as rejected delivery conflicts.
 - MUST NOT: Replace admitted evidence with a colliding delivery.
+- MUST NOT: Infer delivery occurrence identity solely from equal payload content or substitute a payload digest for occurrence identity because a transport identifier is absent.
 - WHY: Transport repetition must not overwrite established evidence.
 
 ### D-021: Separate result cardinality from authoritative conflict (§8)
 
-- MUST: Compare complete constructed results by type-sensitive structural equivalence, preserving exact types recursively and scalar representation distinctions, including Decimal sign, digits, and exponent and timestamp fields, fold, and zone; application normalization belongs to declared construction.
-- MUST: Comparison return a definite result for every pair of supported values independently of ambient configuration and process identity, with the same result across independent construction and faithful restoration.
-- MUST NOT: Normalize results during comparison or substitute native model equality or serialized-output equality without preserving every distinction required by this contract.
+- MUST: Specify concrete delivery and result comparison contracts: delivery comparison judges retained envelope repetition for one delivery identity, and result comparison judges repetition or contradiction of otherwise admissible claims for one receiving occurrence.
+- MUST: Justify comparison distinctions through the respective receiving responsibility; keep business normalization and conditions in declared types and relationships.
+- MUST NOT: Use comparison to establish identity, ownership, provenance, or correlation meaning, impose general record or history equality, introduce distinctions solely because Python observes them, or narrow native construction and supported values for comparator convenience.
 - MUST: Fill a single-result occurrence with its first valid correlated result; add no second value for an equivalent valid result; preserve the admitted result and later claim as an evidence conflict when a materially different result is otherwise admissible.
 - MUST: Treat admitted result and definitive failure for the same attempt as incompatible, failure and success across different attempts as compatible, and uncertainty resolved by result or definitive failure as resolution.
 - MUST NOT: Create authoritative evidence conflicts from invalid or unauthorized claims or choose a winner by arrival order.
@@ -195,6 +204,8 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-027: Preserve semantics across local and durable hosts (§7)
 
+- MUST: Treat host-specific reductions in supported construction modes or programs as architectural contract changes.
+- MUST NOT: Make supported Python-mode programs local-only as an incidental persistence choice.
 - MUST: Local and durable hosts share declaration, construction, admission, and evaluation semantics; durable execution load pinned artifacts and revisions, commit intents and required receiving state against the expected revision, retain observations and admission, and resume without the original request or coroutine.
 - MUST: Durable inboxes retain early deliveries until their receiving relationship resolves, and worker coordination reject stale commits and duplicate dispatch authorization.
 - MUST NOT: Treat inbox retention as admission or introduce a second application workflow through persistence or scheduling.
@@ -202,6 +213,8 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 
 ### D-028: Preserve artifacts and construction fidelity (§§7–8)
 
+- MUST: Specify the concrete continuation and restoration protocol, what it retains, how it preserves supported native input modes, and the fidelity argument establishing preservation of recorded meaning.
+- MUST NOT: Treat determinism and artifact pinning alone as a complete restoration protocol or demonstration of fidelity.
 - MUST: Each invocation retain access to its executable artifact and compatible dependencies; unavailable artifacts produce faults; restoration retain original boundary inputs and mode or use a versioned representation with demonstrated fidelity.
 - MUST NOT: Recover under current code in place of a missing pinned artifact or accidentally normalize serialized output again.
 - WHY: Recovery must preserve the meaning of work already in progress.
@@ -219,7 +232,7 @@ Source: [TCA Architecture](TCA_ARCHITECTURAL_FOUNDATIONS.md). This register reco
 - MUST: Tests assert public behavior independently of evaluator helpers, pair prevention with valid progress, exercise interacting guarantees, measure shared construction on graph-shaped examples, and compare memoized with equivalent uncached evaluation.
 - MUST: Tests establish the preconditions they claim to exercise: refusal-then-success cases demonstrate the candidate refusal, and post-construction environment changes occur after construction; critical safeguards demonstrate defect detection through targeted fault injection or mutation.
 - MUST: Verify native construction agreement for defaults, aliases, null, factories, nested validation, and replacement values, plus refusal, mixed errors, successful unions, and escaping programmer exceptions; verify the runtime identity, authority, progress, conflict, recovery, ownership, and closure decisions above.
-- MUST: Verify comparison consistency across independently constructed and faithfully restored values and histories, preservation of exact type and scalar representation distinctions, and agreement between equality and hashing wherever hashing is provided.
+- MUST: Verify delivery repetition and collision behavior, result repetition and contradiction behavior, historical ownership against writable aliases, and restoration fidelity under the chosen protocol as separate contracts; these checks do not require universal record or history equality.
 - MUST: Durable acceptance inject faults around intent commitment, dispatch, provider completion, recording, admission, and response delivery, including process loss and stale workers.
 - MUST NOT: Claim durable guarantees from isolated native construction probes.
 - WHY: Passing isolated examples cannot establish compositional or durable correctness.
