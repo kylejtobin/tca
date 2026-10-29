@@ -2,7 +2,7 @@
 
 **Status:** Target architecture  
 **Owner:** Kyle Tobin  
-**Date:** October 28, 2026\
+**Date:** October 29, 2026  
 **Structure:** arc42  
 **Product:** [TCA Product Definition](product.md)
 
@@ -24,9 +24,13 @@ The primary quality goals are:
 
 ## 2. Constraints
 
+Business meaning resides in declared types and relationships. World supplies reusable value semantics; Pydantic owns complete native construction. The engine supplies justified premises, interprets explicit execution relationships, records independent evidence, and derives justified work. Hosts execute and retain that work under the same interpretation.
+
+Every framework mechanism must discharge a specific product or architectural obligation within this division. An observable Python distinction, an imaginable edge case, or a dependency introduced by another mechanism does not create a framework requirement.
+
 - Python and Pydantic are the implementation foundation. Native construction is delegated to Pydantic rather than reconstructed inside the engine.
 - Application declarations, reusable primitives, and adapters are trusted code. TCA is not a Python sandbox.
-- Validators are deterministic over their supplied values, perform no external effects, and read no ambient clock, randomness, or mutable configuration.
+- Validators are deterministic over their supplied values, perform no external effects, and read no ambient clock, randomness, or mutable configuration. This guarantee concerns declared value semantics, not arbitrary subsequent Python behavior or incidental object-sharing patterns.
 - Engine-mediated validation uses `context=None`. Business information enters through declared premises.
 - The engine contains no application-specific branches.
 - Historical values must satisfy the supported ownership contract. Frozen wrappers alone do not establish ownership.
@@ -147,6 +151,8 @@ A closed collection produces a finite tuple. A closer is scoped to its declared 
 
 Local and durable hosts share declaration, construction, admission, and evaluation semantics. A local host retains state in memory. A durable host preserves invocation state and resumes work without retaining the original request or coroutine.
 
+A host-specific reduction in supported construction modes or programs is an architectural contract change. Storage convenience does not authorize making Python-mode programs local-only.
+
 The durable protocol is:
 
 1. Load a revision and its pinned program artifact.
@@ -182,6 +188,8 @@ Whole-value omission uses the complete boundary's native omission behavior. A st
 
 Nested revalidation remains native behavior. Recovery must not accidentally normalize a serialized output again: retain original boundary inputs and mode, or use a versioned restoration representation with demonstrated fidelity.
 
+The chosen restoration protocol must specify what is retained, how native input modes are preserved, and how continuation recovers recorded meaning. Input replay requires a fidelity argument covering those boundaries; determinism and artifact pinning alone do not establish the protocol.
+
 ### Construction outcomes
 
 | Actual native outcome | Engine result |
@@ -195,6 +203,8 @@ Classification concerns the actual native attempt, not hypothetical errors on pa
 
 ### Ownership and caching
 
+Ownership protects retained history from external writable aliases. It establishes neither equality, canonical form, serializability, nor preservation of arbitrary subsequent Python behavior.
+
 Check ownership before publishing every witness or retaining accepted or admitted values. Supported content consists of immutable scalar values, owned enum values, tuples, frozen sets, and frozen models whose retained contents also satisfy ownership.
 
 Copy externally owned mappings before exposing read-only views, and validate their contents. Retained diagnostics use owned data rather than live mutable exception objects.
@@ -203,6 +213,8 @@ Raw envelopes are owned snapshots separate from business values. Validation rece
 
 Memoization is scoped to an evaluation and its relevant occurrence and demand context. Shared construction may be reused without bypassing native enclosing validation. No cache is independent business authority.
 
+Reusable construction outcomes remain separate from consumer-specific demand and execution justifications. Reuse cannot transfer authorization between consumers or erase surviving independent justifications when another consumer is blocked.
+
 ### Identity and provenance
 
 Logical effect identity distinguishes invocation, artifact, interaction, construction occurrence, subject scope, and repetition. Retries retain that identity and allocate a new attempt number. Equal payloads do not merge distinct operations.
@@ -210,6 +222,8 @@ Logical effect identity distinguishes invocation, artifact, interaction, constru
 Evidence identity comes from admitted history. Collection members retain distinct identities even when their values match. No process address, incidental hash, or payload hash supplies business identity.
 
 Direct provenance comes from actual host dispatch. Delayed provenance requires an adapter-established source and a matching dispatched attempt for the stated effect. Supplied identifiers and arrival order alone establish nothing.
+
+Authorization to dispatch, evidence of actual dispatch, and evidence of external completion establish different facts. An authorization record alone proves neither dispatch nor completion. Failed payload construction or admission cannot erase provenance established independently.
 
 ### Observation meaning and permission
 
@@ -239,11 +253,11 @@ Under `retry`, the capability guarantees repeat safety or provider idempotency u
 
 Admission checks the pinned artifact, established source, native construction, all declared correlations, intent authority where required, receiving cardinality, and closure.
 
-Deduplication identifies delivery within its source and receiving namespace, then compares role, mode, relationship, and owned envelope content with type-sensitive equivalence. An identity collision with different content is recorded as a rejected delivery conflict; it cannot replace admitted evidence.
+Deduplication identifies delivery within its source and receiving namespace, then compares role, mode, relationship, and owned envelope content under the delivery comparison contract. Delivery identity is distinct from content: equal payloads alone do not establish one delivery occurrence, and a missing transport identifier does not authorize substituting a payload digest for occurrence identity. An identity collision with different content is recorded as a rejected delivery conflict; it cannot replace admitted evidence.
 
-Result equivalence is type-sensitive structural equivalence of complete constructed content. Comparison preserves exact types recursively and scalar representation distinctions, including Decimal sign, digits, and exponent and timestamp fields, fold, and zone. Thus `Decimal("2.5")` and `Decimal("2.50")` are different results. Applications normalize immaterial differences through declared construction; the engine does not normalize them during comparison.
+Delivery comparison determines whether a repeated delivery identity carries the same retained envelope content. Result comparison determines whether an otherwise admissible claim repeats or contradicts the result for that receiving occurrence. These are separate receiving-contract judgments; they establish neither business identity, ownership, provenance, nor correlation meaning.
 
-Comparison returns a definite result for every pair of supported values, independently of ambient configuration and process identity, and preserves its result across independent construction and faithful restoration. Native model equality or equality of serialized outputs is not sufficient unless it preserves all distinctions required by this contract. Delivery and result comparison may share the structural comparison mechanism while comparing their respective content.
+The concrete design must specify both comparison contracts and justify the distinctions each preserves through its receiving responsibility. Business normalization and conditions belong to declared types and relationships. Comparison does not introduce additional business distinctions merely because Python can observe them, define general equality for engine records or histories, or restrict native construction and supported values for comparator convenience.
 
 For a single-result occurrence, the first valid correlated result fills it. A later equivalent valid result adds no second value. A materially different otherwise admissible result creates an evidence conflict while preserving the admitted result and the later claim. Invalid or unauthorized claims do not create authoritative evidence conflicts.
 
@@ -294,7 +308,10 @@ These decisions refine the earlier architecture. Individual ADRs may record rati
 | Failure and success across different attempts | Compatible history |
 | Retry followed by reevaluation and late completion | No repeated permission; no further retry after completion; in-flight history retained |
 | Mutable replacement or caller mutation | No unowned witness and no historical mutation |
-| Independent construction and faithful restoration | Equivalent retained content compares consistently; exact type and scalar representation differences remain distinguishable; hashing, where provided, agrees with equality |
+| Repeated delivery identity | Delivery comparison distinguishes repetition from changed envelope content; collisions cannot replace admitted evidence |
+| Repeated otherwise admissible result | Result comparison distinguishes repetition from contradiction within its receiving contract |
+| Owned retained history | Caller mutation and validation working copies cannot change retained facts; ownership does not depend on record equality |
+| Durable continuation | The chosen restoration protocol preserves recorded meaning and supported native input modes under the pinned artifact |
 | Open and closed collections | Per-member progress, scoped closure, and stable final tuple |
 | Process loss and stale workers | Stable identities, retained effects, and rejection of stale commits |
 
