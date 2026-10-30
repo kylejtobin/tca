@@ -56,8 +56,7 @@ The product and architecture documents describe that design and its required beh
 | Read | What it explains |
 |---|---|
 | [Product definition](docs/product.md) | The developer experience, capabilities, scope, and intended value |
-| [Architecture](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md) | The components, contracts, and execution semantics |
-| [Architectural decisions](docs/ADR.md) | The binding engineering requirements |
+| [Architecture design](docs/architecture/DESIGN.md) | The declarative foundation and Pydantic, FastStream, and NATS/JetStream responsibilities |
 
 ## 🚧 Roadmap
 
