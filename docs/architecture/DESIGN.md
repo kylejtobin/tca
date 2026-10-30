@@ -1,188 +1,202 @@
 # TCA Architecture Design
 
-**Status:** Architectural foundation for detailed design  
-**Owner:** Kyle Tobin  
-**Date:** October 30, 2026  
-**Product:** [TCA Product Definition](../product.md)
+## Overview
 
-This document establishes the executable model, native responsibility allocation, and requirements for detailed design. The selected foundations are Pydantic, FastStream, and NATS/JetStream. The responsibility allocations and modeling contracts below are settled architectural decisions. Detailed design derives their concrete integration and delivers the artifacts and evidence in section 9; it does not reopen these allocations to fit a preferred mechanism.
+The industry has spent decades treating application logic as a bespoke, artisanal craft requiring endless imperative branching, even as declarative infrastructure demonstrated how much execution machinery can follow from an explicit model. Business applications can apply that same discipline.
 
-## 1. The typed graph is the program
+Application code becomes tangled when business meaning lives implicitly inside procedures. Types describe payloads, while service methods separately encode what those values mean, which decisions follow, and when work should happen. Changing the business means finding and reconciling those scattered definitions.
 
-TCA is a declarative application framework. Its program is a graph of composable Pydantic business types and explicit relationships: values, computations, decisions, prerequisites, capabilities, and outcomes. The graph expresses business meaning once. TCA derives native bindings and coordinates the declared construction dependencies. Business rules are expressed by the modeled values, computations, alternatives, and prerequisite relationships; execution does not supply a second definition of those rules.
+TCA makes the business model the executable program. Developers declare values, constraints, unions, dependencies, sources, capabilities, and outcomes. Computations and decisions are compositions of reusable operations. Application authors write no procedural validators, transition functions, handlers, or workflows.
 
-The architecture follows this dependency:
+Three principles make this work:
 
-**Authored typed graph → derived construction and messaging bindings → established native guarantees → justified effects and conclusions.**
+- **Construction establishes guarantees.** Pydantic constructs values under declared constraints and typed alternatives. Consumers require the prerequisite values they actually need, rather than repeating business checks downstream. Source authority and execution permission remain explicit, separate relationships.
+- **Intent activates dependencies.** An intent pursues a declared outcome. Explicit supplying relationships identify its operands; established values enable further constructions and justified capability work. Independent dependencies progress independently.
+- **Events carry progression across time.** FastStream provides typed messaging integration. NATS/JetStream retains and delivers events, enforces channel permissions, and supplies native scheduling and consumer progress. New evidence advances the same declared program after waiting or interruption.
 
-Pydantic establishes value semantics through complete native construction. FastStream binds typed receiving and publishing contracts, lifecycle, and dependency injection. NATS subjects and permissions realize addressing and controlled ingress; JetStream retains evidence and commitments and delivers work durably. NATS/JetStream is authoritative for retained runtime facts and runtime recording time. JetStream stream sequence establishes retained order within the applicable stream scope; server-assigned message timestamps establish recording time. TCA derives business progression from that retained authority and the declared graph, consuming native guarantees rather than independently reconstructing them.
+TCA derives the native bindings from the model and supplies only the dependency coordination those foundations leave necessary. Business meaning is authored once; execution follows from its explicit structure.
 
-The graph is the business ontology, including dependency and execution relationships. NATS subjects project its addressable subjects and occurrences into a hierarchical messaging namespace. That namespace is an executable projection, not a second ontology or a complete representation of every edge. Conditional demand and business decisions remain declared semantics.
+```mermaid
+flowchart TB
+    MODEL["Model-only application"]
+    MODEL --> BIND["TCA derives types, dependencies and native bindings"]
 
-NATS/JetStream is required for execution. World modeling and declaration inspection remain ordinary Python library operations. Development uses an app dev container and one persistent NATS container.
+    subgraph RUNTIME["Execution derived from the model"]
+        NATS["NATS / JetStream: event history and delivery"]
+        RECEIVE["FastStream: typed receiving"]
+        COORD["TCA: declared demand and operand binding"]
+        BUILD["Pydantic construction and reusable World operations"]
+        PUBLISH["FastStream: typed publishing"]
+        CAP["Capability adapter: external interaction"]
 
-## 2. Architectural principles
+        NATS --> RECEIVE
+        RECEIVE -->|"Business events"| COORD
+        COORD -->|"Established operands"| BUILD
+        BUILD -->|"Values, alternatives and outcomes"| COORD
+        COORD -->|"Result events or justified requests"| PUBLISH
+        PUBLISH --> NATS
 
-1. **Author meaning once.** Business types and relationships are authoritative; bindings and internal graph representations are derived.
-2. **Model guarantees before procedure.** Business invariants and prerequisites belong in reusable types and compositions. Successful native construction establishes their declared guarantees; coordination consumes those guarantees.
-3. **Preserve native construction.** Pydantic determines each boundary's actual returned value or failure, including new consumer construction.
-4. **Construction is the business contract.** Types and explicit relationships express the values required for a business result. Framework coordination supplies operands and consumes construction results; it does not maintain equivalent business predicates beside them.
-5. **Realize relationships natively.** Use construction, addresses, subscriptions, permissions, and native storage/delivery contracts wherever they establish the required relationship.
-6. **Consume established guarantees.** Interpretation relies on verified bindings and boundary results instead of repeating their implementation.
-7. **Separate validity, demand, and permission.** A valid or available value alone does not justify acquisition or an external operation.
-8. **Preserve scope and history.** Type identity, business subject, occurrence identity, message identity, current knowledge, and committed justification remain distinct.
-9. **Retain uncertainty and independent progress.** Missing, invalid, disputed, failed, or uncertain dependencies affect only work that relies on them.
-10. **Respect external authority.** Provider permissions, transactions, completion evidence, and repeat safety bound effects and recovery.
-11. **Resolve choices with evidence.** Name native guarantees, integration requirements, residual semantics, assumptions, and executed verification.
+        RECEIVE -->|"Retained authorized request"| CAP
+        CAP -->|"Result or failure report"| PUBLISH
+    end
 
-## 3. Authoring and binding the graph
+    BIND -.->|"Configures"| RUNTIME
+```
 
-| Authored element | Meaning | Derived realization |
-|---|---|---|
-| Pydantic business types and world compositions | Values, invariants, computations, decisions, and outcomes | Native construction contracts, schemas, and located errors |
-| Supplying and consuming relationships | Which occurrence supplies each dependency | Scoped bindings and typed receiving contracts |
-| Source and subject relationships | Accepted ingress and business correlation | NATS addressing, subscription bindings, and permission requirements |
-| Conditional dependencies and capability contracts | What is pursued and what permits an effect | Declared demand relationships, constructed prerequisites, and native receiving/work-delivery bindings |
-| Member identity and completion | Distinct members, repetition subjects, and collection closure | Scoped occurrence addresses and the inputs required to construct completion-dependent values |
-| Public extensions and interface contracts | Additional semantics, adapters, and inputs | Integration through the same graph and foundations |
+Developers author **types and relationships only**. Framework code supplies reusable operations and adapters; TCA derives their wiring. The event history supports continuation without preserving arbitrary Python instances.
 
-Distinguish type definitions from runtime realizations. A type defines value semantics; a business subject identifies what the value concerns; an occurrence identifies a realization in scope. The same type, business subject, and pursuit do not establish the same occurrence. Sharing requires a supplying relationship established unambiguously by declaration structure or an explicit occurrence reference. Nested compositions, operation requests, and collections retain distinct occurrences unless that relationship establishes sharing. Generated NATS addresses preserve resolved identity; assigning the same address cannot create a supplying relationship.
+**TCA is a model-only, type-driven, event-sourced application framework. The authored model is the entire business program.**
 
-Bindings are derived at program loading or pursuit activation as the required subject values become available. Resolve supplying references and collection scopes from the declared relationships; report ambiguity instead of merging occurrences by type or subject. Internal graph structures are generated representations; developers do not maintain a parallel registry of nodes, operations, or workflow steps.
+## 1. Application authors declare structure and relationships, never procedure.
 
-Use reusable world types and value operations to establish prerequisites and meaningful alternatives with minimal application-specific validator boilerplate. Consumers express business prerequisites through the typed values and relationships required for their construction. Reusable decision results distinguish meaningful alternatives; consumers requiring a particular result depend on that result. Applications do not repeat the decision in operation handlers. Invariants, business subjects, and supplying occurrences remain explicit.
+The application authoring surface consists of:
 
-Reusable framework and extension vocabulary carries common invariants, computations, alternatives, and relationships. Developers author business-specific meaning once; derived bindings supply repetitive wiring. Precision must not require duplicate declarations or knowledge of engine internals.
-
-Developers author only meaning that cannot be derived. Reuse native field semantics and existing declared relationships to establish each consumer's dependencies. Derive requiredness, nullability, and default/omission behavior from native Pydantic declarations. Additional acquisition, selection, or closure declarations are required only where the business introduces a relationship not already expressed by native declarations or the existing graph. Do not require framework markers that repeat native field semantics. Nullability, requiredness, omission/defaults, acquisition demand, and acquisition closure are separate dimensions: a nullable annotation does not establish that omission is accepted, and native defaults do not prescribe acquisition policy. Selection distinguishes recognition of supplied union values from choosing a path to pursue. These relationships express the declared business meaning without assuming eagerness, speculative acquisition, or a universal selection strategy.
-
-Authoring restrictions require a product-semantic justification against less restrictive native composition or explicit relationships. Field-name validation, idempotent validators, and application-authored codecs must not be required merely to fit a framework-selected encoding. Any necessary extension addresses a demonstrated boundary obligation and preserves the authored model. Encoding convenience cannot impose business-model restrictions. Scenarios test the general contract and introduce no framework policy.
-
-## 4. Native realization and residual responsibilities
-
-| Responsibility | Native realization | TCA responsibility |
-|---|---|---|
-| Value construction and invariants | Pydantic constructs declared values through annotations, constraints, composition, validators, unions, defaults, and returned replacements | Supply declared operands at the owning/consumer boundary and consume the actual result; no parallel field-validation pass |
-| Introspection and representation | Pydantic fields, metadata, type adapters, schemas, and serialization | Derive relationships and boundary bindings from the native declarations |
-| Typed application integration | FastStream binds declared receiving and publishing types through native parsing, dependency injection, lifecycle, acknowledgements, documentation, and testing | Derive and register the binding and supply declared operands; preserve native construction roles |
-| Addressed message delivery | NATS subjects, wildcard subscriptions, pub/sub, and request/reply | Project declared subjects, occurrences, and interactions into addresses |
-| Controlled source ingress | NATS authentication and publication/subscription permissions | Bind accepted source channels and required permissions to declarations |
-| Evidence/work retention and replay | JetStream streams and native retrieval/consumers | Select retained contracts and associate them with the program |
-| Processing progress and distribution | Durable consumers, acknowledgements, redelivery, and shared work delivery | Select delivery semantics and processing boundaries |
-| Concurrent commitment | Native conditional publication and required atomic stream batches | Map justification and commitment to their documented atomic scope |
-| Runtime recording time | NATS server-assigned message timestamps | Use retained recording time for runtime temporal anchors |
-| Retained runtime order | JetStream stream sequence within its stream scope | Bind evidence and commitments to that order; do not infer global order from timestamps |
-| Deadline notifications | Native NATS scheduling | Derive deadlines from declared anchors and interpret notifications against those retained anchors |
-| Reconstructible lookup projections | Native storage and watchable KV | Derive lookup data from retained authority without creating another source of truth |
-| Business progression and external effects | Native facilities above plus provider contracts | Coordinate declared demand and construction dependencies, consume constructed prerequisite and outcome values, and apply capability execution/recovery contracts |
-
-NATS addressing identifies the receiving relationship; it is not a request for a second router to rediscover it. A permission-controlled source channel establishes its declared ingress identity when actual permissions enforce that binding. Payload validity, business truth, and provider authorization remain their own contracts. The declared receiving construction includes the required relationship between addressed context and business content, including payload identifiers. The native binding supplies that context; TCA adds no second business-validation program. Channel authority remains an independently established native guarantee.
-
-Derived FastStream subscribers and publishers use the graph's declared types. Native parsing, dependency injection, lifecycle, and acknowledgement facilities perform their assigned work. Native NATS client access supplements capabilities not exposed through FastStream within the same application lifecycle; it does not create a separate transport runtime. Other supported brokers do not imply equivalent capabilities. Bindings specify fan-out versus distributed work so native consumer configuration preserves every intended consumer.
-
-Additional correlation logic is justified only where the integration cannot address the declared occurrence directly, such as an unsolicited observation carrying only a business key. Resolve that specific gap with native addressing, retention, and lookup facilities before adding custom matching.
-
-TCA supplies no separate broker, event-store service, delivery-progress tracker, redelivery engine, worker distributor, or scheduler. Additional registries, routers, ledgers, and replay algorithms require a concrete residual obligation; semantic distinctions alone do not prescribe subsystems.
-
-Primary references: [Pydantic models](https://docs.pydantic.dev/latest/concepts/models/), [serialization](https://docs.pydantic.dev/latest/concepts/serialization/), [FastStream](https://faststream.ag2.ai/latest/), [NATS broker API](https://faststream.ag2.ai/latest/api/faststream/nats/NatsBroker/), [NATS subjects](https://docs.nats.io/nats-concepts/subjects), [permissions](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/authorization), [JetStream](https://docs.nats.io/concepts/jetstream), [publication/scheduling headers](https://docs.nats.io/nats-concepts/jetstream/headers), and [KV](https://docs.nats.io/nats-concepts/jetstream/key-value-store).
-
-## 5. Executable value composition
-
-World provides reusable values, computations, conditions, and selections independent of messaging and persistence. Conditions and decisions are constructed business results over declared operands. Computed consequences follow from those operands; supplied answers do not replace computations. A valid non-holding result remains representable but does not supply a prerequisite requiring the holding alternative. A non-holding condition, incoherent or invalid information, missing evidence, and operational failure retain distinct meanings.
-
-A decision's meaningful alternatives are modeled results. A consumer requiring one alternative depends on that alternative's constructed value and its bound supplying relationship. Merely possessing the same Python type does not establish source authority or occurrence identity.
-
-Complete native construction establishes each boundary's content and invariants. Preserve annotations and metadata, input mode, validation and serialization aliases, defaults and factories, transforming model validators, field validators, nested behavior, unions, and returned replacements. TCA accommodates the selected native behavior rather than relocating transformations or restricting models to simplify execution. Native introspection supplies structural information; partial checks do not establish a valid holder.
-
-A computation or condition is modeled over its complete typed operand composition. Its constructed result supplies dependent constructions, including acquisition prerequisites. A larger composition depends on those results; evaluation does not require constructing an incomplete instance of that larger composition. The declared operand relationships derive the construction dependencies without a separately authored workflow, a mandated new class hierarchy, or a particular declaration syntax.
-
-A construction requiring a complete collection declares the membership and completion evidence it needs. Native construction establishes the required relationship between those inputs. Available members can support independent work before completeness is established; incomplete information is not presented as a completed outcome.
-
-A supplying occurrence and a consumer's constructed field can have different native values. Identify the supplying value, each consumer's actual constructed value, and the value whose prerequisites justify an effect. The consumer's native construction establishes the content and business prerequisites required at that boundary, including declared transformations. Subsequent execution consumes that constructed result rather than applying a second definition of business eligibility. References to supplier history record provenance but do not establish the transformed consumer result. Do not infer equivalence from purity, unchanged instance identity, or a revalidation setting.
-
-World computations and business-value construction use declared operands rather than ambient clocks, randomness, configuration, or I/O. Adapters perform declared effects and return observations. Deterministic construction need not be idempotent when applied to its output.
-
-The derived receiving binding uses FastStream's native parsing and Pydantic integration to establish the declared boundary value or construction failure. TCA does not repeat its field validation. A later declared consumer construction remains a distinct native boundary and preserves its own semantics; construction is not limited to one invocation across the entire program.
-
-For each boundary, identify the value supplied, the value returned, whether mutable objects are shared, and which retained or consumer guarantees could be affected. When native functionality fulfills the boundary contract, that responsibility remains with its native owner. Additional protection must address only a demonstrated mutation path left unmet by those mechanisms; it does not take over the entire responsibility or justify a universal ownership subsystem.
-
-## 6. Construction and native progression
-
-Accepted intent demands a declared result and establishes its subject/scope bindings. The result's modeled dependencies determine which operands are pursued. Explicit supplying relationships and native delivery provide those operands at their declared receiving boundaries; native construction establishes the supplied values or located failures. Retain the evidence required for continuation through the native persistence contract.
-
-Complete native constructions produce further business values, including decision alternatives and prerequisite compositions, or located failures. Their declared dependencies determine which constructions can progress. A supplied value does not by itself create demand, and shared values do not erase each consumer's conditional demand.
-
-Constructed prerequisite values support demanded capability work under its bound provenance, lifecycle, authority, and execution contract. Business eligibility follows from the modeled construction; coordination does not restate its rules in a separate evaluator. Authorized work retains its actual content and supporting versions within the native concurrency contract, and native durable delivery reaches the adapter.
-
-Retained results supply later constructions. An outcome requiring completion consumes the modeled membership and completion inputs. Its construction establishes the declared business result; lifecycle and finality relationships determine how that result is retained and exposed. Unmet dependencies remain visible without constructing a completed outcome or inventing a second definition of completeness.
-
-Native retention, consumers, and schedules support waiting and continuation without a live request or coroutine. Independent dependencies progress concurrently; field order supplies no execution ordering. Evidence acquisition can itself require justified effects.
-
-Declared business alternatives and prerequisites are established through modeled construction. Demand determines which constructions are pursued. Bound provenance, lifecycle, and capability contracts determine whether their results may support execution now. Static bindings and verified ingress guarantees are consumed directly. A valid payload, echoed identifier, or constructed request alone establishes no additional authority. A report can establish business content without identifying which attempt caused it; preserve unresolved attribution.
-
-Replacement and dispute change current knowledge according to declared source policies. A derived result identifies the supplying occurrence versions and executable construction meaning on which it depends. Changes to supplied optional inputs participate in that dependency basis. Current reconstructions do not overwrite historical establishment or committed justification. Silence, malformed input, and absent replacement policy establish no refusal, exclusion, or finality.
-
-## 7. Native runtime, durability, and lifecycle
-
-Choose stream subjects, retention, consumers, permissions, and schedules from the graph projection and its required guarantees. JetStream holds authoritative retained execution records independently of acknowledgement. Views, indexes, and caches derive from that authority and are reconstructible; they establish no separate journal, registry, or ledger authority. Concrete records and concurrency scopes follow the graph's obligations rather than supply the starting architecture. Evidence received before demand or correlation becomes available remains usable within declared retention bounds.
-
-Map consistent justification and commitment to native conditional operations or atomic groups at their documented scope. Specify evidence/version consistency, acknowledgement points, work discoverability, and recovery between receipt, construction, commitment, and delivery. Do not imply transactions across arbitrary streams, KV keys, or external resources.
-
-An acknowledgement establishes processing progress. Authorization, dispatch, provider acceptance, and completion establish different facts. Native redelivery resumes processing; it does not grant permission to repeat an effect. Native consumers provide delivery coordination. Capability contracts govern whether an effect may be attempted again, using actual provider idempotency, safe repetition, or authoritative reconciliation, and how authoritative reconciliation results enter the declared model. Additional dispatch mechanics require a demonstrated gap in those guarantees. Retained native triggers advance delayed results and unfinished reconciliation.
-
-NATS is the authoritative runtime clock. Server-assigned message timestamps establish runtime receipt/recording time; stream sequence establishes retained order within the applicable stream scope. Timestamps do not establish a globally monotonic total order across streams. Business acceptance and interpretation are established by their own retained records; message recording alone does not establish business truth.
-
-Runtime-relative deadlines derive from the server recording time of their declared anchor. Absolute business instants arrive as typed declared values. Native NATS scheduling delivers notifications for the resulting deadline. An external occurrence timestamp is a source claim carried as typed business evidence, not an alternative runtime clock. Temporal declarations identify the observed occurrence, measured fact, anchor, and historical/current interpretation.
-
-Evaluator wall clocks do not decide business progression. Process restart does not reset deadlines or elapsed runtime relative to retained anchors. Notification delivery time does not redefine the declared deadline. Delayed or late notifications are interpreted against the retained anchor and declared temporal relationship; replacement and dispute follow that declared policy. TCA implements no separate runtime clock, deadline scanner, or scheduler.
-
-For each durable boundary, identify the constructed value authorized for delivery, the representation retained, the receiving construction, and the content and behavior required by that consumer. When native serialization and transport satisfy that contract, those responsibilities remain native. Custom integration addresses only the demonstrated unmet portion of a boundary contract; one mismatch does not justify replacing sufficient native functionality or taking over the entire responsibility. Preserve actual authorized content and required consumer behavior through retention and adapter delivery. Revalidating serialized constructed output can transform it again; retaining inputs or bypassing validation does not automatically prove fidelity. A universal JSON round trip is not TCA's fidelity contract. Neither stable serialized output nor equality between a decoded value and the original, including Pydantic equality, alone establishes preservation of authorized business content. No universal comparator or reconstruction algorithm is prescribed, and business models are not forced to fit a universal restoration subsystem or round-trip gate.
-
-Retain sufficient data, provenance, and executable version information for continuation. Schema identity alone cannot identify validators or computed behavior. Define compatibility so new deployments cannot silently reinterpret established work. Recovery reconstructs the necessary execution view from native retained authority; no live request, coroutine, or mandatory full-history interpreter is required.
-
-Conclusion finality, subsequent acquisition, and late evidence follow an explicit lifecycle contract. Revision or reopening requires declared policy. Cancellation preserves initiated work and later observations while stopping newly justified execution; resolve its race with committed but undispatched work. Intervention supplies evidence through actual authority and creates no repeat-safety guarantee.
-
-### Development topology
-
-Exactly two services: an **app dev container** with TCA, Pydantic, FastStream, and tools; and **one NATS container** with JetStream and file-backed storage on a persistent volume. Use the container network. Application and NATS restarts preserve retained state; deleting the volume resets it.
-
-This is single-node development, not replicated high availability. Pure modeling and interpretation checks run independently; runtime integration checks use NATS. No additional datastore, broker, scheduler service, or alternate in-memory execution host is required.
-
-## 8. Public integration and extension
-
-World extensions add reusable semantics through native Pydantic composition. Reusable computations and capability extensions express their business requirements through the same types, operand compositions, and supplying relationships. Capability adapters expose operations, report types, source relationships, and actual recovery guarantees. Adapter code performs the declared external interaction; it does not hide business eligibility or recreate prerequisite orchestration. Extensions participate in the same graph and derived bindings without modifying generic coordination.
-
-Direct calls, CLI, HTTP, and event ingress project the same program with explicit native input/output contracts. Generate schemas from Pydantic and messaging bindings; uniform meaning does not require identical interface representations.
-
-Interface bindings may differ in representation, but reuse the declared business constructions and relationships. Handlers do not add transport-specific business validation or prerequisite logic.
-
-Applications may use relational, graph, document, or other business-data stores through integrations. Those systems retain their constraints, permissions, and transactions. TCA's typed graph requires no ontology datastore.
-
-Diagnostics expose graph bindings, construction failures, ambiguous references, missing guarantees, and blocked dependencies in application vocabulary. Explanations identify current evidence, historical conclusions, attempt justification, and legitimate next progress. Telemetry observes execution without becoming business authority.
-
-## 9. Detailed-design deliverables and acceptance
-
-Deliver responsibility/dependency diagrams, behavioral views, public declarations, essential internal interfaces, native integration protocols, justified decisions, and product traceability. Specify and demonstrate concrete authoring and binding contracts within the settled architecture before designing downstream protocols. Resolve the remaining integration choices in that package. The report does not choose whether business prerequisites belong in construction, whether native field semantics apply, or whether TCA needs a parallel evaluator; those decisions are closed.
-
-First demonstrate **authored declarations → resolved supplying occurrences and computation operands → native construction and messaging bindings → justified progression**. For each business requirement, identify its authored type or relationship, the native construction or binding that establishes it, and the downstream consumer of that guarantee. Once established, the guarantee is consumed directly. Any proposed additional procedure must identify the exact fact still unestablished; it cannot restate the business rule or replace sufficient native functionality. Naming an abstract concern is insufficient justification for additional machinery.
-
-Begin the behavioral explanation with a domain-independent lifecycle showing authoring, native binding, intent, evidence, construction, justified effects, and conclusion. Then test the same contracts under composition and interruption. Histories must follow the declared contracts without inventing missing evaluation behavior. Examples challenge semantics; they do not supply framework policy or become an application-building assignment.
-
-| Acceptance obligation | Required evidence |
+| Declaration | Meaning |
 |---|---|
-| One executable graph | Typed prerequisites and alternatives determine business behavior; explicit supplying relationships and computation operands derive native bindings, with no second business program, invented sharing, or circular construction prerequisite |
-| Native realization | Each guarantee names its native provider, derived binding/configuration, and actual residual TCA responsibility |
-| Practical type-driven modeling | Reusable vocabulary expresses business-specific meaning once without repeated validators, native-field markers, relationship boilerplate, or knowledge of engine internals; reduced code volume alone is insufficient |
-| Faithful construction | Legitimate native annotations, transformations, and consumer construction establish and preserve declared guarantees without encoding-driven restrictions or a parallel validation system |
-| Addressing and authority | Native receiving bindings, actual permissions, subjects, occurrence identity, and payload contracts compose correctly |
-| Justified progression | Histories follow constructed prerequisite values and explicit supplying relationships under declared demand, bound provenance, and capability execution authority; no separate business checks supply missing semantics |
-| Compositional progress | Sharing, nested scopes, collections, repetition, conflicts, and modeled completion preserve independent work; no hidden completion flag supplies a competing definition of the outcome |
-| Durable meaning | Authorized content, required consumer behavior, historical evidence, conclusions, and executable versions survive retention and construction; serialization stability or equality alone does not establish fidelity |
-| Native recovery | Concurrency, early evidence, redelivery, cancellation, uncertain effects, and reconciliation preserve progress |
-| Temporal correctness | NATS timestamps anchor runtime deadlines, stream sequence supplies scoped order, external timestamps remain typed evidence, and restart or late notification does not reset or redefine time |
-| Minimal residual machinery | Each custom component resolves a demonstrated gap after the actual native construction and messaging path has been traced; it repeats no guarantee already established by that path |
-| Selected topology | Integration executes with the app dev container and one persistent JetStream-enabled NATS container |
+| Pydantic models and constrained fields | Business values and their invariants |
+| Literals and discriminated unions | Meaningful alternatives |
+| Nested models and collections | Compositions and membership |
+| Explicit supplying references | Which occurrence supplies an operand |
+| Reusable operation compositions | Computations, comparisons, conditions, and selections |
+| Source declarations | Where evidence may originate |
+| Capability declarations | Requested work, prerequisites, reports, and recovery guarantees |
+| Outcome declarations | What result is pursued and what constitutes completion |
 
-Diagrams, contracts, and histories must describe the same behavior. Challenge guarantees with enclosing transformations, output revalidation, distinct occurrences of the same type and subject, nullable required fields, conditions controlling their enclosing composition's acquisition, optional evidence before commitment, equal-valued distinct members, late contradictions, overlapping workers, restart, and delayed deadline delivery. Verify that a declared operation cannot execute without its required business result, that an outcome cannot construct as complete while a separate engine judgment calls it incomplete, and that developers need not repeat native field semantics or a decision in markers or handlers. Test valid progress alongside prevented errors. Rejecting legitimate native models to make a mechanism safe does not satisfy acceptance.
+Application-defined validators, computed-property bodies, serializers, default factories, callbacks, handlers, and workflow functions are outside this contract. Literal defaults are allowed. Framework configuration is derived; application configuration cannot silently change construction or serialization semantics.
 
-Use official documentation and focused version-specific checks. Distinguish requirements, choices, assumptions, source inspection, isolated experiments, and executed integration results. Unexecuted checks are not demonstrated integration guarantees. Naming a mechanism, citing a native primitive, or labeling a history “Holds” does not close a guarantee. Establish that the composed contracts provide the required behavior; isolated experimental success cannot replace that derivation. Remaining concrete design decisions cannot be deferred to implementation or hidden behind unsupported-case restrictions. Verification establishes whether a proposed integration satisfies the settled construction and native responsibility contracts; it does not reopen those architectural decisions.
+## 2. World supplies the executable vocabulary.
+
+World provides reusable typed values and operations: arithmetic, quantities, comparisons, Boolean composition, selection, projection, collection operations, and completion relationships.
+
+An application expresses “add a surcharge” by composing a supplied addition operation with explicit operands and a typed result. Receiving or validating that result never performs the addition again.
+
+New reusable operations are implemented through an extension interface with declared input types, output types, and deterministic behavior. Calling an implementation an extension does not permit an application workflow or hidden business rule inside a validator.
+
+## 3. Pydantic constructs values; declared operations produce new values.
+
+Pydantic checks the declared field structure, constraints, and union alternatives. Framework-provided value types may implement their invariants through native Pydantic mechanisms.
+
+A computation consumes constructed operands and produces a separately identified typed result. Its calculation runs when that declared computation is evaluated, not when its result is decoded.
+
+A decision produces an explicit alternative. Consumers require the appropriate alternative through their input types. A negative decision remains valid business evidence. Invalid input, missing evidence, and operational failure remain separate.
+
+TCA adds no second business-validation or condition-evaluation language.
+
+## 4. Every dependency has an identified supplier.
+
+An occurrence is one realization within a pursuit. Its identity comes from its declaration location and, for collection members, its declared member key.
+
+Two equal values, matching types, or matching business identifiers do not merge occurrences. Sharing is established by an explicit supplying reference or an unambiguous structural relationship. Ambiguity fails program binding.
+
+References resolve to typed operands or declared projections of them. TCA does not inspect arbitrary Python bodies to discover dependencies.
+
+## 5. Binding derives the runtime.
+
+Program loading derives:
+
+- Construction and computation dependencies.
+- Typed receiving and publishing bindings.
+- Occurrence addresses and subscription patterns.
+- Source permissions and capability delivery bindings.
+- Retention requirements and temporal notifications.
+- Interface schemas and diagnostics.
+
+Static inconsistencies fail loading. Subject-dependent addresses are completed when their declared identity values become available.
+
+Developers do not maintain an operation registry, transport schema, handler inventory, or procedural workflow alongside the model.
+
+## 6. FastStream is the application messaging integration.
+
+Generated subscribers use the declared receiving types. FastStream performs native decoding, Pydantic integration, dependency injection, lifecycle management, and acknowledgement handling.
+
+Generated publishers emit the declared message types. Native NATS client access supplies capabilities FastStream does not expose, within the same connection lifecycle.
+
+Application authors write no receiving handlers. Framework handlers perform generic binding and coordination. Capability adapters implement the external interaction.
+
+## 7. JetStream is the authoritative execution history.
+
+Accepted intent, evidence, operation results, authorized requests, lifecycle decisions, and outcomes are retained as typed events.
+
+NATS subjects address declared occurrences and interactions. Enforced permissions establish channel identity. Durable consumers supply delivery progress, distribution, acknowledgement, and redelivery.
+
+Derived state is a view of retained events. It is not a second authoritative database. Recovery rebuilds the necessary view from retained records; it does not recreate arbitrary Python instances or rerun external effects.
+
+No additional event-store service, router, scheduler, delivery tracker, or worker distributor is required.
+
+## 8. Persistence uses declared data contracts.
+
+Event payloads are explicit business data represented through Pydantic’s native JSON serialization and receiving validation, integrated through FastStream. JetStream retains and delivers those bytes.
+
+A computation’s operands and result are distinct data contracts. Decoding a retained result constructs that result; it does not rerun its producer computation.
+
+Framework-provided message and value types must support their declared serialization/receiving path. Their implementation owns compatibility with that path. TCA does not promise to persist arbitrary Python objects or arbitrary Pydantic customizations.
+
+There is no pickle-based persistence, universal instance-restoration algorithm, round-trip gate, or application-authored codec requirement. Representation tests establish that supported contracts preserve their business fields and union alternatives.
+
+## 9. Demand follows the declared outcome.
+
+An accepted intent activates a declared outcome for identified subjects.
+
+Required dependencies are pursued through their supplying relationships. Conditional dependencies are pursued only when their declared decision alternative activates them. Selection is expressed through the modeled alternatives and relationships, not a universal eager strategy.
+
+Native requiredness, nullability, and defaults retain their Pydantic meanings. A default permits omission during construction; it does not authorize acquisition.
+
+Optional acquisition requires an explicit stopping relationship when the application intends to wait. Available evidence is retained independently of whether it is currently demanded.
+
+Changing demand stops newly justified acquisition on the abandoned path. Already initiated work and later observations remain accounted for.
+
+## 10. Collection completion is modeled.
+
+Each independently progressing member has its own occurrence identity. Equal-valued members remain distinct.
+
+A result requiring completeness depends on the declared membership and completion evidence. Individual members can support independent work before that evidence establishes completeness.
+
+TCA does not infer completion from silence, a timeout it invented, or the number of messages received.
+
+## 11. Effects consume the request that was justified.
+
+A capability declares its prerequisite/request type, report alternatives, source relationship, and provider recovery guarantees.
+
+Execution requires both the constructed business prerequisites and the applicable demand, source, lifecycle, and execution authority. Constructibility alone grants no external permission.
+
+The authorized request is retained before invocation. The adapter receives that request through its declared data contract. It may translate the request into the provider protocol, but may not introduce a second business decision or silently change the authorized business content.
+
+Provider acceptance, business completion, and transport acknowledgement are different facts. Redelivery does not itself authorize repeating an external effect.
+
+Idempotent, safely repeatable, reconcilable, and intervention-required capabilities retain their distinct recovery contracts. TCA promises no universal exactly-once external execution.
+
+## 12. Concurrency protects justification.
+
+Authorization and conclusion identify the exact evidence versions they consumed. New evidence does not rewrite historical justification.
+
+All changes authoritative for a pursuit’s justification participate in its concurrency boundary. Native conditional publication and atomic publication protect that boundary. Checking only the destination message while supporting evidence changes is insufficient.
+
+Native delivery remains discoverable across crashes. Acknowledgement follows the retained processing result. Retrying coordination must not create another authorization for the same established attempt.
+
+These are framework execution mechanics, not application-authored procedures.
+
+## 13. NATS owns runtime time.
+
+Server-assigned recording timestamps anchor runtime-relative deadlines. Stream sequence establishes retained order within its stream scope.
+
+Native scheduling delivers declared deadline notifications. Restart does not reset deadlines, and delayed delivery does not redefine their instants.
+
+External timestamps are typed business claims. Evaluator wall clocks do not determine business progression.
+
+## 14. Lifecycle and change remain explicit.
+
+Source declarations specify replacement and dispute behavior. No undeclared latest-wins policy is assumed.
+
+Outcomes declare completion and finality. Reopening requires a declared policy. Cancellation stops new authorization; its ordering against dispatch must preserve already initiated work and provider guarantees.
+
+Retained work identifies the model and operation versions that established its meaning. A deployment cannot silently reinterpret incompatible work.
+
+## 15. TCA implements only the missing coordination.
+
+Its custom runtime derives bindings, tracks declared demand, supplies identified operands, invokes reusable operations, and records justified progression using native concurrency and delivery facilities.
+
+Every proposed component must identify a concrete obligation these foundations leave unmet. Supporting forbidden application procedure is never such an obligation.
+
+Development requires one application dev container and one persistent JetStream-enabled NATS container.
+
+**Acceptance requires a model-only application to progress from intent through events, constructed prerequisites, external work, interruption, and outcome—with no application workflow code and no duplicated native subsystem.**
