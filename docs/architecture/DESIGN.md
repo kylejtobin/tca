@@ -25,7 +25,7 @@ NATS/JetStream is required for application execution. Development uses an app de
 6. **Evidence establishes bounded knowledge.** Content, source authority, subject identity, attribution, and permission require their respective evidence.
 7. **Uncertainty and legitimate progress coexist.** Missing, invalid, disputed, or inconclusive evidence withholds affected work while independently justified work proceeds.
 8. **Composition preserves subjects and scope.** Nesting, sharing, alternatives, collections, and repetition preserve declared dependency boundaries.
-9. **History preserves justification.** Current evidence, historical knowledge, and committed acts have distinct meanings; mutation and later observations cannot rewrite established history.
+9. **History preserves justification and conclusions.** Current evidence, historical knowledge, and committed acts remain distinct. Mutation and later observations cannot silently rewrite recorded justification or conclusions; subsequent behavior follows an explicit lifecycle contract.
 10. **Foundations carry their assigned work.** Use native Pydantic, FastStream, and NATS capabilities; justify each remaining custom mechanism by an unmet semantic or integration responsibility.
 11. **External systems retain authority.** Their permissions, transactions, completion evidence, and repeat-safety guarantees bound TCA's coordination.
 12. **Claims and explanations are inspectable.** Use application vocabulary and distinguish requirements, choices, assumptions, documented behavior, and executed evidence.
@@ -40,13 +40,13 @@ NATS/JetStream is required for application execution. Development uses an app de
 | Member identities, repetition subjects, and completeness | Independent member progress and supported collection conclusions |
 | Reusable value extensions and capability adapters | Integration through the same public contracts and runtime |
 
-An occurrence identifies a realization in a declared business subject and scope. Equal types or payloads do not establish identity. Bindings identify supplying occurrences and their consumers, using type information only where it establishes an unambiguous relationship. Additional meaning is explicit; ambiguity receives development-time diagnostics. Authors do not reproduce an internal dependency graph or handler-to-handler workflow.
+An occurrence identifies a realization in a business subject and scope; equal types or payloads do not establish identity. Bindings identify suppliers and consumers, using types only for unambiguous relationships. Declare additional meaning and diagnose ambiguity during development. Authors do not reproduce dependency graphs or handler workflows.
 
-Resolve declaration syntax, scope, defaults, alternatives, and collection relationships together. Distinguish construction requirements from acquisition policy: whether each consumer pursues evidence, under what conditions, when seeking ends, and when omission is accepted. Native defaults define omission within construction; required-ness alone does not authorize acquisition. Missing evidence supplies no permission to substitute another source or business path. Combining defaults and explicit supply requires defined semantics, not a blanket prohibition or an undeclared race.
+Resolve syntax, scope, defaults, alternatives, and collections together. Separate construction requirements from acquisition policy: whether each consumer pursues evidence, under which conditions, until when, and when omission is accepted. Defaults define omission; required-ness does not authorize acquisition. Missing evidence permits no substitute source or path. Defaulted explicit supply requires defined semantics, not a blanket ban or undeclared race.
 
-Typed decision results can make business prerequisites required fields: a decision produces alternative values and a consumer requires the relevant result. Establish their invariants, subject bindings, and provenance. This technique does not by itself prove that every conditional pursuit or selection relationship is implicit.
+Demonstrate reusable world types and operations that establish prerequisites and meaningful alternatives through composition, reducing application-specific validator boilerplate. Typed decision results can make prerequisites required fields; establish their invariants, subject bindings, and provenance. Explicit relationships supply execution meaning structure cannot establish. Downstream interpretation consumes those guarantees rather than repeatedly rediscovering them.
 
-Every authoring restriction needs a semantic obligation and justification against less restrictive native composition or explicit relationships. Evaluation convenience does not determine permissible business modeling. Scenarios challenge the general contract; their policies do not become framework rules.
+Justify authoring restrictions against less restrictive native composition or explicit relationships; evaluation convenience does not determine permissible modeling. Scenarios challenge the contract without supplying framework policy.
 
 ## 4. Foundation responsibilities
 
@@ -76,7 +76,7 @@ Complete construction owns a boundary's value meaning. Preserve full annotations
 
 Distinguish the supplying occurrence's established value from each consumer's native construction. A consumer may transform or reject supplied content. Specify which boundary establishes each fact and which established meaning each reference consumes, including facts used before an external action. Do not assume standalone and nested constructions agree or that instance input suppresses enclosing validators. Any transformation relevant to an action's prerequisite participates in the declared justification before the action.
 
-Operations compute from declared operands, not ambient time, randomness, mutable configuration, or I/O. Determinism concerns the same boundary, inputs, mode, and policy; it implies neither idempotent revalidation nor universal equality after serialization. Configuration follows value semantics; encoding and comparison accommodate those contracts.
+World computations and business-value construction depend on declared operands, not ambient time, randomness, mutable configuration, or I/O. Capability adapters perform declared external effects and return evidence through their authority and supply contracts. Determinism concerns the same boundary, inputs, mode, and policy; it implies neither idempotent revalidation nor universal equality after serialization. Configuration follows value semantics; encoding and comparison accommodate those contracts.
 
 FastStream parsing, dependency injection, validation, and TCA's construction call sites have explicit roles. Complete native semantics must neither be applied twice accidentally nor bypassed to preserve an earlier value. Ownership protection, business equivalence, and representation are distinct responsibilities; shallow immutability or an encoding choice does not establish all three.
 
@@ -102,25 +102,25 @@ Separate current evidence, historical establishment, and committed justification
 
 ## 7. Event-driven runtime and continuation
 
-Commands initiate or request work, queries inspect it, and events supply evidence through one declared program. JetStream retains authoritative execution information independently of acknowledgements and delivers work through durable consumers. Acknowledgement establishes processing progress; authorization, dispatch, provider acceptance, and business completion establish different facts. Redelivery resumes processing rather than authorizing repetition.
+Commands initiate or request work, queries inspect it, and events supply evidence through one program. JetStream retains authoritative execution information independently of acknowledgements and delivers work through durable consumers. Acknowledgement, authorization, dispatch, provider acceptance, and business completion establish distinct facts. Redelivery resumes processing, not permission to repeat.
 
-Detailed design resolves semantic commitment, evidence snapshot/version consistency, concurrency scope, acknowledgement points, and work discoverability. Use native conditional publication and required atomic batches at their documented scope; use subjects and recoverable KV where appropriate. These do not provide arbitrary transactions across streams, keys, or external systems. Prevent gaps between committed work and delivery, and between receiving evidence and its business judgment.
+Resolve semantic commitment, evidence snapshot/version consistency, concurrency scope, acknowledgement points, and work discoverability. Use native conditional publication and required atomic batches within documented scope, with subjects and recoverable KV. These supply no arbitrary cross-stream, cross-key, or external transactions. Prevent gaps between commitment and delivery or receipt and business judgment. Evidence arriving before its pursuit, correlation value, expectation, or consumer demand remains usable within declared retention bounds, including after interruption.
 
-Delivery exclusivity and exclusive external execution are different guarantees. Specify dispatch coordination and interruption recovery; repeat only within provider idempotency, safe repetition, or authoritative reconciliation contracts. Retained triggers must advance acknowledged but unfinished obligations, including delayed results and reconciliation. A receipt, timeout, or expired lease cannot manufacture completion or external repeat safety.
+Delivery exclusivity does not establish exclusive external execution. Specify dispatch coordination and interruption recovery; repetition requires provider idempotency, safe repetition, or authoritative reconciliation. Retained triggers advance acknowledged but unfinished obligations, including delayed results and reconciliation. Receipts, timeouts, and expired leases establish neither completion nor repeat safety.
 
-Temporal declarations distinguish source event time, receipt/knowledge time, and passage of a deadline. Bind each observation to a particular occurrence or result, identify clock authority and the fact being measured, and define historical versus current interpretation. Scheduling supplies notifications, not an implicit business policy. Resolve delayed routing, delayed boundary delivery, replacement, dispute, and replay without evaluation timing silently changing declared meaning.
+Temporal declarations distinguish source event time, receipt/knowledge time, and deadline passage. Identify the observed occurrence or result, clock authority, measured fact, and historical/current interpretation. Scheduling supplies notifications, not business policy. Resolve delayed routing and boundary delivery, replacement, dispute, and replay without evaluation timing silently changing meaning.
 
-Continuation preserves sufficient data, provenance, and executable program-version information. Schema identity alone does not identify validators or computed behavior. Define compatibility and explicit intervention so deployment changes do not silently reinterpret prior work.
+Continuation preserves data, provenance, and executable program-version information. Schema identity does not identify validators or computed behavior. Define compatibility and intervention so deployments cannot silently reinterpret prior work.
 
-Every durable boundary specifies encoding, decoding, native construction, and subsequent consumer behavior. Demonstrate that committed operation content reaches the adapter with its intended meaning. Dumping a constructed request and validating its output can transform it again; retaining inputs or bypassing validation does not by itself prove an alternative faithful. Use native representation machinery, resolve necessary integration, and avoid imposing a universal round-trip obligation on world models. Retained data does not require a live request or coroutine.
+Every durable boundary specifies encoding, decoding, native construction, and subsequent consumer behavior. Identify the actual constructed content authorized for an operation; establish that retention, delivery, and reconstruction preserve it under its declared value semantics. Further transformations need an explicit owning boundary and relationship to authorization. Validating serialized constructed output can transform it again; retaining inputs or bypassing validation does not alone prove fidelity. Use native machinery without a universal comparator, object-identity requirement, or world-model round-trip obligation. Retention requires no live request or coroutine.
 
-Cancellation stops newly justified execution while retaining initiated work and later observations. Define the race with committed but undispatched work. Intervention supplies evidence through actual authority; it cannot assert knowledge or repeat safety into existence.
+Define conclusion finality, subsequent acquisition/execution, and how late replacement, dispute, or completion affects current explanations and recorded conclusions. Revision, reopening, or a new pursuit follows explicit policy. Cancellation stops newly justified execution while preserving initiated work and later observations; resolve its race with committed but undispatched work. Intervention obtains evidence through actual authority, never inventing knowledge or repeat safety.
 
 ### Development topology
 
-Exactly two services: the **app dev container** with TCA, Pydantic/world modeling, FastStream, and tools; and **one NATS container** with JetStream enabled and file-backed storage on a persistent volume. Connect over the container network. Application and NATS restarts preserve retained development state; deleting the volume resets it.
+Exactly two services: the **app dev container** with TCA, Pydantic/world modeling, FastStream, and tools; and **one NATS container** with JetStream and file-backed storage on a persistent volume. Connect over the container network. App and NATS restarts preserve retained state; deleting the volume resets it.
 
-This is a single-node development target, not replicated high availability. No additional broker, scheduler, datastore service, or alternate in-memory execution host is required. Unit tests exercise value semantics and pure interpretation; runtime integration tests use NATS.
+This is single-node development, not replicated high availability. No additional broker, scheduler, datastore service, or alternate in-memory host is required. Unit tests exercise values and pure interpretation; runtime integration tests use NATS.
 
 ## 8. Public integration and extension
 
@@ -128,26 +128,26 @@ World extensions use native Pydantic mechanisms; capability adapters expose oper
 
 Direct calls, CLI, HTTP, and event ingress project one model. Define each interface's native input and output contract; uniform business semantics need not force every interface through an identical representation. Generate schemas from declared types and messaging contracts.
 
-Broker permissions establish transport access; application declarations establish source authority for a business relationship. Diagnostics identify type, occurrence, binding, subject, source, and located errors. Explanations distinguish current evidence from committed history, name missing or conflicting premises, and identify legitimate next progress. Telemetry observes execution without becoming authority.
+Broker permissions establish transport access; application declarations establish source authority for a business relationship. Diagnostics identify type, occurrence, binding, subject, source, and located errors. Explanations distinguish recorded conclusions, current evidence, and later lifecycle actions, name missing or conflicting premises, and identify legitimate next progress. Telemetry observes execution without becoming authority.
 
 ## 9. Design acceptance
 
-Deliver mutually consistent responsibility diagrams, behavioral views, public declarations, essential internal contracts, runtime protocols, justified choices, and traceability to this foundation and product requirements. Resolve consequential choices now; scenario walkthroughs exercise the architecture rather than specify it.
+Deliver consistent responsibility diagrams, behavioral views, public declarations, internal contracts, runtime protocols, justified choices, and product/foundation traceability. Resolve consequential choices now; scenarios exercise rather than specify the architecture.
 
 | Obligation | Required evidence |
 |---|---|
 | One authored model and practical authoring | Rules change once; schemas, bindings, diagnostics, and extensions expose the model without runtime-internal knowledge |
-| Type-driven composition | Invariants and prerequisites reside in types/relationships; nesting, sharing, alternatives, and collections preserve native consumer semantics |
+| Type-driven composition | Reusable types/relationships establish invariants and prerequisites, reduce corrective checks and validator boilerplate, and preserve native consumer semantics across composition |
 | Native construction | Full annotations, aliases, modes, defaults, validators, unions, returned replacements, and failure categories agree with selected Pydantic behavior |
 | Justified progress | Demand, provenance, request validity, execution knowledge, and path selection jointly justify work; unrelated work continues |
 | Acquisition and omission | Required/defaulted supply, conditional pursuit, closure, and optional inputs arriving between derivation and commitment have explicit outcomes |
-| Current and historical evidence | Replacement and dispute update current knowledge while historical establishment and committed justifications retain their declared meaning |
-| Durable content fidelity | Native transformations do not change authorized content accidentally during encoding, adapter reconstruction, restart, or new consumer construction |
+| Current and historical evidence | Replacement/dispute update current knowledge; historical establishment, recorded conclusions, justification, and subsequent lifecycle behavior follow explicit contracts |
+| Durable content fidelity | Actual authorized content survives retention, delivery, and reconstruction; further native transformations follow explicit boundaries and authorization relationships |
 | Temporal meaning | Event/knowledge clocks, observed occurrence, delayed boundary delivery, and later replacement/dispute follow the same declared policy |
-| Recovery and authority | Concurrent workers, acknowledgement loss, uncertain dispatch, cancellation, and reconciliation preserve legitimate progress without invented guarantees |
+| Recovery and authority | Early evidence, concurrency, acknowledgement loss, uncertain dispatch, cancellation, and reconciliation preserve progress within declared retention and authority |
 | Identity and completeness | Mutation protection, equal-valued distinct members, repeated attempts, correlation, and collection closure preserve subject boundaries |
 | Foundation delegation and topology | Custom mechanisms earn their role; integration runs against the app container and one persistent JetStream-enabled NATS container |
 
-Check prevented errors and valid progress under the same contracts. Counterexamples include pure enclosing transformations, non-idempotent output revalidation, optional evidence changing before authorization, and timely evidence later disputed. Every claimed history must follow from the published contracts, including interruption and later observations.
+Check prevented errors and valid progress together. Counterexamples include pure enclosing transformations, non-idempotent output revalidation, optional evidence changing before authorization, timely evidence later disputed, evidence preceding its expectation, and contradictions after conclusion. Histories must follow the contracts through interruption and later observations.
 
-Library claims use official documentation and focused checks against selected versions. Distinguish inspected behavior, isolated experiments, integration results, assumptions, and proposed tests. Examples cannot prove universal fidelity, written histories are not executed evidence, and compatibility questions require concrete resolution rather than new modeling restrictions.
+Support library claims with official documentation and version-specific checks. Distinguish inspection, isolated experiments, integration results, assumptions, and proposed tests. Examples prove no universal fidelity; written histories are not execution evidence. Resolve compatibility concretely without imposing new modeling restrictions.
