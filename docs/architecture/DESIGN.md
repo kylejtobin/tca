@@ -49,31 +49,72 @@ flowchart TB
 
 ## 2. Model-only authoring and World semantics
 
-Application authors declare Pydantic models, constrained fields, literals, discriminated unions, nested compositions, collections, literal defaults, and explicit relationships. Sources, supplying references, conditional acquisition, capability prerequisites, completion, and outcomes are modeled relationships.
+Application developers declare business values and their execution relationships. Native Pydantic supplies the value algebra; World supplies reusable business values and operations; Engine interprets explicit occurrence and execution relationships. The same declaration is the source for construction, introspection, schema, and derived bindings. Applications do not maintain a second procedural program.
 
-Application-authored validators, computed-property bodies, serializers, default-factory functions, callbacks, handlers, and workflow functions are forbidden. Framework configuration is derived from the model and declared deployment requirements.
+### Value algebra and construction
 
-World provides reusable typed values and operations for arithmetic, quantities, comparisons, Boolean composition, selection, projection, collections, and completion. Operations have explicit operand and result types. Composition and calculation have distinct execution contracts:
+| Form | Authoring representation | What supported construction establishes |
+|---|---|---|
+| Scalar or refinement | A named `RootModel[T]`, with native declarative constraints on its supported underlying value. | The resulting business value satisfies the declared scalar type and constraints. |
+| Product | A named `BaseModel` with business-typed fields. | Required constituents exist together and satisfy their receiving annotations. |
+| Sum | An explicit discriminated union of alternative models; a named `RootModel` makes the union a first-class business model. | Exactly the selected declared alternative is constructed with its required constituents. |
+| Collection | A named `RootModel` over an explicitly typed native collection. | Members, cardinality, and structural ordering or uniqueness constraints follow the chosen native type and constraints. |
+| Mapping | A named `RootModel` over explicitly typed keys and values. | The value is a genuine keyed relationship with the declared key and value contracts. |
+| Finite vocabulary | `StrEnum` or literal values; alternatives with associated structure use a sum. | The value belongs to the declared vocabulary. |
+
+These forms compose recursively. Named RootModels give identifiers, quantities, alternatives, collections, and mappings their own construction contract while preserving their native JSON root shape. Primitive annotations remain underlying material; independently meaningful business values receive names. A product's differently meaningful fields are not replaced by an untyped dictionary. A mapping remains appropriate for a genuine keyed relationship. TCA does not recreate these native forms as wrapper classes.
+
+The supported declaration surface consists of these forms, concrete generic specializations, native `Annotated` constraints, `Field` declarations, explicit discriminators, literal data defaults, and declarative relationship metadata. Requiredness, nullability, constraints, aliases, and selected strictness are visible in the declaration. Defaults must undergo native validation; omission does not bypass a value's constraints. Each supported scalar, container, constraint, and configuration combination must have an explicit native JSON receiving/serialization contract in the authoring specification. Arbitrary Python objects, `Any` as business meaning, and untyped containers are not substitutes for that contract.
+
+Successful construction establishes the resulting value's declared types, constraints, and alternatives. Consumers rely on those established guarantees rather than repeat them in downstream validation code. Construction does not establish undeclared cross-field rules, external truth, source authority, occurrence identity, currentness, or permission to act. Model those requirements through explicit types, operations, and execution relationships. Framework implementations use complete native construction; bypass construction, unchecked updates, and mutation are not means of establishing new authoritative values.
+
+### Computation and extension boundary
+
+World provides reusable typed values and operations for arithmetic, quantities, comparisons, Boolean composition, selection, projection, aggregation, collections, and completion. An application declares an operation application with explicit typed operands, supplying bindings, and a typed result. A result annotation alone does not specify its producer. The supported operation vocabulary and each operation's failure or alternative contract are explicit; developers compose those operations instead of supplying calculation bodies.
 
 | Declared consumer | Execution |
 |---|---|
-| Business composition | Pydantic constructs the composition from its bound inputs. |
-| World computation or decision | Its reusable implementation consumes the declared typed operands and produces its result. |
+| Business composition | Pydantic constructs the composition from its bound inputs. Assembly does not implicitly perform arithmetic or selection. |
+| World computation or decision | Its reusable implementation consumes the declared typed operands and produces its separately declared result. |
 | Retained result receiver | Native receiving construction establishes the result without rerunning its producer operation. |
 
-Compositions and computations publish established results through the same native event infrastructure.
+Compositions and computations publish established results through the same native event infrastructure. Consumers require the appropriate constructed prerequisite or decision alternative. A valid non-holding alternative remains business evidence, not invalid input. Unavailable operands, invalid supplied content, consumer construction failures, and capability failure reports retain their boundary and evidence basis.
 
-Pydantic constructs declared values and checks their constraints and alternatives. Framework value implementations own their native invariant mechanisms. Consumers require the appropriate constructed prerequisite or decision alternative. A valid non-holding alternative remains business evidence, not invalid input. Unavailable operands, invalid supplied content, consumer construction failures, and capability failure reports retain their boundary and evidence basis.
+Application-authored validators, computed-property bodies, serializers, default-factory functions, custom constructors or schema hooks, callbacks, handlers, and workflow functions are forbidden. Relationships and computations cannot be hidden in such bodies. The binder reads explicit data declarations; it does not infer meaning by inspecting or executing application-authored function bodies. Native utilities such as `TypeAdapter` may implement a declared receiving boundary; their availability does not permit application procedures or a second value language.
 
-World has no messaging or persistence dependency. Framework and extension authors implement reusable operations and external adapters through defined contracts. Extensions add reusable semantics or integrations; they do not hide application workflows or business decisions in validation hooks. Engine-specific execution event types belong to Engine; reusable business values and operations belong to World. Shared reference primitives may be reused without introducing messaging dependencies into World.
+World has no messaging or persistence dependency. Framework and extension authors implement reusable operations and external adapters through defined contracts. Framework value implementations own their native invariant mechanisms. Extensions add reusable semantics or integrations; they do not hide application workflows or business decisions in validation hooks. Engine-specific execution event types belong to Engine; reusable business values and operations belong to World. Shared reference primitives may be reused without introducing messaging dependencies into World.
 
-The public authoring contract presents World compositions and Engine-owned execution relationships coherently. Native field semantics and repetitive wiring are derived. Developers supply only meaning that cannot be inferred, change a business rule in its declaration, and receive diagnostics in application vocabulary.
+### Authoring experience
+
+The public contract presents World compositions and Engine-owned execution relationships coherently. Ordinary value definitions remain native Pydantic. Typed relationship descriptors attach through `Annotated` field metadata; relationships governing an occurrence attach to its declaration, not globally to every use of its Python class. Type references and declaration paths are data, not callbacks. Native annotations and `FieldInfo` expose receiving types and field semantics. Only meaning not unambiguously present in the structure requires additional metadata.
+
+The authoring specification must give the actual Python declaration for each supported form and relationship, its inferred information, its required explicit information, and its binding diagnostics. Public descriptor names and signatures belong to that specification; they must implement the semantics here rather than invent another execution model. Developers do not duplicate field lists, schemas, dependency graphs, subject strings, subscriptions, or workflow steps. Framework configuration is derived from these declarations and declared deployment requirements.
+
+Missing, conflicting, or ambiguous relationships fail binding with the declaration path, operand, and required correction in application vocabulary. Malformed runtime values retain native error locations plus their receiving occurrence and evidence basis. A developer changes a business rule in its declaration and can inspect the resulting execution without studying Engine internals.
 
 ## 3. Binding the graph to native facilities
 
-An occurrence is a realization within a pursuit, identified by its declaration location and, where applicable, its declared member key. A declared business-subject projection identifies the field or typed projection describing what it concerns. Projection paths must resolve during binding; values concerning several subjects declare the relevant roles. Equal values, matching types, names, or business identifiers do not merge occurrences. Sharing follows an explicit supplying reference or an unambiguous structural relationship; ambiguity fails binding.
+A value type defines admissible content. A declaration location identifies its use in the program. An occurrence is a realization of that declaration within a pursuit, identified by its declaration location and, where applicable, its declared member key. The same Python type can have many declaration locations and occurrences. Any supported value shape, including a BaseModel product, can be independently supplied, retained, and versioned; naming a class or nesting a field alone does not create a separate addressed occurrence. A declared business-subject projection identifies the field or typed projection describing what it concerns. Projection paths must resolve during binding; values concerning several subjects declare the relevant roles. Equal values, matching types, names, or business identifiers do not merge occurrences. Sharing follows an explicit supplying reference or an unambiguous structural relationship; ambiguity fails binding.
 
-Engine resolves references to typed operands or declared projections. Each resolved supplying binding identifies the consuming declaration and operand position, receiving annotation, supplying occurrence, projection if any, and supported native input/construction contract. Nested fields establish composition; supplying references establish dependencies across occurrences. Static inconsistencies fail loading. Declared identity variables complete subject-dependent addresses when their values become available. Resolved identity determines addressing; assigning a shared address cannot invent a supplying relationship.
+Engine resolves references to typed operands or declared projections. Each resolved supplying binding identifies the consuming declaration and operand position, receiving annotation, supplying occurrence, projection if any, and supported native input/construction contract. Nested fields establish composition; supplying references establish dependencies across occurrences. Static inconsistencies fail loading. Declared identity variables complete subject-dependent addresses when their values become available. Resolved identity determines addressing; assigning a shared address cannot invent a supplying relationship. Business identifiers retain their domain value even when they contain NATS punctuation. Engine derives a deterministic, unambiguous subject-token representation that cannot inject separators or wildcards. An address-token restriction belongs to the addressing contract, not automatically to every World identifier.
+
+The relationship vocabulary has the following declaration meanings. Every entry is explicit typed metadata unless the same meaning is unambiguously derived from native structure.
+
+| Relationship | Required declared meaning |
+|---|---|
+| Identity and identity binding | Declaration location, member identity where applicable, and how identity variables bind to a supplier or consumer occurrence. |
+| Supply | The supplying occurrence and any declared projection for a named typed operand. A matching type alone does not select a supplier. |
+| Demand and acquisition | The pursued outcome, the alternatives that activate prerequisites, and which missing evidence justifies acquisition. |
+| Authority | The source allowed to establish evidence and the capability permitted to perform declared external work. |
+| Evidence selection | Eligible candidates, their occurrence scope, and latest, first, or a declared history-sensitive policy. |
+| Membership and completion | Whether members are embedded or independently supplied, their identities, relevant ordering, and the evidence establishing a complete required set. |
+| Business-subject projection | The field or typed projection identifying what an occurrence concerns, including distinct roles where needed. |
+| Omission and stopping | Permitted absence or default, whether acquisition is requested, and the relationship that ends waiting. |
+| Lifecycle | Cancellation, completion, finality, and any policy that permits reopening or later establishments. |
+| Deadline | The recording event used as the runtime anchor, declared interval, and the meaning of the resulting notification. |
+| Capability interface | Request/prerequisite type, success, refusal and operational-failure alternatives, source attribution, and provider recovery contract. |
+
+A collection or mapping embedded in a value is constructed and retained with that value. Independently supplied members require a declared occurrence/membership relationship; only then does Engine derive member addresses. A mapping key does not automatically create an independently versioned occurrence. Native collection structure validates the supplied container; it does not prove that every required independently supplied member has arrived. Equal business identifiers neither merge occurrences nor replace declared membership.
 
 | Declared meaning | Native realization and remaining responsibility |
 |---|---|
@@ -82,13 +123,13 @@ Engine resolves references to typed operands or declared projections. Each resol
 | Decision alternative | Derive alternative-specific publication addresses from the constructed discriminator and resolved occurrence. Applications do not separately author another alternative identifier in the subject. |
 | Source authority | Enforce publication permissions for the declared source channel and consume its established identity directly. Payload validity and external execution authority retain their separate contracts. |
 | Demand | Intent and constructed alternatives activate the derived dependency and acquisition bindings. General evidence reception remains available independently; receipt alone does not activate acquisition. |
-| Collection membership | Derive keyed member addresses and native subscription patterns. Equal-valued members under different identities remain distinct. |
+| Independently supplied membership | Derive keyed member addresses and native subscription patterns from the declared membership relationship. Equal-valued members under different identities remain distinct. Embedded containers do not acquire member subscriptions merely by having keys. |
 | Collection completion | A World construction consumes declared membership and completion evidence. Members can support independent work before the complete collection is established. |
 | Business events and progress | JetStream retains events; native consumers provide delivery, distribution, acknowledgement, and redelivery. Do not duplicate that progress bookkeeping. |
 | Deadlines | Bind declared anchors to NATS recording timestamps and native scheduled notifications. |
 | Commitment | Native latest-value retrieval supplies candidate operands. Conditional or atomic publication protects the authoritative changes relevant to the consumed basis; retrieval alone is not an evidence-consistent commitment. |
 
-Alternative-specific events retain their decision occurrence and version. A consumer requiring a current alternative binds to the version selected by the declared replacement policy across that occurrence's candidate subjects, not merely the last message retained on one alternative's subject. Only events admitted under the declared receiving and source contract are candidates; unrelated descendants, refusals, and composite outputs are not automatically evidence for that decision.
+A discriminated union is a value shape. A decision occurrence adds its source and replacement/selection relationships; these do not follow merely from declaring a union. Alternative-specific events retain their decision occurrence and version. A consumer requiring a current alternative binds to the version selected by the declared replacement policy across that occurrence's candidate subjects, not merely the last message retained on one alternative's subject. Only events admitted under the declared receiving and source contract are candidates; unrelated descendants, refusals, and composite outputs are not automatically evidence for that decision.
 
 Retrieval follows the policy at an identified stream snapshot:
 
@@ -102,7 +143,7 @@ For example, Approved@1, Declined@2, Approved@3 yields Approved@3 for latest and
 
 Native batched reads must consume their completion markers, handle required pagination, and preserve the same snapshot bound. A partial response or limit error does not establish absence or completeness. Historical lookup retrieves versions; retained typed references record which versions an actual construction consumed. Historical commitments preserve their original evidence basis without deleting history or adding a truth tracker.
 
-Accepted intent activates the dependency and acquisition bindings for its declared outcome. Required dependencies follow their suppliers; constructed alternatives activate the declared branches. Native requiredness, nullability, and defaults retain their construction meanings. A default permits omission, not acquisition. Optional acquisition that waits has an explicit stopping relationship. Deactivation stops new acquisition authorization while preserving initiated work and later observations. Queued delivery from an earlier activation does not independently authorize another effect.
+Accepted intent activates the dependency and acquisition bindings for its declared outcome. Required dependencies follow their suppliers; constructed alternatives activate the declared branches. Native requiredness, nullability, and defaults retain their construction meanings. A default permits omission, not acquisition. Any acquisition that waits has an explicit stopping relationship. A nullable operand permits a constructed null value; it does not itself request acquisition or establish that waiting should stop. Deactivation stops new acquisition authorization while preserving initiated work and later observations. Queued delivery from an earlier activation does not independently authorize another effect.
 
 An incomplete composition is represented by its declared dependencies and retained operands at their supplying addresses. Engine retains no half-constructed business object and no pending table duplicating availability. A subsequent relevant event triggers another attempt through the same binding. Reconstructible caches may accelerate reads but establish no separate readiness or arrival authority.
 
@@ -153,7 +194,7 @@ Direct-call, CLI, HTTP, and event interfaces reuse the same business declaration
 
 ## 5. Commitment and continuation
 
-A capability declares its prerequisite/request type, report alternatives, source relationship, and actual provider recovery guarantees. Constructed business prerequisites, declared demand, bound provenance, lifecycle, and provider authority justify work together. Constructibility alone grants no external permission.
+A capability declares its prerequisite/request type, typed success, legitimate refusal and operational-failure reports, source relationship, and actual provider recovery guarantees. Adapter code implements external interaction; the model establishes the work and the reports it can mean. Constructed business prerequisites, declared demand, bound provenance, lifecycle, and provider authority justify work together. Constructibility alone grants no external permission.
 
 Retain the authorized request before invocation. The adapter receives that request through its declared data contract and translates it into the provider protocol without silently changing its business content or adding another business decision.
 
@@ -174,7 +215,7 @@ Acknowledgement follows the retained processing result. Native consumers keep wo
 
 Native redelivery does not grant permission to repeat an external effect. Capability contracts govern idempotent, safely repeatable, reconcilable, and intervention-required execution. Immediate and delayed reports satisfy the same declared business relationship. A report may establish content while its attribution to an attempt remains unresolved.
 
-Source declarations determine replacement and dispute behavior; there is no undeclared latest-wins policy. New evidence changes current knowledge without rewriting historical justification. Outcomes declare completion and finality; reopening requires declared policy. Cancellation stops new authorization, with dispatch ordering preserving initiated work and provider guarantees. Intervention supplies authoritative evidence, not an invented repeat-safety guarantee.
+Source declarations determine replacement and dispute behavior; there is no undeclared latest-wins policy. New evidence changes current knowledge without rewriting historical justification. Lifecycle is declared for pursued outcomes and their constructions, not only for capability calls. Outcomes declare completion and finality; reopening requires declared policy. Cancellation stops new authorization, with dispatch ordering preserving initiated work and provider guarantees. Intervention supplies authoritative evidence, not an invented repeat-safety guarantee.
 
 NATS owns runtime time. Server recording timestamps anchor runtime-relative deadlines; stream sequence establishes retained order within its stream scope. Native schedules deliver declared deadline notifications. Restart does not reset deadlines, and late delivery does not redefine them. External timestamps remain typed business claims; evaluator wall clocks do not determine progression.
 
@@ -188,7 +229,7 @@ Continuation uses retained events and native consumers without a live request or
 
 Engine implements one generic propagation mechanism through the following responsibilities:
 
-1. Resolve declarations into native bindings and typed supplying relationships.
+1. Resolve native value declarations and typed relationship metadata into occurrence-specific bindings. Reject ambiguous or unsupported declarations without executing application bodies.
 2. Activate those bindings from declared intent, alternatives, and lifecycle.
 3. Retrieve authoritative supplying events and assemble declared consumer inputs.
 4. Perform native composition or invoke the declared reusable World operation.
@@ -209,13 +250,15 @@ For every consequential relationship, demonstrate:
 
 **Declaration → resolved occurrence and subject projection → address/permission → active receiving binding → native operand retrieval → input assembly → construction or operation → typed result and justification → conditional publication → downstream delivery.**
 
-Name the actual declaration, native mechanism, and guarantee at each step, including the operand versions, construction or operation, publication condition, and retained result. For each remaining Engine operation, identify the exact fact the native composition leaves unestablished. Use the same authoring contract and bindings across the public specification, native mapping, and behavioral histories.
+Name the actual declaration, native mechanism, and guarantee at each step, including the operand versions, construction or operation, publication condition, and retained result. For each remaining Engine operation, identify the exact fact the native composition leaves unestablished. Use the same authoring contract and bindings across the public specification, native mapping, and behavioral histories. Each supported value form, relationship descriptor, and operation application has a contract row identifying its actual Python authoring form, construction guarantee, derived binding, native facility, and executed acceptance history. The supported native scalar, constraint, and configuration inventory states which receiving contracts those rows exercise. The inventory is shared by the specification and implementation; developers do not maintain a second inventory in their applications.
 
 Acceptance requires a model-only application progressing from intent through events, constructed prerequisites, external work, interruption, and outcome. Demonstrate the histories below, pairing prevented errors with legitimate progress:
 
 - An incomplete composition becomes constructible without a pending table; absent evidence remains distinguishable from malformed supplied content.
 - Valid negative alternatives and replacement across alternative-specific subjects preserve the authoritative current version and historical justification. Approved@1, Declined@2, Approved@3 must select @3 under latest and @1 under first; history-sensitive dispute cases retain all evidence their policy requires.
-- Shared suppliers, distinct collection members, completion-dependent results, and independent consumers retain their declared identities and progress.
+- Named RootModel scalars, sums, collections and mappings compose within BaseModel products through native JSON receiving and publishing. Check constraints, defaults, aliases, nullability, and declared strictness at their actual boundaries without assuming Python-mode and JSON-mode behavior are identical.
+- Shared suppliers, repeated uses of one model class, independently addressed products, distinct collection members, completion-dependent results, and independent consumers retain their declared identities and progress. Embedded mappings remain embedded; independently supplied membership progresses under its explicit relationship.
+- Declared operation applications compute from named typed operands; receiving their retained results does not repeat computation. An application expresses calculations and branches without validator or callback bodies.
 - Business-key correlation reaches multiple legitimately related occurrences and pursuits without merging them.
 - Concurrent operand changes cause basis refresh and reconsideration rather than stale commitment. Include a supplier outside the immediate subtree, an operand change before a later watermark read, an absent operand arriving during construction, competing publications, and an unrelated write outside the protected filter.
 - Restart after publication but before acknowledgement preserves established work without duplicate authorization.
@@ -224,10 +267,16 @@ Acceptance requires a model-only application progressing from intent through eve
 - Capability delivery and provider-governed recovery preserve authorized content without unjustified repetition.
 - Conditional demand, early and delayed evidence, NATS deadlines, cancellation, and finality follow the same bindings.
 
-Show a business-rule change made once and diagnostics explaining established facts, attempted work, blocked dependencies, and legitimate next progress in application vocabulary.
+Show a business-rule change made once and diagnostics explaining established facts, attempted work, blocked dependencies, and legitimate next progress in application vocabulary. Include binding errors for ambiguous suppliers and inadmissible procedural declarations, business identifiers containing transport punctuation, and the distinction between omission, null, acquisition, and stopping. Cancellation, finality, reopening, and recording-time deadlines must work for ordinary constructions as well as capabilities.
 
 Use focused checks against selected native versions. Distinguish executed integration, isolated experiments, derived behavior, and unresolved claims. Verify actual client signatures or use the documented native request protocol; compilation is not API or integration verification. Source inspection supports native capability claims but does not establish the composed histories. Subject grammar, stream/consumer configuration, snapshot retrieval, and commitment scope require concrete demonstration. Artifact presence, schema hashes, native feature names, and diagnostic output do not substitute for the composed guarantee.
 
-The reference read mechanisms are documented in [NATS ADR-31](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-31.md); native publication conditions are documented in [JetStream publication headers](https://github.com/nats-io/nats.docs/blob/master/nats-concepts/jetstream/headers.md). These establish available primitives, not evidence that TCA's target protocol has been executed.
+The reported single-node integration used nats-server 2.15.2 with JetStream file storage and nats-py 2.16.0 and passed 20 checks of policy selection, snapshot commitment, conflicts, and unavailable operands. This is reported evidence, not an independently inspected repository acceptance suite. It does not establish replica freshness, pagination beyond one batch, or atomic batch publication. The durable integration demonstration must exercise those branches where required and identify the exact code, configuration, versions, and results; temporary probes do not become production Engine components.
+
+Complete the artifacts in dependency order: the World/shared authoring contract defines the supported declarations and developer experience; the Engine realization specification binds their exact semantics to native facilities; the integrated execution demonstration executes that same contract. The artifacts must agree without requiring application-specific execution code or duplicating native capabilities.
+
+The reference read mechanisms are documented in [NATS ADR-31](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-31.md); native publication conditions are documented in [JetStream publication headers](https://github.com/nats-io/nats.docs/blob/master/nats-concepts/jetstream/headers.md). These establish available primitives; execution evidence must separately identify the composed protocol it exercised.
+
+The native value contracts follow [Pydantic models and RootModel](https://docs.pydantic.dev/latest/concepts/models/), [fields and metadata](https://docs.pydantic.dev/latest/concepts/fields/), and [serialization](https://docs.pydantic.dev/latest/concepts/serialization/). These document the underlying facilities; TCA's supported declaration inventory specifies their application role.
 
 The governing acceptance rule is a complete model-only business program, faithfully realized through native facilities, with no application workflow code and no duplicated native subsystem.
