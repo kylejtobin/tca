@@ -13,6 +13,8 @@ World supplies business types and reusable operations. A business type, its decl
 
 Developers author the business model once. Engine derives its native runtime realization, not a separate business program. Type definitions, schemas, addresses, permissions, and runtime values are connected representations of those declarations; they are not interchangeable guarantees.
 
+The computational model is typed, demand-driven incremental dataflow over retained events, with explicit effect boundaries. Declared dependencies determine propagation; retained events establish history; constructions produce derived values; version-consistent publication establishes new work. These are settled semantics. Native API and configuration choices realize them rather than determine them. They do not introduce another dataflow engine, projection service, or application workflow.
+
 ```mermaid
 flowchart TB
     WORLD["World: business types and reusable operations"]
@@ -86,7 +88,19 @@ Engine resolves references to typed operands or declared projections. Each resol
 | Deadlines | Bind declared anchors to NATS recording timestamps and native scheduled notifications. |
 | Commitment | Native latest-value retrieval supplies candidate operands. Conditional or atomic publication protects the authoritative changes relevant to the consumed basis; retrieval alone is not an evidence-consistent commitment. |
 
-Alternative-specific events retain their decision occurrence and version. A consumer requiring a current alternative binds to the version selected by the declared replacement policy, not merely the last message retained on that alternative's subject. After Approved version 1 is replaced by Declined version 2, the old approval remains history but cannot silently satisfy a current approval prerequisite. Historical commitments preserve their original evidence basis. The concrete binding must establish the authoritative version relationship without deleting history or adding an unrelated truth tracker.
+Alternative-specific events retain their decision occurrence and version. A consumer requiring a current alternative binds to the version selected by the declared replacement policy across that occurrence's candidate subjects, not merely the last message retained on one alternative's subject. Only events admitted under the declared receiving and source contract are candidates; unrelated descendants, refusals, and composite outputs are not automatically evidence for that decision.
+
+Retrieval follows the policy at an identified stream snapshot:
+
+| Declared policy | Required native retrieval |
+|---|---|
+| Latest by retained order | Retrieve the latest candidate on each matching subject at the snapshot and select the greatest stream sequence across them. |
+| First by retained order | Retrieve the earliest matching candidate across the occurrence's subjects, bounded by the snapshot. Do not select the minimum from latest-per-subject results. |
+| Dispute, business-field ordering, or another declared history-sensitive policy | Retrieve the candidate history required by that policy through the snapshot and apply its declared World operation. A latest-per-subject query cannot replace information the policy needs. |
+
+For example, Approved@1, Declined@2, Approved@3 yields Approved@3 for latest and Approved@1 for first. Latest-per-subject returns Approved@3 and Declined@2; taking their minimum incorrectly yields Declined@2. After an approval is replaced by a decline under the declared policy, the old approval remains history but cannot silently satisfy a current approval prerequisite.
+
+Native batched reads must consume their completion markers, handle required pagination, and preserve the same snapshot bound. A partial response or limit error does not establish absence or completeness. Historical lookup retrieves versions; retained typed references record which versions an actual construction consumed. Historical commitments preserve their original evidence basis without deleting history or adding a truth tracker.
 
 Accepted intent activates the dependency and acquisition bindings for its declared outcome. Required dependencies follow their suppliers; constructed alternatives activate the declared branches. Native requiredness, nullability, and defaults retain their construction meanings. A default permits omission, not acquisition. Optional acquisition that waits has an explicit stopping relationship. Deactivation stops new acquisition authorization while preserving initiated work and later observations. Queued delivery from an earlier activation does not independently authorize another effect.
 
@@ -108,7 +122,7 @@ Generated FastStream subscribers and publishers use the declared receiving and p
 
 Business-key ingress bindings and any necessary native lookup derive from the declared business-subject projection and source relationship. An integration supplying only a business key can concern several occurrences and pursuits; preserve all declared receiving relationships. Resolve additional correlation through native addressing, retention, and lookup where needed. A shared key neither merges occurrences nor automatically requires a separate index or universal join mechanism.
 
-These allocations do not prescribe one consumer per member, a universal selection strategy, or a fixed stream layout. Concrete configuration follows the declaration's required behavior.
+These allocations do not prescribe one consumer per member, a universal selection strategy, or one stream per pursuit. Stream configuration must satisfy the native commitment boundary in section 5; a subject prefix alone is not evidence that it covers the resolved dependency graph.
 
 ## 4. Event data contract
 
@@ -143,7 +157,18 @@ A capability declares its prerequisite/request type, report alternatives, source
 
 Retain the authorized request before invocation. The adapter receives that request through its declared data contract and translates it into the provider protocol without silently changing its business content or adding another business decision.
 
-Authorization and conclusion identify the actual supplying versions consumed and any relevant omission or completion basis. All changes authoritative for that justification participate in its concurrency boundary. Native conditional and atomic publication protect the selected scope; destination-only checks cannot establish consistency with changing supporting evidence. On conflict, refresh the relevant basis and reconsider the construction or authorization rather than blindly retry obsolete work. An unchanged committed basis must not create another authorization for the same established attempt. No transaction is implied across arbitrary streams or external resources.
+Authorization and conclusion identify the actual supplying versions consumed and any relevant omission or completion basis. Only versions permitted by the declared currentness and replacement relationships satisfy a current dependency. A subtree is a sufficient commitment scope only if it covers those resolved suppliers, relevant authority and lifecycle changes, future arrivals that would change omission or membership, and the publication destination. Nesting alone does not establish this coverage.
+
+Use optimistic validation of a versioned read basis:
+
+1. Resolve a covering subject filter `F` within one JetStream stream. Include the destination so successful publication advances the checked scope. Widen to a common ancestor when a supplying reference or authority relationship lies outside the immediate subtree; use stream-wide validation when necessary.
+2. Capture a stream sequence boundary `S` before reading operands. Retrieve policy-selected evidence, relevant authority, and the latest matching scope sequence `W` as of that same `S`. Complete all reads at that bound. Do not read old operands and then obtain a newer watermark that can hide an intervening change.
+3. Construct from that basis. Publish with `Nats-Expected-Last-Subject-Sequence: W` and `Nats-Expected-Last-Subject-Sequence-Subject: F`. For a stream-wide check, use `Nats-Expected-Last-Sequence: S`.
+4. A conflict discards the proposed publication, refreshes the relevant basis, and reconsiders the work. A prior publication under the same established basis and attempt is recognized from retained typed records, not another deduplication ledger. Publish related records atomically where their contract requires all-or-nothing establishment.
+
+All authoritative versions validated by that commitment must be represented in its native stream scope. Evidence originating elsewhere requires an explicit retained admission relationship into that scope; this does not create an atomic transaction with the upstream system. An enlarged scope permits false conflicts from unrelated writes, not stale authorization. A shared stream's last sequence protects the shared stream, not automatically one pursuit.
+
+The read path must establish that the snapshot is available and sufficiently current for its trigger before acknowledging an unavailable dependency. Direct Get must not be assumed read-after-write coherent across replicas; use a demonstrated freshness guarantee or leader-routed native retrieval. Expiry, purge, deletion, or incomplete retention must not remove facts needed to establish a basis or conceal a relevant authority change. No transaction is implied across arbitrary streams or external resources.
 
 Acknowledgement follows the retained processing result. Native consumers keep work discoverable across interruption. Repeated coordination does not create another authorization for the same established attempt. Delivery, provider acceptance, business completion, and transport acknowledgement remain different facts.
 
@@ -189,10 +214,10 @@ Name the actual declaration, native mechanism, and guarantee at each step, inclu
 Acceptance requires a model-only application progressing from intent through events, constructed prerequisites, external work, interruption, and outcome. Demonstrate the histories below, pairing prevented errors with legitimate progress:
 
 - An incomplete composition becomes constructible without a pending table; absent evidence remains distinguishable from malformed supplied content.
-- Valid negative alternatives and replacement across alternative-specific subjects preserve the authoritative current version and historical justification.
+- Valid negative alternatives and replacement across alternative-specific subjects preserve the authoritative current version and historical justification. Approved@1, Declined@2, Approved@3 must select @3 under latest and @1 under first; history-sensitive dispute cases retain all evidence their policy requires.
 - Shared suppliers, distinct collection members, completion-dependent results, and independent consumers retain their declared identities and progress.
 - Business-key correlation reaches multiple legitimately related occurrences and pursuits without merging them.
-- Concurrent operand changes cause basis refresh and reconsideration rather than stale commitment.
+- Concurrent operand changes cause basis refresh and reconsideration rather than stale commitment. Include a supplier outside the immediate subtree, an operand change before a later watermark read, an absent operand arriving during construction, competing publications, and an unrelated write outside the protected filter.
 - Restart after publication but before acknowledgement preserves established work without duplicate authorization.
 - Public typed Engine events support continuation and developer-visible explanations.
 - Derived identities detect changes in declarations and executable behavior, while compatibility is assessed against retained meaning.
@@ -201,6 +226,8 @@ Acceptance requires a model-only application progressing from intent through eve
 
 Show a business-rule change made once and diagnostics explaining established facts, attempted work, blocked dependencies, and legitimate next progress in application vocabulary.
 
-Use focused checks against selected native versions. Distinguish executed integration, isolated experiments, derived behavior, and unresolved claims. Subject grammar, stream/consumer configuration, and commitment scope require concrete demonstration. Artifact presence, schema hashes, native feature names, and diagnostic output do not substitute for the composed guarantee.
+Use focused checks against selected native versions. Distinguish executed integration, isolated experiments, derived behavior, and unresolved claims. Verify actual client signatures or use the documented native request protocol; compilation is not API or integration verification. Source inspection supports native capability claims but does not establish the composed histories. Subject grammar, stream/consumer configuration, snapshot retrieval, and commitment scope require concrete demonstration. Artifact presence, schema hashes, native feature names, and diagnostic output do not substitute for the composed guarantee.
+
+The reference read mechanisms are documented in [NATS ADR-31](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-31.md); native publication conditions are documented in [JetStream publication headers](https://github.com/nats-io/nats.docs/blob/master/nats-concepts/jetstream/headers.md). These establish available primitives, not evidence that TCA's target protocol has been executed.
 
 The governing acceptance rule is a complete model-only business program, faithfully realized through native facilities, with no application workflow code and no duplicated native subsystem.
