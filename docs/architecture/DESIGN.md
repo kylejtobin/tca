@@ -118,6 +118,8 @@ Event payloads use Pydantic's native JSON serialization and receiving validation
 
 Operation inputs and produced results have distinct contracts. Decoding a retained result constructs that result; it does not rerun its producer calculation. A published, addressed composite retains its business content, occurrence identity, typed supplying-event references, and model/operation identities. Pure assembly does not exempt an established result from retention. Its basis explains establishment, not universal reconstruction from ancestry. Transient implementation objects do not require separate events.
 
+A declared construction may produce updated versions as its supplying evidence changes; it need not represent a terminal outcome. Each result remains derived from its recorded operand basis, with JetStream retaining authoritative history. Producing an updated value does not itself authorize capability execution; effects remain governed by declared demand, prerequisites, lifecycle, and provider contracts.
+
 Declared supply and retained justification are one relationship before and after execution: the declaration identifies the supplying occurrence; the retained justification binds that edge to the event actually consumed.
 
 | Typed justification payload field | Meaning |
