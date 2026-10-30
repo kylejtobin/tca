@@ -4,7 +4,7 @@ TCA is a declarative application framework: Python/Pydantic business types decla
 
 ## Read before implementation
 
-Read the complete [foundations](docs/TCA_ARCHITECTURAL_FOUNDATIONS.md).
+Read the complete [architecture design](docs/architecture/DESIGN.md).
 
 Earlier implementations and conversations are not alternate authority. Pydantic owns complete native construction; declared relationships own causal demand. Do not infer authorization from holder validators, field positions, callback signatures or partial validation.
 
