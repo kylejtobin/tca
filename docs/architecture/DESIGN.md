@@ -1,7 +1,7 @@
 ```mermaid
 flowchart TB
-    WORLD["World types"]
-    RUN["Framework run types"]
+    WORLD["Business value types"]
+    RUN["Application execution types"]
     APP["Application package: one composed model of values, events, activities, identities, and relationships"]
 
     WORLD -->|"Business meaning"| APP
@@ -28,7 +28,7 @@ flowchart TB
     APP -.->|"Result identity, basis, publication conditions"| PUBLISH
     SETTINGS -->|"Constructed resource configuration"| FAST
 
-    APP -->|"Same modeled identities and relationships"| OTHER["Additional systems: native projections"]
+    APP -->|"Same modeled identities and relationships"| OTHER["External systems and declared integrations"]
     NATS -->|"Retained authorized requests through adapters"| OTHER
     OTHER -->|"Declared observations"| NATS
 ```
@@ -46,11 +46,11 @@ flowchart TB
 
 TCA enables developers to deliver complete event-driven applications through precise typed declarations. Developers model their business and the run of their application inside a separate Python package that imports TCA.
 
-Framework authors follow the same discipline. TCA defines specialized run models and their native realization, not a procedural engine with a declarative interface placed over it. World and run types belong to one compositional modeling system.
+Framework authors define specialized execution models using the same typed composition as business models. Their native bindings implement those declared semantics. World and run identify modeling responsibilities within one framework; they do not prescribe separate packages or independently authored programs.
 
 The design minimizes independently maintained descriptions of application meaning. A relationship is declared once; its receiving bindings, subjects, permissions, and downstream projections follow from that declaration. Changing it requires no second wiring edit.
 
-Correctness, compositionality, locality of change, durable continuation, and understandable execution are the quality goals. Less custom procedure is the consequence of precise modeling and native reuse, not permission to omit necessary guarantees.
+The quality goals are correct construction and commitment, consistent model composition, changes localized to their authoritative declarations, durable continuation, and explainable execution. Custom procedure is limited to obligations that native facilities do not fulfill.
 
 ## 2. Architectural constraints
 
@@ -61,9 +61,23 @@ Correctness, compositionality, locality of change, durable continuation, and und
 - Application-authored validators, arbitrary computed-property bodies, serializers, default factories, custom constructors or schema hooks, callbacks, handlers, and workflow functions are forbidden. Reusable framework operations and integration adapters have explicit typed contracts.
 - An allowed declaration cannot be rejected merely because an implementation recognizes a narrower syntax. Native Pydantic acceptance alone does not authorize forms outside TCA's contract.
 
-## 3. Context and application boundary
+## 3. Package structure and application boundary
 
-A TCA application is an independently installable Python package. It owns its domain declarations and composes imported framework run types with them. TCA owns the contract by which that package exposes a runnable application.
+TCA is one installable distribution, `type-construction`, with import namespace `type_construction`. The framework does not have separately versioned World and program distributions. Module boundaries follow dependencies and responsibilities; independent distributions require an actual independent-use or release requirement.
+
+The package layout is:
+
+| Path | Responsibility |
+|---|---|
+| `packages/python/type-construction/pyproject.toml` | Framework distribution metadata and dependencies. |
+| `src/type_construction/__init__.py` within that package | Public exports, including `Model` and `Root`; no startup or orchestration side effects. |
+| `src/type_construction/models.py` | The two configuration-only model bases. |
+| `src/type_construction/py.typed` | Typing marker. |
+| `tests/` | Tests of framework-specific contracts and native integration. |
+
+Execution-model and integration modules are added when their concrete contracts require them. No empty `engine`, `core`, or plugin subsystem is required by this layout.
+
+A developer's application is a separate installable Python package that depends on `type-construction`. It imports the framework's public types, owns its domain declarations, and composes its application model. TCA defines how the package exposes a runnable declaration. This layout specifies the required package structure; repository migration is separate implementation work.
 
 | Participant | Responsibility |
 |---|---|
@@ -74,27 +88,29 @@ A TCA application is an independently installable Python package. It owns its do
 
 Interfaces admit typed events and expose declared results. HTTP, CLI, direct calls, and message delivery do not create separate business rules or a second procedural execution path. Pure value construction remains available without starting an application.
 
-The framework root package supplies namespace organization. It requires no orchestration behavior simply because it is the root.
+Business value definitions remain independent of settings loading, messaging, and persistence even though they share the framework distribution with execution models and native integration.
 
 ## 4. Solution strategy: composition determines execution
 
 A value type describes what may occupy a position. Its placement in the application gives that position a role. A modeled event relationship connects an admitted occurrence to an activity; modeled supply identifies its operands; the activity declares the construction or operation and result. The result's establishment produces an event that can participate in further declared relationships.
 
-Those connections are the application topology. There is no separately authored graph between the model and the native systems.
+Those connections are the application topology. Native bindings are derived from these connections; applications and integrations do not maintain another dependency graph.
 
 An event may supply an activity's entire input directly. An activity needing independently retained evidence declares those supplying relationships and selection policies. Matching Python types do not choose suppliers, and direct typed composition does not require an invented reference lookup.
 
 Pydantic constructs values, FastStream invokes the declared receiving and publishing bindings, and NATS routes and retains their events. Native facilities do not invent application meaning: the run models determine activation, supply, identity, authority, and result semantics.
 
-For each native binding, its explanation must identify the declaration that determines it, the native guarantee used, and any remaining custom obligation. Arrows in the diagram represent these accountable relationships, not permission to hide a general interpreter in an integration layer.
+Every native binding identifies its source declaration, the native guarantee it uses, and any remaining framework obligation. Integration code derives native configuration and invocation from the relationship; it must not restate that relationship in a separately authored procedure.
 
-Every additional system receives a native projection of the same modeled identities and relationships. If it needs meaning the application does not express, that meaning must become explicit in the model. An adapter cannot silently invent it.
+Application integrations project the relevant modeled identities and relationships into external systems. Additional required meaning must be declared. Extending an application with a provider capability is distinct from replacing the framework's execution foundation; section 5.5 defines that boundary.
 
 ## 5. Modeling contracts and building blocks
 
-### 5.1 World: native value composition
+### 5.1 Value foundations and World modeling
 
-World supplies configuration-only subclasses of native `BaseModel` and generic `RootModel`, both setting `ConfigDict(validate_default=True, frozen=True)`. Business models, nested models, and framework-owned retained value contracts preserve those guarantees. Overrides that disable them are invalid declarations.
+`type_construction.Model` subclasses native `BaseModel`; `type_construction.Root[T]` subclasses native `RootModel[T]`. Both are defined in `models.py` and set `ConfigDict(validate_default=True, frozen=True)`. Retain these configuration-only bases without adding constructors, validators, traversal, serialization, or runtime behavior.
+
+Business models, nested models, and framework-owned retained value contracts preserve those guarantees. The bases establish inherited native configuration; they do not prevent Python overrides or enforce the entire allowed authoring surface. Application acceptance must reject model or field settings that disable required guarantees and declarations containing forbidden application procedure.
 
 | Form | Representation | Meaning established by construction |
 |---|---|---|
@@ -105,15 +121,15 @@ World supplies configuration-only subclasses of native `BaseModel` and generic `
 | Mapping | Named root over typed keys and values | A genuine keyed relationship satisfies its key and value contracts. |
 | Finite vocabulary | `StrEnum` or literal values | A value belongs to the declared vocabulary. |
 
-These forms compose recursively. Naming a scalar preserves its meaning inside a product or discriminator field. Named roots retain native JSON root shape. Untyped dictionaries and `Any` cannot replace business models.
+These forms compose recursively under native Pydantic construction rules. A named scalar remains a distinct business type; it is not interchangeable with its underlying annotation in positions where Pydantic requires a specific declaration, including discriminator fields. Named roots retain native JSON root shape. Untyped dictionaries and `Any` cannot replace business models.
 
 The permitted surface includes native `Annotated` constraints, `Field`, concrete generic specialization, explicit discriminators, literal data defaults, aliases, nullability, and declared strictness. Native introspection exposes those declarations. TCA does not implement another type checker or a compatibility matrix for every native feature combination.
 
 Successful construction establishes declared value guarantees, not undeclared cross-field rules, external truth, currentness, or permission to act. Those meanings require explicit models and relationships.
 
-### 5.2 Core: model the run
+### 5.2 Framework execution models
 
-Core supplies specialized framework model types that developers compose with World types. Their definitions express execution meaning through the same native typed composition. They are not loosely typed instructions for an independently designed engine.
+The framework supplies specialized execution model types that developers compose with business types. Their typed fields, alternatives, constraints, and relationships establish execution meaning. They are not loosely typed commands for a separate interpreter. Framework implementation uses the same modeling discipline. Execution semantics must be defined by the models, not independently in procedural orchestration behind a typed interface.
 
 The application composition must express these connected roles:
 
@@ -128,9 +144,9 @@ The application composition must express these connected roles:
 | Resource use | Connects a required native resource to its settings, consumer, owner, and lifetime. |
 | Capability | Connects justified requests to a provider and typed success, refusal, and operational-failure reports under its recovery guarantees. |
 
-These roles describe composition, not a required class count. Relationships belong to the occurrence or component they govern, not automatically to every use of a business class. Native field metadata may express a field-level relationship; it is not a universal replacement for modeled application structure.
+These roles define required semantics without prescribing one class per role. Relationships belong to the occurrence or component they govern, not automatically to every use of a business class. Native field metadata may express a field-level relationship; it is not a universal replacement for modeled application structure.
 
-Concrete public names and reference notation remain an authoring-specification obligation. They must demonstrate the relationships above through actual Python declarations. Existing resolver code, familiar DI patterns, and hypothetical API names do not establish that contract.
+Concrete execution-type definitions and reference notation must specify the relationships above through actual Python declarations. Each definition states what native construction establishes, what its structure determines, and what native binding remains necessary.
 
 ### 5.3 Naming and identity are modeling contracts
 
@@ -156,11 +172,19 @@ Schema names, declaration locations, occurrence identities, and transport addres
 | Pydantic Settings | External settings sources, precedence, parsing, defaults, and settings construction. |
 | FastStream | Typed receiving, invocation, publishing integration, resource injection, acknowledgements, and process lifecycle. |
 | NATS / JetStream | Routing, retained history, delivery/redelivery, permissions, schedules, and publication conditions. |
-| TCA Core | Run models, typed execution facts, and the native bindings required to preserve their semantics. |
+| TCA framework | Execution models, typed execution facts, and native bindings that preserve their semantics. |
 
-World remains independent of environment loading, messaging, and persistence. Core models resource requirements; live clients retain their native types and lifetime. Core does not serialize clients into events or turn every framework object into a new wrapper.
+NATS/JetStream and FastStream are the selected execution foundation. Their native bindings implement the modeled event, delivery, retention, invocation, and commitment relationships. Resource requirements are modeled; live clients retain native types and lifetimes and are not serialized into events.
 
-There is no TCA-owned replacement workflow engine, delivery tracker, event store, scheduler, configuration service, generic conversion pipeline, or parallel Pydantic implementation.
+TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Native integration modules isolate their implementation dependencies without introducing a generic backend abstraction.
+
+### 5.5 Extensions and runtime foundation
+
+An extension contributes reusable model types and, where necessary, their native realization. An external provider integration specifies request, result, and settings models; source and capability relationships; effect and recovery guarantees; and the adapter implementing the provider protocol. Applications import and compose those types through ordinary Python imports.
+
+Extensions use the application's existing identity and relationship contracts. They do not introduce their own workflow language, naming authority, separately configured application graph, or hidden business decisions. An independently useful extension may be distributed as a separate Python package. Extensibility does not require a plugin registry, dynamic discovery service, callback system, or additional execution infrastructure.
+
+NATS is not an optional broker plugin. Replacing the execution foundation requires a separate architectural decision and evidence that the replacement realizes the same declared guarantees. Provider extensions do not require that abstraction, and TCA does not promise transport interchangeability.
 
 ## 6. Runtime views
 
@@ -204,7 +228,7 @@ Settings are fixed for a process lifetime unless an explicit modeled change cont
 
 Development uses an application container and a JetStream-enabled NATS container with persistent storage. Stream, consumer, permission, and retention configuration must preserve the declared execution guarantees. A preferred deployment layout or subject prefix does not prove an atomic commitment scope.
 
-Native lifecycle owns resource cleanup, including initialization failure and shutdown. Live resource recreation does not restore or replay external business effects.
+FastStream and native integration lifecycles release resources after initialization failure and during shutdown. Recreating a client does not authorize replaying an external business effect.
 
 ## 8. Guarantees attached to modeled relationships
 
@@ -276,7 +300,9 @@ Diagnostics derive from declarations and retained facts. They explain triggering
 | A developer-owned application package | TCA defines the runnable application contract; developers own domain meaning and composition. |
 | Modeled identity and relationships determine topology | Every native projection has a traceable origin and changes with the authoritative declaration. |
 | Event-driven activity over retained history | Work and continuation follow declared event relationships rather than an application-owned call stack. |
-| Native framework execution | Core supplies models and necessary integration, not a second execution engine. |
+| One framework distribution | `type-construction` exports `Model`, `Root`, and execution types through one public namespace; internal modules preserve dependency boundaries. |
+| Fixed native execution foundation | NATS/JetStream and FastStream provide execution mechanisms; TCA derives their use from the model without a generic broker-plugin abstraction. |
+| Extensions through typed composition and imports | Independently useful capabilities can be distributed separately without plugin discovery or a second execution language. |
 | Explicit evidence and effect boundaries | Constructibility, delivery, authority, and external completion remain distinct. |
 
 ## 10. Quality scenarios
@@ -298,7 +324,7 @@ Acceptance uses public declarations and real native integrations. A handwritten 
 
 ## 11. Unresolved specifications and verification limits
 
-The concrete public run-type definitions, application export/launch contract, and canonical reference/address notation remain to be specified against sections 5.2–5.3. Their purpose is to make those modeled relationships directly expressible and natively realizable, not to select a general engine architecture. Unfinished authoring semantics must not be replaced by restrictions inferred from implementation.
+The remaining authoring specifications are the concrete execution-type definitions, application export/launch contract, and canonical reference/address notation in sections 5.2–5.3. Unified packaging, the two native model bases, the NATS/FastStream execution foundation, and extension through ordinary imports are settled decisions. Unspecified declaration semantics must not be inferred from implementation restrictions.
 
 Replica freshness, retrieval pagination, atomic publication, and external recovery require evidence against the selected versions and deployment configuration. Source inspection, isolated experiments, and single-node runs establish only their demonstrated scope.
 
@@ -317,4 +343,6 @@ This document defines architecture and acceptance guarantees. Implementation evi
 | Evidence | An admitted retained fact with provenance and version. |
 | Establishment | A constructed result committed under its identity and basis. |
 | Binding | A native realization of a modeled relationship; not a separately authored program. |
-| Core | Framework run models, execution facts, and minimal native integration. |
+| Framework | The `type-construction` distribution: value bases, execution models, and native integration. |
+| Extension | Reusable types and any required native implementation, imported and composed within an application. |
+
