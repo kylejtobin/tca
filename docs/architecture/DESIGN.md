@@ -1,36 +1,40 @@
 ```mermaid
 flowchart TB
-    WORLD["Business value types"]
-    RUN["Application execution types"]
-    APP["Application package: one composed model of values, events, activities, identities, and relationships"]
+    WORLD["Developer-defined business types"]
+    RUN["TCA application constructs with defined semantics"]
+    APP["Application: named events, activities, sources, capabilities, settings, and resources"]
 
-    WORLD -->|"Business meaning"| APP
-    RUN -->|"Execution meaning"| APP
+    WORLD -->|"Typed values"| APP
+    RUN -->|"Specialization and composition"| APP
 
-    APP -->|"Settings contract"| SETTINGS["Pydantic Settings"]
+    APP -->|"Settings requirements"| SETTINGS["Pydantic Settings: configuration construction"]
     ENV["Deployment values"] --> SETTINGS
 
-    subgraph RUNTIME["Native realization of the same application"]
+    subgraph RUNTIME["Native execution of the application model"]
         NATS["NATS / JetStream: routing, retention, delivery"]
-        FAST["FastStream: typed receiving and invocation"]
-        BUILD["Pydantic construction / World operation"]
-        PUBLISH["Typed publication with evidence and commitment"]
+        FAST["FastStream: typed receiving, invocation, resources"]
+        BUILD["Pydantic construction or reusable typed operation"]
+        PUBLISH["FastStream: typed publication"]
 
-        NATS -->|"Trigger and supplying evidence"| FAST
+        NATS -->|"Activating events and supplying evidence"| FAST
         FAST -->|"Declared activity and typed operands"| BUILD
         BUILD -->|"Result or justified request"| PUBLISH
-        PUBLISH -->|"Retained event"| NATS
+        PUBLISH -->|"Event with evidence basis"| NATS
     end
 
-    APP -.->|"Subjects, identity, source permissions"| NATS
-    APP -.->|"Receiving, activity, resource relationships"| FAST
+    APP -.->|"Identity, subjects, permissions, commitment scope"| NATS
+    APP -.->|"Activation and resource relationships"| FAST
     APP -.->|"Construction and operation contracts"| BUILD
-    APP -.->|"Result identity, basis, publication conditions"| PUBLISH
-    SETTINGS -->|"Constructed resource configuration"| FAST
+    APP -.->|"Result and evidence relationships"| PUBLISH
+    SETTINGS -->|"Native resource configuration"| FAST
 
-    APP -->|"Same modeled identities and relationships"| OTHER["External systems and declared integrations"]
-    NATS -->|"Retained authorized requests through adapters"| OTHER
-    OTHER -->|"Declared observations"| NATS
+    INTEGRATION["Declared source or capability integration"]
+    OTHER["External system"]
+    APP -.->|"Same identities and relationships"| INTEGRATION
+    FAST -->|"Retained authorized request"| INTEGRATION
+    INTEGRATION -->|"Provider protocol"| OTHER
+    OTHER -->|"Observations"| INTEGRATION
+    INTEGRATION -->|"Typed report or admitted event"| PUBLISH
 ```
 
 # TCA Architecture
@@ -40,75 +44,70 @@ flowchart TB
 **Date:** October 31, 2026  
 **Product:** [TCA Product Definition](../product.md)
 
-**A TCA application is one composed model of business meaning and event-driven activity whose names, identities, and relationships determine its native execution topology, so running the application requires realizing that model through Pydantic, FastStream, and NATS rather than authoring a second program.**
+**A TCA application composes business types and framework constructs with defined execution semantics into one model whose named relationships determine its event-driven execution through Pydantic, FastStream, and NATS.**
 
 ## 1. Purpose and quality goals
 
-TCA enables developers to deliver complete event-driven applications through precise typed declarations. Developers model their business and the run of their application inside a separate Python package that imports TCA.
+Developers build complete applications by naming, specializing, and composing supported types in a separate Python package that imports TCA. The constructs supply execution semantics; developers supply application-specific meaning and policy choices.
 
-Framework authors define specialized execution models using the same typed composition as business models. Their native bindings implement those declared semantics. World and run identify modeling responsibilities within one framework; they do not prescribe separate packages or independently authored programs.
+Framework authors use the same modeling discipline to define those constructs and their native realization. World and run identify modeling responsibilities within one framework, not separate programs or distributions.
 
-The design minimizes independently maintained descriptions of application meaning. A relationship is declared once; its receiving bindings, subjects, permissions, and downstream projections follow from that declaration. Changing it requires no second wiring edit.
+A relationship has one authoritative declaration. Its native bindings and downstream projections derive from that declaration. The same names and relationships organize authoring, execution, and diagnostics.
 
-The quality goals are correct construction and commitment, consistent model composition, changes localized to their authoritative declarations, durable continuation, and explainable execution. Custom procedure is limited to obligations that native facilities do not fulfill.
+Quality goals are correct construction and commitment, consistent composition, localized changes, durable continuation, and understandable event-driven behavior. Developers must be able to explain activation, prerequisites, results, and waiting from their declarations.
 
 ## 2. Architectural constraints
 
-- Events drive transformational application activity. The model determines what each event establishes, which activity it activates, and what that activity may establish next.
-- Developers and framework authors use typed modeling to express business and execution meaning. Run constructs specialize the common modeling discipline; they do not introduce handlers, registration scripts, or another authoring language.
-- The composed model is the authority for topology. Derived configurations and bindings are not separately maintained application definitions.
-- Pydantic owns native value construction. FastStream and NATS supply the native execution mechanisms. TCA procedure fulfills only obligations left by their composition.
-- Application-authored validators, arbitrary computed-property bodies, serializers, default factories, custom constructors or schema hooks, callbacks, handlers, and workflow functions are forbidden. Reusable framework operations and integration adapters have explicit typed contracts.
-- An allowed declaration cannot be rejected merely because an implementation recognizes a narrower syntax. Native Pydantic acceptance alone does not authorize forms outside TCA's contract.
+- Events drive transformational application activity. Pure value construction does not require application execution.
+- Framework constructs define supported behavior through typed composition. Application authors specialize and compose them without handlers, registration scripts, or an imperative workflow encoded as configuration.
+- The application model determines topology. Native configurations and bindings are derived artifacts, not independently maintained application definitions.
+- Pydantic owns construction, FastStream supplies typed invocation and integration, and NATS supplies routing, retention, and delivery. Custom procedure fulfills only obligations their composition leaves unresolved.
+- Application-authored validators, arbitrary computed-property bodies, serializers, default factories, custom constructors or schema hooks, callbacks, handlers, and workflow functions are forbidden. Reusable operations and adapters have explicit typed contracts.
+- Framework and extension implementations must model their execution contracts. A typed interface over independently designed procedural orchestration does not meet this requirement.
+- An allowed declaration cannot be rejected because an implementation recognizes a narrower syntax. Native Pydantic acceptance alone does not authorize forms outside TCA's contract.
 
 ## 3. Package structure and application boundary
 
-TCA is one installable distribution, `type-construction`, with import namespace `type_construction`. The framework does not have separately versioned World and program distributions. Module boundaries follow dependencies and responsibilities; independent distributions require an actual independent-use or release requirement.
-
-The package layout is:
+TCA is one installable distribution, `type-construction`, with import namespace `type_construction`. Internal modules follow dependencies and responsibilities; separate distributions require independent use or release requirements.
 
 | Path | Responsibility |
 |---|---|
 | `packages/python/type-construction/pyproject.toml` | Framework distribution metadata and dependencies. |
-| `src/type_construction/__init__.py` within that package | Public exports, including `Model` and `Root`; no startup or orchestration side effects. |
-| `src/type_construction/models.py` | The two configuration-only model bases. |
+| `src/type_construction/__init__.py` within that package | Public exports, including `Model` and `Root`; no startup side effects. |
+| `src/type_construction/models.py` | The two configuration-only value bases. |
 | `src/type_construction/py.typed` | Typing marker. |
-| `tests/` | Tests of framework-specific contracts and native integration. |
+| `tests/` | Framework-specific contract and native integration tests. |
 
-Execution-model and integration modules are added when their concrete contracts require them. No empty `engine`, `core`, or plugin subsystem is required by this layout.
+Execution-model and integration modules follow concrete contracts. This structure requires no empty `engine`, `core`, or plugin subsystem.
 
-A developer's application is a separate installable Python package that depends on `type-construction`. It imports the framework's public types, owns its domain declarations, and composes its application model. TCA defines how the package exposes a runnable declaration. This layout specifies the required package structure; repository migration is separate implementation work.
+A developer's application is a separate installable Python package depending on `type-construction`. It owns its domain declarations, composes an `Application`, and exposes that runnable declaration through TCA's application contract.
 
 | Participant | Responsibility |
 |---|---|
-| Application developer | Accurate domain models, event/activity relationships, evidence requirements, outcomes, configuration schemas, and selected integrations. |
-| Framework author | Reusable World and run types, coherent composition rules, and minimal native realization. |
-| Deployment operator | Environment values, credentials, infrastructure, and granted native permissions. |
-| External system | Its own authoritative data, transactions, permissions, and effect guarantees. |
+| Application developer | Domain meaning, named application composition, and explicit identity, evidence, authority, and lifecycle choices not determined by the selected constructs. |
+| Framework and extension author | Reusable construct semantics, supported composition, operations and integrations, and minimal native realization. |
+| Deployment operator | Configuration values, credentials, infrastructure, and native permission grants. |
+| External system | Its authoritative data, transactions, permissions, and effect guarantees. |
 
-Interfaces admit typed events and expose declared results. HTTP, CLI, direct calls, and message delivery do not create separate business rules or a second procedural execution path. Pure value construction remains available without starting an application.
-
-Business value definitions remain independent of settings loading, messaging, and persistence even though they share the framework distribution with execution models and native integration.
+HTTP, CLI, direct calls, and message interfaces admit events and expose results through the same declared activity. They do not introduce another business execution path. Business value definitions remain independent of settings loading, messaging, and persistence.
 
 ## 4. Solution strategy: composition determines execution
 
-A value type describes what may occupy a position. Its placement in the application gives that position a role. A modeled event relationship connects an admitted occurrence to an activity; modeled supply identifies its operands; the activity declares the construction or operation and result. The result's establishment produces an event that can participate in further declared relationships.
+A type defines a construct's contract. Its name and placement identify an application component. Specialization supplies business types, constraints, and policy choices; composition establishes relationships among components.
 
-Those connections are the application topology. Native bindings are derived from these connections; applications and integrations do not maintain another dependency graph.
+An `Event` records an establishment. An `Activity` connects an activating event to required inputs, a supported construction or operation, and its result event. Activation does not prove that all inputs are available or that external work is authorized. A result can supply evidence or activate further declared activity.
 
-An event may supply an activity's entire input directly. An activity needing independently retained evidence declares those supplying relationships and selection policies. Matching Python types do not choose suppliers, and direct typed composition does not require an invented reference lookup.
+Composition determines connections wherever unambiguous. Otherwise, a typed relationship identifies the supplying occurrence or projection and its selection policy. Equal Python types do not choose suppliers. Relationships already established structurally require no second reference or registration.
 
-Pydantic constructs values, FastStream invokes the declared receiving and publishing bindings, and NATS routes and retains their events. Native facilities do not invent application meaning: the run models determine activation, supply, identity, authority, and result semantics.
+Pydantic constructs values; FastStream invokes derived receiving and publishing bindings; NATS routes and retains events. Each binding identifies its source declaration, native guarantee, and remaining framework obligation. Neither application nor integration maintains another execution graph.
 
-Every native binding identifies its source declaration, the native guarantee it uses, and any remaining framework obligation. Integration code derives native configuration and invocation from the relationship; it must not restate that relationship in a separately authored procedure.
-
-Application integrations project the relevant modeled identities and relationships into external systems. Additional required meaning must be declared. Extending an application with a provider capability is distinct from replacing the framework's execution foundation; section 5.5 defines that boundary.
+Application policies specify meaningful choices, including evidence selection, completion, and external recovery. Their enforcement follows the selected construct contracts. Applications do not describe retrieval loops, delivery tracking, commitment algorithms, or recovery algorithms.
 
 ## 5. Modeling contracts and building blocks
 
 ### 5.1 Value foundations and World modeling
 
-`type_construction.Model` subclasses native `BaseModel`; `type_construction.Root[T]` subclasses native `RootModel[T]`. Both are defined in `models.py` and set `ConfigDict(validate_default=True, frozen=True)`. Retain these configuration-only bases without adding constructors, validators, traversal, serialization, or runtime behavior.
+`type_construction.Model` subclasses native `BaseModel`; `type_construction.Root[T]` subclasses native `RootModel[T]`. Both are defined in `models.py` and set `ConfigDict(validate_default=True, frozen=True)`. The bases contain only this configuration; they add no constructors, validators, traversal, serialization, or runtime behavior.
 
 Business models, nested models, and framework-owned retained value contracts preserve those guarantees. The bases establish inherited native configuration; they do not prevent Python overrides or enforce the entire allowed authoring surface. Application acceptance must reject model or field settings that disable required guarantees and declarations containing forbidden application procedure.
 
@@ -127,30 +126,35 @@ The permitted surface includes native `Annotated` constraints, `Field`, concrete
 
 Successful construction establishes declared value guarantees, not undeclared cross-field rules, external truth, currentness, or permission to act. Those meanings require explicit models and relationships.
 
-### 5.2 Framework execution models
+### 5.2 Application constructs and composition
 
-The framework supplies specialized execution model types that developers compose with business types. Their typed fields, alternatives, constraints, and relationships establish execution meaning. They are not loosely typed commands for a separate interpreter. Framework implementation uses the same modeling discipline. Execution semantics must be defined by the models, not independently in procedural orchestration behind a typed interface.
+TCA supplies the following specialized model contracts. Developers name, specialize, and compose them using the value foundations in section 5.1. Each construct provides its defined behavior; its application declaration supplies only the remaining application-specific meaning.
 
-The application composition must express these connected roles:
+| Construct | Application declaration | Supplied contract |
+|---|---|---|
+| `Event` | A named kind of received information, requested work, decision, or result, with typed content and occurrence context. | Preserves content, identity, source, and retained establishment. A request establishes that work was requested, not that it completed. |
+| `Activity` | An activating event, typed input requirements, a supported construction or operation, and a result event. | Invokes justified work, handles unavailable evidence, and retains results under the evidence and commitment rules. No application handler body. |
+| `Application` | One composition of named events, activities, integrations, settings, and resources. | Defines the runnable declaration from which native bindings and diagnostics derive. |
+| `Source` | An authoritative entry point for specified events through a supplied integration. | Applies the integration's receiving and source-admission contract under deployment-granted permissions. A declaration alone grants no authority. |
+| `Capability` | A provider-specific interaction with typed requests and reports. | Specializes activity for external work: retained authorization, provider invocation, distinct report alternatives, and the provider's recovery contract. |
+| `Settings` | Typed configuration requirements and permitted declarative defaults. | Uses native Pydantic Settings sources, precedence, parsing, defaults, and validation while preserving required model guarantees. No separate configuration loader. |
+| `Resource` | An integration resource's settings, use, and explicit sharing where required. | Uses native resource creation, ownership, injection, and lifetime management. Live clients retain native types. |
 
-| Role | Required relationship |
-|---|---|
-| Application | Composes entry points, activities, settings requirements, and resource requirements into one runnable declaration. |
-| Event | Establishes typed content from a declared source at an identified occurrence. |
-| Activity | Connects an activating event or declared demand to typed operands, a construction or reusable operation, and its result. |
-| Supply | Identifies the supplying occurrence or projection where composition alone does not determine an operand; carries its evidence-selection meaning. |
-| Establishment | Identifies the result occurrence and the evidence and authority that justify its retained publication. |
-| Lifecycle | Declares acquisition, stopping, cancellation, completion, finality, reopening, and deadline relationships. |
-| Resource use | Connects a required native resource to its settings, consumer, owner, and lifetime. |
-| Capability | Connects justified requests to a provider and typed success, refusal, and operational-failure reports under its recovery guarantees. |
+`Settings` specializes native `pydantic_settings.BaseSettings` with `validate_default=True, frozen=True`. Business value bases remain independent of configuration sources.
 
-These roles define required semantics without prescribing one class per role. Relationships belong to the occurrence or component they govern, not automatically to every use of a business class. Native field metadata may express a field-level relationship; it is not a universal replacement for modeled application structure.
+A provider construct supplies the source, capability, settings, and resource relationships required by its contract. Developers do not redeclare what the construct or composition determines. A capability specialization does not require a second activity declaration describing the same work.
 
-Concrete execution-type definitions and reference notation must specify the relationships above through actual Python declarations. Each definition states what native construction establishes, what its structure determines, and what native binding remains necessary.
+Reusable computations are named typed operations selected within compositions. Their supported operand and result contracts do not admit arbitrary application function bodies.
+
+Additional meaning is expressed as typed relationships: identity and scope, shared supply or resources, evidence selection, membership and completion, authority, and lifecycle. These govern the particular placement or occurrence, not every use of a business class. Native field metadata can express field-level relationships without replacing application structure with a metadata interpreter.
+
+Retained establishments, justification, and execution diagnostics are framework-owned typed facts using the same model discipline. Developers do not author bookkeeping declarations for them.
+
+Concrete Python definitions must specify each construct's typed parameters, composition rules, inherited guarantees, required choices, and native bindings. Streams, subscriptions, durable consumers, and worker delivery groups derive from these declarations; no public `Queue` declaration is required.
 
 ### 5.3 Naming and identity are modeling contracts
 
-The application model supplies a canonical declaration location for each component. Runtime identity completes that location within its execution scope, including member keys where independently supplied membership requires them.
+The application model supplies a canonical declaration location for each component. Names identify declarations; they do not encode execution instructions. Runtime identity completes the location within its execution scope, including member keys where independently supplied membership requires them.
 
 The naming contract must preserve the following distinctions in every native projection:
 
@@ -160,9 +164,11 @@ The naming contract must preserve the following distinctions in every native pro
 - Embedded collections and mappings remain parts of their containing value. Independent member addressing follows an explicit occurrence/membership relationship.
 - Business identifiers describe what an occurrence concerns; they do not merge distinct occurrences or pursuits.
 
+Business-subject correlation is a declared projection. Integration lookup derives from that projection without merging distinct occurrences or introducing a universal join.
+
 Subject names derive from these identities through deterministic, unambiguous transport encoding. Business identifiers containing punctuation cannot inject separators or wildcards. Transport restrictions must not become arbitrary restrictions on World values.
 
-Schema names, declaration locations, occurrence identities, and transport addresses are related representations, not interchangeable identifiers. The exact reference syntax and subject encoding must preserve these distinctions without requiring a second developer-authored naming scheme.
+Schema names, declaration locations, occurrence identities, and transport addresses are related representations, not interchangeable identifiers. Reference notation must identify modeled relationships without a separately maintained path or naming system. String paths and a general-purpose resolver are not assumed by this contract.
 
 ### 5.4 Native responsibilities
 
@@ -172,15 +178,17 @@ Schema names, declaration locations, occurrence identities, and transport addres
 | Pydantic Settings | External settings sources, precedence, parsing, defaults, and settings construction. |
 | FastStream | Typed receiving, invocation, publishing integration, resource injection, acknowledgements, and process lifecycle. |
 | NATS / JetStream | Routing, retained history, delivery/redelivery, permissions, schedules, and publication conditions. |
-| TCA framework | Execution models, typed execution facts, and native bindings that preserve their semantics. |
+| TCA framework | Composable application constructs, typed execution facts, and minimal native bindings preserving their contracts. |
 
-NATS/JetStream and FastStream are the selected execution foundation. Their native bindings implement the modeled event, delivery, retention, invocation, and commitment relationships. Resource requirements are modeled; live clients retain native types and lifetimes and are not serialized into events.
+NATS/JetStream and FastStream are the fixed execution foundation. Binding derives subjects, streams, subscriptions, consumers, delivery groups, permissions, and publication conditions from application relationships. Native delivery distributes each activity's work among its workers while distinct activities retain their own delivery relationships. Live resource clients are not serialized into events.
+
+Retained typed events are the authoritative execution history. State and progress views derive from that history; TCA adds no event-store service or separate authoritative execution state.
 
 TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Native integration modules isolate their implementation dependencies without introducing a generic backend abstraction.
 
 ### 5.5 Extensions and runtime foundation
 
-An extension contributes reusable model types and, where necessary, their native realization. An external provider integration specifies request, result, and settings models; source and capability relationships; effect and recovery guarantees; and the adapter implementing the provider protocol. Applications import and compose those types through ordinary Python imports.
+An extension contributes reusable model types and their required native realization. A provider integration defines its source or capability specialization, request/report/settings models, resource relationships, effect guarantees, recovery contract, and protocol adapter. Applications import and compose those types through ordinary Python imports; consuming an integration requires no application-authored adapter or workflow.
 
 Extensions use the application's existing identity and relationship contracts. They do not introduce their own workflow language, naming authority, separately configured application graph, or hidden business decisions. An independently useful extension may be distributed as a separate Python package. Extensibility does not require a plugin registry, dynamic discovery service, callback system, or additional execution infrastructure.
 
@@ -190,53 +198,57 @@ NATS is not an optional broker plugin. Replacing the execution foundation requir
 
 ### 6.1 A configured application becomes available
 
-Deployment supplies values to the declared settings schema. Pydantic Settings constructs the settings before dependent resources open or consumption begins. Invalid required configuration prevents startup with a settings-location diagnostic.
+The exposed `Application` identifies its settings and resource requirements. Pydantic Settings constructs configuration from deployment values before dependent resources open or consumption begins. Invalid required configuration prevents startup with a diagnostic naming the setting.
 
-Constructed settings supply native resource configuration. FastStream and integrations realize connection, invocation-resource, and shutdown lifetimes. Valid configuration does not establish connectivity or authorization; those remain native operational conditions.
+Selected integrations supply their native resource requirements and lifetimes. FastStream and integration lifecycles create and release those resources. Valid configuration does not establish connectivity or authorization.
 
-Application authors declare requirements without writing boot callbacks. A connected broker enables event execution; process startup does not itself activate all business outcomes.
+The developer supplies no boot callback or resource-opening algorithm. Startup enables event processing; it does not itself pursue every business outcome.
 
-### 6.2 An event establishes a result
+### 6.2 An event activates an activity and establishes a result
 
-NATS delivers an event to a receiving binding derived from the application model. Native receiving constructs its declared business value and preserves its occurrence and source context.
+NATS delivers an event through a derived FastStream binding. Native Pydantic receiving constructs the content and preserves occurrence and source context. External events undergo the selected source's admission contract.
 
-The modeled relationship determines the activity and its supplied operands. Pydantic constructs a composition, or a reusable World operation consumes those typed operands and constructs its result. Internal assembly preserves native receiving aliases and does not serialize and reload constituents.
+The activity contract identifies activation, typed operands, and result. A request or demand activates work through an event. An activating event can supply inputs directly; additional evidence follows declared supply and selection relationships.
 
-The result is published with its declared identity and required basis. That retained event can supply or activate subsequent activity. Acknowledgement follows the retained processing result, not merely successful receipt.
+When the required evidence and authority are established, Pydantic constructs the composition or a supported operation consumes typed operands and constructs its result. Internal assembly preserves receiving aliases without serializing and reloading constituents.
+
+The result is published under its declared identity, evidence basis, and commitment conditions. It can supply or activate subsequent activity. Acknowledgement follows the retained processing result, not merely successful receipt.
 
 ### 6.3 Evidence arrives over time
 
-An activity without required evidence remains unestablished. Its declared relationships and retained operands express what is known; there is no half-constructed object or pending table duplicating availability.
+An activity without required evidence remains unestablished. Its declared relationships and retained operands express availability; no half-constructed object or pending table duplicates that information.
 
-A relevant subsequent event permits another attempt. Native consumers and retained history preserve discoverability across interruption. A retry recognizes an existing establishment from its retained identity and basis instead of creating another authorization.
+A relevant subsequent event permits another attempt through the same derived bindings. Native consumers and retained history preserve discoverability across interruption. A retry recognizes an existing establishment from retained identity and basis instead of creating another authorization.
 
-### 6.4 An authorized request reaches an external system
+### 6.4 A capability invokes an external provider
 
-Constructed prerequisites, declared demand, source authority, and lifecycle justify a capability request. The authorized request is retained before invocation.
+The capability contract applies declared demand, prerequisites, source authority, and lifecycle. Its authorized request is retained before the provider adapter consumes it.
 
-An adapter consumes that request and translates it to the provider protocol without changing business content or adding a business decision. Its observations return through the declared receiving contract. A report can establish content even when attribution to a particular attempt remains unresolved.
+The adapter implements the provider protocol without changing business content or introducing a business decision. Observations use the declared receiving contract and produce typed report events. A report can establish content even when attribution to a particular attempt is unresolved.
 
-Provider acceptance, business completion, and transport acknowledgement remain separate facts. Redelivery does not grant permission to repeat an external effect; recovery follows the provider contract.
+Provider acceptance, business completion, and transport acknowledgement remain separate facts. Redelivery does not authorize another external effect; recovery follows the capability's provider contract.
 
 ## 7. Deployment and configuration
 
-The application package contains declarations, not environment-specific credentials or handwritten startup orchestration. Deployment supplies values through configured native settings sources. Changing the source from ENV to a supported enterprise configuration integration preserves the receiving schema and application meaning.
+The application package declares typed settings requirements. Deployment supplies environment-specific values and credentials through native Pydantic Settings sources. A supported enterprise configuration integration can replace ENV without changing the receiving schema or business meaning.
 
-Retain native precedence among enabled sources: explicit initialization values, ENV, configured dotenv, configured secret files, then defaults. The launch path does not introduce hidden overrides or implicitly enable CLI settings parsing. Source adapters belong to framework/integration code, not application-authored procedures.
+Among enabled native sources, precedence is explicit initialization values, ENV, configured dotenv, configured secret files, then defaults. The launch contract introduces no hidden overrides or implicit CLI settings parsing. Configuration source adapters belong to framework or integration implementations.
 
-Settings are fixed for a process lifetime unless an explicit modeled change contract exists. Restart constructs new settings. Operational endpoints and credentials configure resources; a setting that affects business meaning must participate explicitly in the construction and retained justification. Secrets are not retained as business evidence.
+Settings remain fixed for a process lifetime unless an explicit modeled change contract exists. Restart constructs new settings. Operational endpoints and credentials configure resources; settings affecting business meaning participate in construction and retained justification. Secrets are not retained as business evidence.
 
-Development uses an application container and a JetStream-enabled NATS container with persistent storage. Stream, consumer, permission, and retention configuration must preserve the declared execution guarantees. A preferred deployment layout or subject prefix does not prove an atomic commitment scope.
+An integration determines its resource configuration, owner, use, and lifetime. Applications specify sharing only where composition does not determine it. Native lifecycle management releases resources after initialization failure and during shutdown. Client recreation does not authorize replaying an external effect.
 
-FastStream and native integration lifecycles release resources after initialization failure and during shutdown. Recreating a client does not authorize replaying an external business effect.
+Development uses an application container and a JetStream-enabled NATS container with persistent storage. Derived streams, consumers, permissions, and retention must preserve the execution guarantees. Deployment layout or a subject prefix alone does not establish atomic commitment coverage.
 
 ## 8. Guarantees attached to modeled relationships
+
+Construct definitions supply these guarantees. Application policy choices specialize their meaning; native bindings enforce them without an application-authored enforcement procedure.
 
 ### 8.1 Values and derivations
 
 Established values are immutable facts. Native freezing prevents reassignment but not mutation inside containers. Use tuples, frozensets, and frozen nested values where appropriate; supported mappings remain unmutated. A replacement undergoes native construction. Unchecked copy updates and bypass construction cannot establish validity.
 
-World operations have typed operands, an explicit producer, and typed result/alternative contracts. Product construction does not implicitly perform arithmetic. Shared implementations may use native properties, cached properties, computed fields, or declared construction-time derivations. An annotation or `computed_field` does not validate its result.
+World operations have typed operands, an explicit producer, and typed result/alternative contracts. Product construction does not implicitly perform arithmetic. Shared framework implementations may use native properties, cached properties, computed fields, or declared construction-time derivations. An annotation or `computed_field` does not validate its result.
 
 Pure derivations use declared operands, not ambient clocks, randomness, or external reads. Cached views remain valid only while their operands are unchanged. Views and caches do not establish events. A result needed as evidence is constructed and retained separately with its basis.
 
@@ -290,59 +302,69 @@ Retained work identifies the declarations, required configuration, operation con
 
 New deployments cannot silently reinterpret established work. A renamed declaration is not automatically the same occurrence merely because its value schema is unchanged. Every affected native projection must preserve the declared identity/compatibility decision.
 
-Diagnostics derive from declarations and retained facts. They explain triggering events, consumed evidence, authority, established results, failures, and legitimate next progress in application vocabulary.
+Authoring diagnostics and runtime explanations identify the same named application components and relationships. Retained facts explain triggering events, consumed evidence, authority, results, failures, and legitimate next progress. Native transport details remain traceable to those declarations.
 
 ## 9. Consequential decisions
 
 | Decision | Architectural consequence |
 |---|---|
-| One compositional modeling discipline for framework and applications | World and run types express one program, with no separately authored procedural execution layer. |
-| A developer-owned application package | TCA defines the runnable application contract; developers own domain meaning and composition. |
-| Modeled identity and relationships determine topology | Every native projection has a traceable origin and changes with the authoritative declaration. |
-| Event-driven activity over retained history | Work and continuation follow declared event relationships rather than an application-owned call stack. |
-| One framework distribution | `type-construction` exports `Model`, `Root`, and execution types through one public namespace; internal modules preserve dependency boundaries. |
-| Fixed native execution foundation | NATS/JetStream and FastStream provide execution mechanisms; TCA derives their use from the model without a generic broker-plugin abstraction. |
-| Extensions through typed composition and imports | Independently useful capabilities can be distributed separately without plugin discovery or a second execution language. |
-| Explicit evidence and effect boundaries | Constructibility, delivery, authority, and external completion remain distinct. |
+| One modeling discipline for framework and applications | Framework constructs define execution semantics through typed composition and native facilities. |
+| Named event-driven application constructs | Developers understand and compose events and activities; they do not supply handlers or configuration-level execution algorithms. |
+| One authoritative topology and vocabulary | Identity and relationships determine native bindings and organize both authoring and runtime explanations. |
+| Retained events justify work and continuation | Execution preserves declared demand, evidence, authority, and external effect boundaries. |
+| A developer-owned application package | Developers own application meaning and policy choices; supplied constructs own their execution guarantees. |
+| One framework distribution | `type-construction` exports value foundations and application constructs; internal modules preserve dependency boundaries. |
+| Fixed NATS/JetStream and FastStream foundation | Native topology derives from the model without public queue bookkeeping or a generic broker-plugin abstraction. |
+| Extensions through typed composition and imports | Reusable operations and provider integrations require no plugin discovery or separate workflow language. |
 
 ## 10. Quality scenarios
 
 | Scenario | Required observable result |
 |---|---|
-| Run a declared application with ENV configuration | Native startup, typed receipt, declared activity, and retained result work without application startup or handler bodies. |
-| Invalid required settings | Construction fails before dependent resources or activity begin, with the settings location identified. |
-| Compose approved World and run types | Meaning survives nesting, named roots, alternatives, repeated placements, and declared sharing. |
-| Change a modeled relationship | All affected native bindings change without a second authored wiring edit. |
-| Inspect native topology | Each relevant subject, subscription, and permission can be explained through its source declaration. |
-| Add a native system projection | It preserves the same identities and relationships without creating a competing application definition. |
+| Run a declared application with ENV configuration | Native startup, typed receipt, activity, and retained results execute without application handlers, boot callbacks, or duplicate wiring. |
+| Invalid required settings | Construction fails before dependent resources or activity begin, identifying the setting. |
+| Read an application declaration | A developer explains activating events, input requirements, possible results, and waiting using its declared names and relationships. |
+| Compose supported value and application types | Contracts survive nesting, named roots, alternatives, repeated placements, and explicit sharing. |
+| Change one modeled relationship | All affected native bindings change without another authored graph or transport-name edit. |
+| Inspect execution and native topology | Events, activity attempts, subjects, subscriptions, and permissions trace to the same declarations and occurrence identities. |
+| Compose a supplied provider integration | Its source, capability, settings, and resource contracts compose without an application-authored adapter or workflow. |
+| Add a native system projection | It preserves modeled identities and relationships without creating another application definition. |
 | Missing, malformed, or negative evidence | Waiting, receiving failure, consumer failure, and valid negative alternatives remain distinguishable. |
 | Race evidence changes against publication | Stale establishment is rejected; legitimate work succeeds after refresh. |
 | Interrupt after publication before acknowledgement | Retained progress is recognized without duplicate authorization. |
 | Replace a process or configuration source | Native resources are recreated while retained business meaning and execution relationships remain intact. |
 
-Acceptance uses public declarations and real native integrations. A handwritten handler or test-only coordinator bypassing the run models does not demonstrate TCA. Tests establish TCA relationships and integration behavior rather than reproduce native framework test suites.
+Acceptance uses public declarations and real native integrations. Handwritten test coordinators or configuration encoding an execution algorithm do not demonstrate the authoring contract. Tests establish TCA-specific relationships and integration behavior rather than reproduce native framework test suites.
 
 ## 11. Unresolved specifications and verification limits
 
-The remaining authoring specifications are the concrete execution-type definitions, application export/launch contract, and canonical reference/address notation in sections 5.2–5.3. Unified packaging, the two native model bases, the NATS/FastStream execution foundation, and extension through ordinary imports are settled decisions. Unspecified declaration semantics must not be inferred from implementation restrictions.
+Remaining authoring specifications define concrete Python types and specialization/composition syntax for section 5.2, canonical references and address encoding for section 5.3, and application export/launch. They must make each construct's required choices and derived behavior explicit.
+
+Model-only authoring, visible event-driven semantics, construct-owned execution guarantees, one authoritative topology, native settings, unified packaging, the fixed execution foundation, and import-based extensions are settled. Missing declaration details cannot be replaced with implementation-specific restrictions.
 
 Replica freshness, retrieval pagination, atomic publication, and external recovery require evidence against the selected versions and deployment configuration. Source inspection, isolated experiments, and single-node runs establish only their demonstrated scope.
 
-This document defines architecture and acceptance guarantees. Implementation evidence and delivery planning belong in their separate artifacts.
+Implementation evidence and delivery planning belong in separate artifacts.
 
 ## 12. Glossary
 
 | Term | Meaning |
 |---|---|
-| World type | A business value form or reusable typed operation. |
-| Run type | A specialized framework model expressing application execution meaning. |
-| Application model | The composition of World and run types in the developer's application package. |
-| Declared topology | The names, placements, identities, and relationships already expressed by that composition. |
-| Native projection | A system-specific realization derived from the model. |
+| Value type | A business value contract expressed using the permitted native modeling forms. |
+| World operation | A reusable computation with typed operands and constructed results. |
+| Application construct | A framework model with defined execution semantics, specialized and composed by developers. |
+| Application | The runnable composition of business types and application constructs. |
+| Event | A typed establishment that information was received, work was requested, or a result was produced. |
+| Activity | A declared reaction connecting activation, input requirements, supported work, and result events. |
+| Source | An authoritative event entry point governed by receiving and admission contracts. |
+| Capability | An external interaction with typed requests/reports and provider-specific effect and recovery guarantees. |
+| Settings | Typed configuration constructed from native Pydantic Settings sources. |
+| Resource | A declared integration resource requirement with native ownership and lifetime. |
+| Declaration location | A named placement in the application; distinct from its reusable type and runtime occurrences. |
 | Occurrence | A realization of a declaration within its execution and identity scope. |
 | Evidence | An admitted retained fact with provenance and version. |
-| Establishment | A constructed result committed under its identity and basis. |
-| Binding | A native realization of a modeled relationship; not a separately authored program. |
-| Framework | The `type-construction` distribution: value bases, execution models, and native integration. |
-| Extension | Reusable types and any required native implementation, imported and composed within an application. |
-
+| Establishment | A constructed result committed under its identity and evidence basis. |
+| Declared topology | The names, placements, identities, and relationships expressed by application composition. |
+| Native binding or projection | A system-specific realization derived from those declarations. |
+| Framework | The `type-construction` distribution containing value bases, application constructs, and native integration. |
+| Extension | Reusable types and required native implementation imported and composed within an application. |

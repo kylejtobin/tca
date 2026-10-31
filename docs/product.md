@@ -2,92 +2,97 @@
 
 **Status:** Target product definition  
 **Owner:** Kyle Tobin  
-**Date:** October 26, 2026
+**Date:** October 31, 2026
 
 ## 1. Product definition
 
-TCA is a declarative backend application framework for developers building business applications with rules, decisions, and external interactions. Developers describe business values, their relationships, the evidence required for action, and the outcomes they want to produce. TCA derives execution from those declarations.
+TCA is a declarative, event-driven backend application framework for developers building business applications with rules, decisions, and external interactions. Developers name and compose business types and framework-provided application constructs into one executable application model.
 
-Its central promise is that **the business model is the executable program**. Developers do not maintain a separate procedural workflow to restate dependencies and decisions already expressed in that model.
+Each supplied construct defines its supported behavior. Developers specialize its types, constraints, and relationships to express their application. They do not author handlers, startup orchestration, or a separate workflow describing how those constructs execute.
 
-Today, business meaning is often distributed across validation models, service methods, integration code, transport schemas, and documentation. A change requires developers to find and reconcile those representations. Types describe the inputs and outputs, while much of the behavior connecting them remains separately authored.
+An event establishes that information was received, work was requested, or a result was produced. Declared relationships determine which activity it activates and what that activity requires. Established results can activate subsequent work. The application can perform immediate work, await additional evidence, and continue across interruptions.
 
-TCA brings that behavior into the declared model. The same application can perform immediate work, await external evidence, and continue across interruptions. Developers retain responsibility for the accuracy of their business model; the framework takes responsibility for interpreting and executing its declared relationships.
+Business meaning is commonly distributed across validation models, service methods, integration code, transport schemas, and documentation. TCA makes the composed application model authoritative for its business definitions and relationships, reducing the representations developers must reconcile when making a change.
 
-The primary customer is a developer building and maintaining business applications. Operators, integrators, reviewers, and coding agents benefit from the same explicit model and explanations of its behavior.
+The primary customer is a developer building and maintaining business applications. Operators, integrators, reviewers, and coding agents use the same declared concepts to understand and inspect their behavior.
 
 ## 2. Goals and success measures
 
 | Goal | How success is evaluated |
 |---|---|
-| **Reduce duplicated business logic** | Representative applications express rules and dependencies without maintaining equivalent orchestration or transport-specific business logic. |
-| **Make business changes easier** | Developers can add or change a rule, outcome, or integration without tracing the same meaning through multiple application layers. |
-| **Make execution trustworthy** | Observable operations follow declared demand and prerequisites; delayed evidence and recovery preserve the meaning of the intended work. |
-| **Make behavior understandable** | Developers and operators can determine why work occurred, what evidence supported it, and what is preventing progress. |
-| **Make the framework practical to adopt** | Developers can build and extend representative applications using the public vocabulary, documentation, and examples without studying engine internals. |
+| **Author complete applications through models** | Representative applications declare inputs, activities, outcomes, configuration requirements, and integrations without application-authored execution procedures. |
+| **Make business changes easier** | A change is made at its authoritative declaration without repeating business meaning in orchestration, interface, or transport code. |
+| **Make execution trustworthy** | Work follows declared demand, evidence, authority, and policy; delayed evidence and recovery preserve the meaning of the intended work. |
+| **Make behavior understandable** | Developers can read declarations and explain activation, prerequisites, possible results, and waiting. Runtime explanations identify those same named components and their evidence. |
+| **Make the framework practical to adopt** | Developers complete representative tasks using familiar modeling, documentation, and examples without studying framework implementation. |
 
-Evaluation uses working applications, observed developer tasks, and behavioral tests. Code volume alone is insufficient: a shorter program must also be understandable, correct, and maintainable.
+Evaluation uses working applications, observed developer tasks, and behavioral tests. Measure authoring and change effort, required knowledge, and correctness of developers' explanations. Code volume alone is insufficient; a configuration that encodes an execution algorithm does not meet the authoring goal.
 
 ## 3. Assumptions
 
-- Developers building rule-rich applications benefit from expressing business relationships explicitly rather than maintaining their procedural coordination.
-- Python and Pydantic provide a familiar and expressive foundation for the intended audience.
-- A reusable vocabulary of values, computations, conditions, selections, and external capabilities can cover substantial business behavior without application-specific engine changes.
-- The effort of learning declarative modeling is repaid through easier changes, stronger feedback, and reduced coordination code.
-- Coding agents benefit from explicit relationships and observable acceptance criteria, while remaining subject to the same validation and review as human authors.
-- Adoption requires useful integration and extension paths; developers cannot depend on the framework’s maintainers to supply every external capability.
+- Developers building rule-rich applications benefit from explicit business relationships and an understandable event-driven execution model.
+- Python and Pydantic provide a familiar and expressive modeling foundation.
+- A bounded vocabulary of composable values, events, activities, operations, policies, and capabilities can cover substantial business behavior.
+- Consistent composition and declaration-specific feedback make the vocabulary learnable and repay the effort through easier changes and stronger feedback.
+- Coding agents benefit from explicit relationships and observable acceptance criteria while remaining subject to the same review as human authors.
+- Useful integration and extension paths let developers adopt capabilities without depending on framework maintainers to supply every provider.
 
-These assumptions are tested through representative applications and developer use.
+Vocabulary coverage and usability are tested through representative applications and developer use. Supporting arbitrary Python programming is not the coverage objective.
 
 ## 4. Developer scenarios and requirements
 
 | Scenario | Required capability and observable acceptance |
 |---|---|
-| **Model a business decision** | A developer expresses relevant values, computations, conditions, and possible outcomes. The application produces the appropriate outcome from supplied evidence and explains invalid or unresolved cases. |
-| **Perform an operation conditionally** | A developer declares what must be established before an operation is pursued. The operation remains withheld until those prerequisites hold; work needed to obtain the evidence can proceed, alongside independently justified work. |
-| **Use an external capability** | A developer declares what is requested, what the source may report, and how the report relates to the intended business subject. Immediate and delayed reports satisfy the same business requirements. An acknowledgement does not masquerade as a completed result. |
-| **Continue work over time** | An application can wait without retaining its initiating request and resume after interruption. Previously completed operations remain accounted for; uncertain outcomes are handled according to the capability’s recovery contract. |
-| **Work with collections and repeated operations** | Equal-valued items and repeated operations remain distinguishable where the business requires it. Individual work can progress as evidence arrives, while conclusions requiring a complete collection wait for its declared completion. |
-| **Expose the application through different interfaces** | Direct calls, command-line access, APIs, and event delivery use the same business definitions. Interface-specific input conventions do not introduce competing business rules. |
-| **Diagnose and evolve an application** | Developers can inspect outcomes, outstanding evidence, refusals, and operational failures in business terms. Changes to an application do not silently reinterpret work already in progress. |
+| **Model a business decision** | A developer composes typed values, supported computations, conditions, and alternatives. Supplied evidence produces the appropriate outcome, with invalid and unresolved cases explained separately. |
+| **Activate work from an event** | A developer declares an event and its activity relationship. Received information or an established result activates the intended work without an application handler. |
+| **Perform an operation conditionally** | A developer selects the operation and declares its prerequisites. It remains withheld until justified; work needed to obtain evidence can proceed alongside independently justified work. |
+| **Use an external capability** | A developer composes a supplied integration with typed requests, possible reports, and business-subject relationships. Immediate and delayed reports satisfy the same requirements. Provider acknowledgement and business completion remain distinct. |
+| **Continue work over time** | An application waits and resumes without keeping the initiating connection or process alive. Necessary request information and completed work remain accounted for; uncertain external outcomes follow the capability's recovery contract. |
+| **Work with collections and repeated operations** | Equal-valued items and repeated operations remain distinguishable where required. Individual work progresses as evidence arrives; conclusions requiring complete membership wait for its declared completion. |
+| **Configure and run an application** | A developer declares typed configuration and resource requirements. Deployment supplies values, and invalid required configuration prevents dependent activity. Changing deployment values or supported configuration sources does not require rewriting business behavior. |
+| **Expose different interfaces** | Direct calls, CLI access, APIs, and event delivery use the same business definitions and declared activity. Input conventions do not create competing business rules. |
+| **Diagnose and evolve an application** | Developers inspect triggering events, consumed evidence, outcomes, outstanding requirements, refusals, and operational failures using the names they authored. Changes do not silently reinterpret existing work. |
 
-Across these scenarios, TCA preserves the distinction between a business condition that does not hold, invalid information, missing evidence, and an operational failure. Those differences remain visible wherever the application is used.
+A business condition that does not hold, invalid information, missing evidence, and operational failure remain distinct across these scenarios.
 
 ## 5. Developer experience
 
-A developer begins with the business: what exists, what makes it valid, what follows from it, which external capabilities participate, and which outcomes the application offers. Reusable vocabulary handles common computations and relationships.
+Developers begin with business concepts and use supplied constructs to name events, compose activities, select capabilities, and declare application-specific relationships. Business values and application constructs follow one consistent typed modeling discipline. Event-driven behavior is visible in those declarations.
 
-For example, an order-fulfillment application describes the order, the payment evidence required for shipment, the shipping capability, and the intended fulfillment outcome. Payment may be confirmed immediately or reported later. The developer expresses the dependency once; TCA manages when the shipment becomes justified and how execution continues.
+For example, an order-fulfillment application names payment confirmation, the evidence shipment requires, the shipping capability, and the fulfillment outcome. The developer declares their relationship once. The selected constructs already define how to receive confirmation, withhold unjustified shipment, and continue when evidence arrives.
 
-Developers declare information that cannot be inferred, including trusted sources, relationships between reported evidence and business subjects, prerequisites for action, and completion conditions. TCA supplies execution coordination without requiring a second account of the business process.
+Types and composition determine relationships wherever possible. Developers provide information that cannot be inferred: trusted sources, occurrence identity, business-subject relationships, prerequisites, and meaningful evidence-selection or completion policies. They do not repeat delivery, continuation, or enforcement mechanisms already supplied by the constructs.
 
-During development, feedback identifies missing or ambiguous relationships and invalid constructions using the application’s own concepts. During execution, developers can inspect what was established, what was attempted, what remains unknown, and what could advance the outcome.
+Names identify application components, types define their contracts, and composition defines their relationships. Development feedback points to the relevant declaration and explains missing relationships or invalid constructions. Runtime explanations use those same names to show what happened, why work was justified, and what could advance an unresolved outcome.
 
-New business behavior is composed from existing capabilities where possible. New reusable computations and integrations can be implemented through explicit extension boundaries without modifying the generic engine.
+Consuming an integration means importing and composing its supplied constructs. Framework and extension authors implement reusable computations and provider protocols with explicit typed contracts. Application developers select and compose that behavior without implementing execution procedure.
 
-Public examples should demonstrate complete, recognizable applications. A developer should be able to understand both what the application means and what they must author to build it.
+Public examples show complete, recognizable applications and their observable behavior. A developer can explain both what must be authored and the consequences of those declarations.
 
 ## 6. Scope and exclusions
 
 | Responsibility | Owner |
 |---|---|
-| Accurate business concepts, rules, intended outcomes, and prerequisites | Application developer |
-| Declared external sources, subject relationships, and capability policies | Application developer, using the relevant integration contracts |
-| Interpretation of declarations, evidence handling, justified execution, progress, and continuation | TCA |
-| Consistent interface projections and explanations of application behavior | TCA |
-| Reusable value operations and external integrations | Framework and extension authors |
-| Authoritative storage constraints, external permissions, and provider guarantees | The systems that own those resources |
+| Accurate business concepts, outcomes, application composition, and application-specific policy choices | Application developer |
+| Reusable construct semantics and their execution guarantees | TCA and extension authors |
+| Native execution of declarations, evidence handling, justified work, and continuation | TCA through its supported infrastructure |
+| Consistent interface projections and explanations using declared application concepts | TCA and relevant integrations |
+| Reusable computations and provider protocol implementations | Framework and extension authors |
+| Deployment values, credentials, infrastructure, and permission grants | Deployment operator |
+| Authoritative external data, resource constraints, and provider guarantees | The systems that own those resources |
 
-TCA supports durable application execution while allowing established infrastructure to supply persistence and scheduling. It does not require applications to adopt one business-data storage model.
+TCA supports durable event-driven application execution through established infrastructure. External business-data storage can vary without implying interchangeable execution infrastructure.
 
-TCA does not establish that a developer’s business requirements are correct, make arbitrary external operations universally exactly-once, or replace authorization and concurrency controls at protected resources.
+TCA does not establish that business requirements are correct, make arbitrary external operations universally exactly-once, or replace authorization and concurrency controls at protected resources.
 
-The initial focus is developer-authored backend applications with meaningful business rules and external interactions. Business-user rule editors, frontend development, and specialized analytical processing are outside the initial product scope.
+The initial focus is developer-authored backend applications with meaningful business rules and external interactions. Business-user rule editors, frontend development, and specialized analytical processing are outside the initial scope.
 
 ## 7. Open questions
 
-- Which small set of representative applications best demonstrates the product’s value and exposes gaps in its modeling vocabulary?
-- What is the smallest useful adoption unit: a new application, one business capability within an existing application, or both?
-- Which reusable capabilities must be supplied initially, and what extension experience makes additional capabilities practical?
-- What public declaration conventions make source relationships and conditional behavior easiest to understand without unnecessary ceremony?
-- What baseline developer tasks and measurements will establish that TCA reduces effort and improves understanding compared with conventional application development?
+- Which representative applications best demonstrate value and expose gaps in vocabulary coverage?
+- What is the smallest useful adoption unit: a new application, one capability within an existing application, or both?
+- Which reusable capabilities must be supplied initially, and what extension experience makes additional providers practical?
+- Which declaration conventions make event relationships and policy choices easiest to understand with the least authoring effort?
+- What baseline tasks and measurements establish reduced effort and better understanding compared with conventional development?
+
+Model-only composition and an understandable event-driven execution model are product requirements. Exact Python declaration syntax and native realization belong in the authoring and architecture specifications.
