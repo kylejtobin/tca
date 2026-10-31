@@ -12,9 +12,9 @@
 
 ---
 
-TCA is a declarative backend application framework being built to eliminate the separately authored layer that translates a business model into application behavior.
+TCA is a declarative, event-driven backend application framework under development. Developers name, specialize, and compose business types and supplied application constructs into one executable application model.
 
-Developers describe business values, rules, relationships, and intended outcomes. The framework derives what can be constructed and which operations are justified by the available evidence.
+The supplied constructs define their execution semantics. Developers declare application-specific meaning and relationships without writing handlers, startup orchestration, or a separate workflow. Those relationships determine native execution through Pydantic, FastStream, and NATS/JetStream.
 
 **When the business changes, change the model. Execution follows from its declarations.**
 
@@ -24,7 +24,7 @@ A business rule rarely lives in one place. It appears in a model, then again in 
 
 TCA makes those relationships executable. A condition, the evidence that establishes it, and the operation it permits belong to the same declared program.
 
-For an order that ships only after payment, the application describes the required payment evidence and its relationship to shipment. The engine obtains what is needed, waits when evidence is missing, and releases shipment when its prerequisites hold. The developer does not also write the sequence that coordinates those facts.
+For an order that ships only after payment, the application names payment confirmation, shipment prerequisites, and the shipping capability. The selected constructs supply receiving, waiting, and justified execution behavior; the developer composes their application-specific relationships.
 
 Database queries and external calls still happen through reusable capabilities. The work removed is the application-specific procedure that repeatedly translates business meaning into those operations.
 
@@ -34,15 +34,13 @@ An agent maintaining conventional software must keep the implementation faithful
 
 Declared constraints govern which values can construct. Explicit prerequisites govern which operations can run. Execution retains the evidence that explains why an action was justified.
 
-This gives humans and agents the same structured program to inspect, change, and test. Review still establishes whether the model expresses the right business requirements; the framework enforces the relationships that were actually declared.
+This gives humans and agents the same application model to inspect, change, and test. Review still establishes whether the model expresses the right business requirements; the framework enforces the relationships that were actually declared.
 
-## 🏗️ From architectural discipline to framework
+## Typed composition and native execution
 
-TCA brings together type-driven development, declarative modeling, and domain-driven design around construction: valid values and business conclusions are built from the evidence they require.
+Business values and framework application constructs follow one bounded modeling discipline. Pydantic constructs values, Pydantic Settings constructs configuration, FastStream supplies typed invocation and resource lifecycle, and NATS/JetStream supplies routing, retained history, and delivery.
 
-Early work explored that approach as a pattern developers and agents could follow. The difficult part remained implementing the construction and execution mechanics correctly.
-
-The project now puts that responsibility in an engine. Python and Pydantic supply native value construction; reusable primitives express computations and conditions; explicit relationships supply execution meaning. The same model governs immediate work and continuation as evidence arrives over time.
+TCA derives native bindings from named application relationships. The same declarations govern activation, required evidence, results, continuation, and execution explanations. Framework constructs supply their semantics through modeled composition and native facilities.
 
 <a id="construction-current-status"></a>
 ## 🚧 Current status
@@ -59,6 +57,10 @@ The product and architecture documents describe that design and its required beh
 |---|---|
 | [Product definition](docs/product.md) | The developer experience, capabilities, scope, and intended value |
 | [Architecture design](docs/architecture/DESIGN.md) | The declarative foundation and Pydantic, FastStream, and NATS/JetStream responsibilities |
+
+## Development infrastructure
+
+The Compose stack has two services: `dev` for TCA development and `nats` with JetStream enabled. A named volume retains NATS data across container replacement. NATS is available at `nats://nats:4222` within the stack and `nats://localhost:4222` from the host.
 
 ## 🚧 Roadmap
 

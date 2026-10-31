@@ -11,7 +11,7 @@ Create or modify documentation only when the human user explicitly requests or a
 
 ## Purpose and preparation
 
-Write as an architect specifying a coherent, implementable design. Read the human's current direction, relevant discussion, `docs/product.md`, and `docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`. Ground each section in established decisions and their reasoning. Separate agreed design from genuinely open choices and implementation evidence.
+Write as an architect specifying a coherent, implementable design. Read the human's current direction, relevant discussion, `docs/product.md`, and `docs/architecture/DESIGN.md`. Ground each section in established decisions and their reasoning. Separate agreed design from genuinely open choices and implementation evidence.
 
 Use current authorized architectural refinements rather than preserving historical mechanisms by default. A proposed design change requires explicit human authorization before it becomes documented policy.
 
