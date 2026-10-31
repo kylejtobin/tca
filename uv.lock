@@ -433,6 +433,43 @@ wheels = [
 ]
 
 [[package]]
+name = "fast-depends"
+version = "3.0.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/76/1e67c34a18a75aff77f25de2d56de8ad3d38c05915ae513ba35293fd920b/fast_depends-3.0.10.tar.gz", hash = "sha256:234c1dcfcdbc1cdb0ebe543fbf8e8234c069ba39518fbdf1f71dad6e3e6111ad", size = 19807, upload-time = "2026-10-28T07:36:21.82Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/af/af933c80bd2c60070dec7ea324350ce698d579bada6ab6511800f749ab57/fast_depends-3.0.10-py3-none-any.whl", hash = "sha256:e49306f54b691a59076e6fe1fdae9418bff4af80d1c9d9fb82a6d517b4d4c04c", size = 25535, upload-time = "2026-10-28T07:36:20.374Z" },
+]
+
+[package.optional-dependencies]
+pydantic = [
+    { name = "pydantic" },
+]
+
+[[package]]
+name = "faststream"
+version = "0.7.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "fast-depends", extra = ["pydantic"] },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/87/b6/d15b1c88f1adc3bf11e4e23f8a057e489e2e60a47f7d4b821a3ae264f4c2/faststream-0.7.8.tar.gz", hash = "sha256:9e367d9ba8b59eeafad19f46641b11f20d23a7ed75ea27b2503856a8ae0c075a", size = 392145, upload-time = "2026-10-22T20:50:29.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/79/daae6f842665756f5fa45683d4762333348c4ad4dba2e9d9f37644717d74/faststream-0.7.8-py3-none-any.whl", hash = "sha256:ffe412278cf116216078dcf29dcec93274994a98d036be2bc388071dff7e259e", size = 618852, upload-time = "2026-10-22T20:50:27.388Z" },
+]
+
+[package.optional-dependencies]
+nats = [
+    { name = "nats-py" },
+]
+
+[[package]]
 name = "filelock"
 version = "4.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -689,6 +726,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/69/1c821d8386fae5cecc5fcaacf3de3947ff0a23f16bb481b5532b5868372a/msgpack-1.2.3-cp315-cp315t-win32.whl", hash = "sha256:3d4c807ed050fe3ddbea5ba7e9f63d7136871ce42861be1f50ff739f0e91047a", size = 75820, upload-time = "2026-09-29T02:33:47.596Z" },
     { url = "https://files.pythonhosted.org/packages/68/9e/41e2f7343a3764a9c1fb10c79f9a6a05db9df93dedd76401d1b511f5a685/msgpack-1.2.3-cp315-cp315t-win_amd64.whl", hash = "sha256:5f304123b90e8b2e49867981b7f6061612c39f50cca51ee88de007c084cf68d3", size = 83345, upload-time = "2026-09-29T02:33:49.325Z" },
     { url = "https://files.pythonhosted.org/packages/80/cd/0c3aa439bc7a7bf24684fef3a0ad776cba170e18ed94445e723bce42fce7/msgpack-1.2.3-cp315-cp315t-win_arm64.whl", hash = "sha256:f41ca154b7737b11893cdce3c78c61d703398a1cd54d4297bdad908392338a8e", size = 77572, upload-time = "2026-09-29T02:33:50.729Z" },
+]
+
+[[package]]
+name = "nats-py"
+version = "2.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/c8/739b72c9201081e48000884d476231873ac82f7247c43b33823eaf3c0bfb/nats_py-2.16.0.tar.gz", hash = "sha256:1d137ed7afc9b59033b3199324c6237df2016a5091935871344a787eba6b72fc", size = 79731, upload-time = "2026-09-16T07:47:21.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/a3/16cec37172144d3362d7551bb823a098b2b2903281fc095dfe4480b8c2fd/nats_py-2.16.0-py3-none-any.whl", hash = "sha256:aeb1ff123966c05833d26c7df7e1d54c1c6d32b612428b21677a2e921f1fecae", size = 93578, upload-time = "2026-09-16T07:47:20.799Z" },
 ]
 
 [[package]]
@@ -1540,11 +1586,19 @@ name = "type-construction"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction" }
 dependencies = [
+    { name = "faststream", extra = ["nats"] },
+    { name = "nats-py" },
     { name = "pydantic" },
+    { name = "pydantic-settings" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.13,<3" }]
+requires-dist = [
+    { name = "faststream", extras = ["nats"], specifier = ">=0.7.8,<0.8" },
+    { name = "nats-py", specifier = ">=2.16,<3" },
+    { name = "pydantic", specifier = ">=2.13,<3" },
+    { name = "pydantic-settings", specifier = ">=2.15,<3" },
+]
 
 [[package]]
 name = "typing-extensions"
