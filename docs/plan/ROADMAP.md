@@ -2,7 +2,8 @@
 
 ## Now
 
-- O01 | Developers can compose and run a typed, event-driven application whose declared relationships determine what proceeds as evidence arrives, with retained results supporting continuation and explaining execution.
+- O01 | Developers can build, install, configure, and start a minimal TCA application through the supported package and container setup without writing startup, connection, or configuration-loading code.
+- O03 | Developers can start a configured TCA application whose modeled activities receive typed events, construct results, and publish events to subsequent activities without writing startup, handlers, or messaging wiring.
 
 ## Later
 
