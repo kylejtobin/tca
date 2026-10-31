@@ -1,7 +1,7 @@
 [project]
 name = "tca-workspace"
 version = "0.0.0"
-description = "Workspace for the Type Construction Architecture packages."
+description = "Development workspace for the Type Construction Architecture framework."
 readme = "README.md"
 requires-python = ">=3.14"
 authors = [{ name = "Kyle Tobin", email = "tobin.kyle@gmail.com" }]

@@ -5,8 +5,6 @@ on:
   pull_request:
 
 jobs:
-  # The full repository gate. It fails while a package is unfinished; that failure is the
-  # repository's state and is not hidden.
   gates:
     runs-on: ubuntu-latest
     steps:
@@ -14,22 +12,15 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           enable-cache: true
-      - run: uv sync --all-packages
+      - run: uv sync --locked --all-packages
       - run: uv run just check
       - run: uv run just audit
 
-  # The world package on its own, against the locked dependencies: every third-party
-  # dependency and the dev tools without building any workspace member, then the world member
-  # alone, so an unfinished sibling cannot mask or block it.
-  world:
+  package:
     runs-on: ubuntu-latest
-    env:
-      UV_FROZEN: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           enable-cache: true
-      - run: uv sync --all-packages --no-install-workspace
-      - run: uv sync --package type-construction-world --inexact
-      - run: uv run --package type-construction-world just check-package world
+      - run: uv build --package type-construction

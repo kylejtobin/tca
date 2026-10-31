@@ -1,12 +1,11 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [manifest]
 members = [
     "tca-workspace",
-    "type-construction-program",
-    "type-construction-world",
+    "type-construction",
 ]
 
 [[package]]
@@ -1537,24 +1536,9 @@ wheels = [
 ]
 
 [[package]]
-name = "type-construction-program"
+name = "type-construction"
 version = "0.0.0"
-source = { editable = "packages/python/type-construction-program" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "type-construction-world" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = ">=2.13,<3" },
-    { name = "type-construction-world", editable = "packages/python/type-construction-world" },
-]
-
-[[package]]
-name = "type-construction-world"
-version = "0.0.0"
-source = { editable = "packages/python/type-construction-world" }
+source = { editable = "packages/python/type-construction" }
 dependencies = [
     { name = "pydantic" },
 ]

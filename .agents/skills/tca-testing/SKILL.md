@@ -1,16 +1,11 @@
 ---
 name: tca-testing
-description: Design, write, change, or review TCA unit, integration, and acceptance tests. Establish independent expectations, challenge failure boundaries and composition, and verify defect detection without preserving implementation accidents.
----
-
----
-name: tca-testing
 description: Design, implement, revise, or review TCA unit, integration, and end-to-end acceptance tests. Apply correctness by construction, independent behavioral expectations, adversarial testing, and demonstrated defect detection without preserving implementation accidents.
 ---
 
 # TCA Testing
 
-Follow [AGENTS.md](AGENTS.md) for mandatory repository testing instructions. Keep that file synchronized with every package's `tests/AGENTS.md`.
+Follow [TEST_DIR_AGENTS.md](TEST_DIR_AGENTS.md) for mandatory repository testing instructions. Keep that file synchronized with every package's `tests/AGENTS.md`.
 
 ## Establish correctness
 

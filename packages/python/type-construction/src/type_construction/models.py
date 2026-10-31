@@ -1,7 +1,6 @@
-"""The model foundation of the World vocabulary.
+"""Configuration-only value bases for framework and application models.
 
-Two configuration-only bases from docs/architecture/DESIGN.md section 2, "Value algebra and
-construction". Every business model inherits from one of them. They establish the required
+The bases implement docs/architecture/DESIGN.md section 5.1. They establish the required
 native configuration and nothing else: Pydantic supplies construction, constraints, defaults,
 freezing, generics, schemas, errors and serialization.
 """

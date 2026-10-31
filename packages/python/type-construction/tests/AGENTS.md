@@ -2,7 +2,7 @@
 
 ## Mandatory preparation
 
-Before creating, changing, or reviewing tests, read `.agents/skills/tca-testing/SKILL.md` completely, then the complete `docs/product.md` and `docs/TCA_ARCHITECTURAL_FOUNDATIONS.md`. Read `docs/ADR.md` completely when it exists. All paths are relative to the repository root.
+Before creating, changing, or reviewing tests, read `.agents/skills/tca-testing/SKILL.md` completely, then the complete `docs/product.md` and `docs/architecture/DESIGN.md`. Read applicable ADRs when present. All paths are relative to the repository root.
 
 Current human instructions and approved contracts govern. Tests and ADRs MUST NOT contradict the current architecture. Existing tests and implementations are not alternate authorities.
 
@@ -12,21 +12,20 @@ Use `tests/<package_namespace>/unit/`, `integration/`, and `acceptance/`. Create
 
 Name test modules `test_<behavior>.py`. Keep domain declarations and small support helpers beside their consuming tests. Tests MUST NOT import other test modules.
 
-Cross-package scenarios belong to the package exposing the tested public behavior. World tests MUST NOT import the engine.
+Test the unified framework through its public `type_construction` API. Value-foundation tests remain independent of messaging and execution integrations.
 
-This file MUST match `.agents/skills/tca-testing/AGENTS.md` byte for byte in every package. Edit the canonical file and synchronize all copies together.
+Every package's `tests/AGENTS.md` MUST match `.agents/skills/tca-testing/TEST_DIR_AGENTS.md` byte for byte. Edit the canonical file and synchronize all copies together.
 
 ## Execution
 
-Set up the environment from the repository root against the lockfile, without building unfinished sibling packages:
+Set up the environment from the repository root against the lockfile:
 
 ```bash
-uv sync --all-packages --no-install-workspace
-uv sync --package type-construction-<name> --inexact
+uv sync --locked --all-packages
 uv run which pytest
 ```
 
-Run the second command for each package under test. The environment's `pytest` MUST be used, not a same-named host tool.
+The environment's `pytest` MUST be used, not a same-named host tool.
 
 From the package directory:
 
@@ -36,15 +35,10 @@ From the package directory:
 From the repository root:
 
 - Instruction parity: `python scripts/check_test_standards.py`
-- Package gate: `just check-package <name>`
 - All tests: `uv run --all-packages pytest -q`
 - Repository gate: `just check`
 
-Use the package's short name for `<name>`, for example `world`.
-
-Run focused tests during development and the package gate before declaring package work complete. Run the repository gate for repository-wide completion.
-
-The repository gate and all-tests command build every package. While a package is unfinished, their failures MUST remain visible; do not conceal them with skips or stubs.
+Run focused tests during development and the repository gate before declaring work complete. Missing tests, collection failures, and missing implementations MUST remain visible; do not conceal them with skips or stubs.
 
 ## Authority and completion
 

@@ -1,32 +1,26 @@
 ---
 name: tca-python-package
-description: "Creates a new Python package in this workspace in the one shape every package has: pyproject, LICENSE, README, source module, tests package, and its Dockerfile manifest copy. Use when a new package is needed, before any file in it is written by hand."
+description: Maintain TCA's Python distribution, module boundaries, public exports, and build configuration. Use when changing package structure, dependencies, import paths, or distribution metadata, or deciding whether functionality needs a separate package.
 ---
 
 # TCA Python Package
 
-Run it:
+Read `docs/architecture/DESIGN.md` sections 3 and 5 before changing package boundaries.
 
-```
-.agents/skills/tca-python-package/new-package <name> <description>
-```
+Maintain one framework distribution, `type-construction`, in
+`packages/python/type-construction/`, with import namespace `type_construction`.
 
-`<name>` is the short name in lower-case words joined by hyphens, `noun-list`. `<description>` is one sentence in quotes. Everything else is derived: the distribution is `type-construction-<name>`, the module is `type_construction.<name>` with hyphens as underscores, the tests package is `type_construction_<name>`.
+- Keep `Model` and `Root` in `src/type_construction/models.py`, export them from
+  `src/type_construction/__init__.py`, and retain the package-level `py.typed` marker.
+- Add internal modules according to actual dependencies and implemented contracts.
+  Semantic distinctions alone do not justify distributions or empty module trees.
+- Keep application packages separate from the framework. Create an extension
+  distribution only when independent use or release requirements justify it.
+- Declare dependencies where consumed. Use `uv add` from the package directory and
+  regenerate `uv.lock`; do not add dependencies for unimplemented functionality.
+- Keep manifests, Docker manifest copies, CI, test instructions, and public imports
+  consistent with the package structure. Preserve license and typing metadata.
 
-It writes:
-
-```text
-packages/python/type-construction-<name>/
-    pyproject.toml                               the fields every package here declares; dependencies empty
-    LICENSE                                      a copy of the root LICENSE
-    README.md                                    the title and the description
-    src/type_construction/<name>/__init__.py     empty
-    src/type_construction/<name>/py.typed
-    tests/type_construction_<name>/__init__.py   empty
-```
-
-The root `pyproject.toml` declares the workspace glob `packages/python/*`, so the new package is a workspace member without an edit there. The script makes one root edit: the package's `pyproject.toml` gets its `COPY` line in the `Dockerfile`, after the last one there, so the image build can resolve the workspace from manifests. It refuses if the package directory exists and changes nothing.
-
-Afterwards: `uv add` the dependencies from inside the package directory, then `just lock`.
-
-Tests are not included in the wheel. This skill does not prescribe which packages the project has or how they depend on each other.
+Run `just check` and `uv build --package type-construction`. Inspect the wheel and
+source distribution and verify public imports from an installed wheel outside the
+source tree. Report missing tests and unavailable checks explicitly.
