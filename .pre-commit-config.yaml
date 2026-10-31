@@ -24,7 +24,7 @@ repos:
         entry: uv run just check
         language: system
         pass_filenames: false
-        always_run: true
+        files: (^.*\.py$|(^|/)pyproject\.toml$|^uv\.lock$|^\.python-version$|^justfile$|^Dockerfile$|^compose\.yaml$|^packages/python/.*/py\.typed$)
       - id: audit
         name: just audit
         entry: uv run just audit
