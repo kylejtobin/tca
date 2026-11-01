@@ -140,7 +140,7 @@ TCA supplies the following specialized model contracts. Developers name, special
 | `Settings` | Typed configuration requirements and permitted declarative defaults. | Uses native Pydantic Settings sources, precedence, parsing, defaults, and validation while preserving required model guarantees. No separate configuration loader. |
 | `Resource` | An integration resource's settings, use, and explicit sharing where required. | Uses native resource creation, ownership, injection, and lifetime management. Live clients retain native types. |
 
-`Settings` specializes native `pydantic_settings.BaseSettings` with `validate_default=True, frozen=True`. Business value bases remain independent of configuration sources.
+`Settings` specializes native `pydantic_settings.BaseSettings` with `validate_default=True, frozen=True`. Developers specialize and compose configuration using native typed fields, `Field`, and `SettingsConfigDict`, preserving TCA’s required guarantees. Pydantic Settings supplies configuration composition and construction—including nesting, aliases, source acquisition, and precedence. An integration supplies the settings contract its resource requires; application composition reuses that contract. Source customization uses native extension points within framework or integration implementations. Business value bases remain independent of configuration sources.
 
 A provider construct supplies the source, capability, settings, and resource relationships required by its contract. Developers do not redeclare what the construct or composition determines. A capability specialization does not require a second activity declaration describing the same work.
 
