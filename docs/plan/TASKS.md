@@ -11,6 +11,6 @@
 - [ ] T09 | Event source binding | Connect `Source` declarations to native FastStream typed receiving and the declared admission contract. Preserve source and occurrence context, including agreement between addressed context and received content. | outcome:O03
 - [ ] T10 | Activity execution binding | Connect `Activity` declarations to framework-owned functions that invoke the selected Pydantic construction or supported operation and publish typed results to their declared destinations. Use native acknowledgement after confirmed retained publication. Verify successful A-to-B delivery and construction/publication failures through an installed application containing no handwritten handlers or transport wiring. | outcome:O03
 
-## Doing
+## Review
 
 - [ ] T02 | Settings configuration | Export `Settings` using native Pydantic Settings with required validation and freezing. Provide initial NATS connection configuration using native sources and precedence. | outcome:O01 | agent:claude
