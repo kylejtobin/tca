@@ -23,8 +23,12 @@ code. Establish necessity before evaluating implementation correctness.
 
 Pydantic constructs values. Pydantic Settings constructs configuration.
 FastStream provides typed receiving, invocation, publishing, and resource
-lifecycle. NATS/JetStream supplies routing, retained history, and delivery.
-TCA derives their bindings from modeled relationships.
+lifecycle. Supplied execution integrations provide native routing, retained
+history, and delivery; NATS/JetStream is the first implementation. Core
+constructs express application meaning; integrations supply typed configuration
+and native bindings. Selection follows resource composition and imports,
+without a second backend setting or execution manager. TCA derives bindings
+from modeled relationships and preserves access to actual native objects.
 
 Types define contracts, names identify placements, and composition establishes
 relationships. Derive what these already determine; declare additional meaning

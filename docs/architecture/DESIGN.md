@@ -10,7 +10,7 @@ flowchart TB
     APP -->|"Settings requirements"| SETTINGS["Pydantic Settings: configuration construction"]
     ENV["Deployment values"] --> SETTINGS
 
-    subgraph RUNTIME["Native execution of the application model"]
+    subgraph RUNTIME["First execution integration: NATS through FastStream"]
         NATS["NATS / JetStream: routing, retention, delivery"]
         FAST["FastStream: typed receiving, invocation, resources"]
         BUILD["Pydantic construction or reusable typed operation"]
@@ -44,7 +44,7 @@ flowchart TB
 **Date:** October 31, 2026  
 **Product:** [TCA Product Definition](../product.md)
 
-**A TCA application composes business types and framework constructs with defined execution semantics into one model whose named relationships determine its event-driven execution through Pydantic, FastStream, and NATS.**
+**A TCA application composes business types and framework constructs with defined execution semantics into one model whose named relationships determine its event-driven execution through Pydantic, FastStream, and supported execution integrations.**
 
 ## 1. Purpose and quality goals
 
@@ -61,7 +61,7 @@ Quality goals are correct construction and commitment, consistent composition, l
 - Events drive transformational application activity. Pure value construction does not require application execution.
 - Framework constructs define supported behavior through typed composition. Application authors specialize and compose them without handlers, registration scripts, or an imperative workflow encoded as configuration.
 - The application model determines topology. Native configurations and bindings are derived artifacts, not independently maintained application definitions.
-- Pydantic owns construction, FastStream supplies typed invocation and integration, and NATS supplies routing, retention, and delivery. Custom procedure fulfills only obligations their composition leaves unresolved.
+- Pydantic owns construction, FastStream supplies common receiving, invocation, publication, and lifecycle facilities, and the selected execution integration supplies native routing, retention, and delivery. Custom procedure fulfills only obligations their composition leaves unresolved.
 - Application-authored validators, arbitrary computed-property bodies, serializers, default factories, custom constructors or schema hooks, callbacks, handlers, and workflow functions are forbidden. Reusable operations and adapters have explicit typed contracts.
 - Framework and extension implementations must model their execution contracts. A typed interface over independently designed procedural orchestration does not meet this requirement.
 - An allowed declaration cannot be rejected because an implementation recognizes a narrower syntax. Native Pydantic acceptance alone does not authorize forms outside TCA's contract.
@@ -99,7 +99,7 @@ An `Event` records an establishment. An `Activity` connects an activating event 
 
 Composition determines connections wherever unambiguous. Otherwise, a typed relationship identifies the supplying occurrence or projection and its selection policy. Equal Python types do not choose suppliers. Relationships already established structurally require no second reference or registration.
 
-Pydantic constructs values; FastStream invokes derived receiving and publishing bindings; NATS routes and retains events. Each binding identifies its source declaration, native guarantee, and remaining framework obligation. Neither application nor integration maintains another execution graph.
+Pydantic constructs values; FastStream invokes derived receiving and publishing bindings; the selected execution integration routes and retains events through its native facilities. Each binding identifies its source declaration, native guarantee, and remaining framework obligation. Neither application nor integration maintains another execution graph.
 
 Application policies specify meaningful choices, including evidence selection, completion, and external recovery. Their enforcement follows the selected construct contracts. Applications do not describe retrieval loops, delivery tracking, commitment algorithms, or recovery algorithms.
 
@@ -168,7 +168,7 @@ Business-subject correlation is a declared projection. Integration lookup derive
 
 Messaging topology follows independently addressed events and their declared source and activity relationships. Ordinary business fields and embedded members remain value structure unless an explicit event or membership relationship establishes independent addressing. Naming a business type or nesting a value does not itself require a subject, stream, or consumer.
 
-Subject names derive from modeled identities through deterministic, unambiguous transport encoding. Business identifiers containing punctuation cannot inject separators or wildcards. Transport restrictions must not become arbitrary restrictions on World values.
+Native addresses, including NATS subject names, derive from modeled identities through deterministic, unambiguous transport encoding. Business identifiers containing punctuation cannot inject separators or wildcards. Transport restrictions must not become arbitrary restrictions on World values.
 
 Schema names, declaration locations, occurrence identities, and transport addresses are related representations, not interchangeable identifiers. Reference notation must identify modeled relationships without a separately maintained path or naming system. String paths and a general-purpose resolver are not assumed by this contract.
 
@@ -179,10 +179,14 @@ Schema names, declaration locations, occurrence identities, and transport addres
 | Pydantic | Construction, constraints, introspection, schema, and serialization. |
 | Pydantic Settings | External settings sources, precedence, parsing, defaults, and settings construction. |
 | FastStream | Typed receiving, invocation, publishing integration, resource injection, acknowledgements, and process lifecycle. |
-| NATS / JetStream | Routing, retained history, delivery/redelivery, permissions, schedules, and publication conditions. |
+| Execution integration | Native routing, retained history, delivery/redelivery, permissions, schedules, and publication conditions that satisfy the selected construct contracts. NATS/JetStream is the first implementation. |
 | TCA framework | Composable application constructs, typed execution facts, and minimal native bindings preserving their contracts. |
 
-NATS/JetStream and FastStream are the fixed execution foundation. TCA derives the application-specific parameters of these native facilities:
+Core constructs express application meaning; supplied execution integrations realize it through native facilities. Application resource relationships select the integration through typed composition and ordinary imports, without a second backend-selection setting. FastStream's common facilities are reused rather than wrapped in a competing broker or execution system.
+
+Each integration supplies typed configuration, resource specializations, and the necessary native bindings. Provider dependencies and exports belong within that integration boundary; core contracts do not require provider-specific fields or client types. This boundary does not require separate distributions, dynamic discovery, a plugin registry, or a TCA execution manager.
+
+NATS/JetStream is the first concrete execution integration. The remainder of this section specifies its realization; these native mechanisms do not define universal representations for other integrations. TCA derives the application-specific parameters of these facilities:
 
 | Declared relationship | Native realization |
 |---|---|
@@ -200,9 +204,9 @@ The default activity binding is a named durable pull consumer, configured throug
 
 Retained typed events are the authoritative execution history. Authoritative history uses file-backed JetStream streams with native `LimitsPolicy`, preserving evidence independently of delivery acknowledgement under section 8.3's retention and commitment guarantees. State and progress views derive from that history; TCA adds no event-store service or separate authoritative execution state.
 
-Framework and extension bindings preserve access to the actual native `NatsBroker`, nats-py `Client`, and `JetStreamContext`. Supported native injection facilities, including FastStream’s `Client` and `JsClient` annotations in their supported contexts, expose those objects without a TCA client facade. FastStream’s convenience methods do not limit the NATS capabilities available to a construct’s implementation. Native operations remain governed by that construct’s declared relationships and guarantees; application authors continue to specialize and compose models.
+Every integration preserves access to its actual native objects for framework and extension implementations, without a TCA client facade. In the NATS integration, these are `NatsBroker`, nats-py `Client`, and `JetStreamContext`. Supported native injection facilities, including FastStream’s `Client` and `JsClient` annotations in their supported contexts, expose those objects. FastStream’s convenience methods do not limit the NATS capabilities available to a construct’s implementation. Native operations remain governed by that construct’s declared relationships and guarantees; application authors continue to specialize and compose models.
 
-TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Native integration modules isolate their implementation dependencies without introducing a generic backend abstraction.
+TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Integration modules isolate provider dependencies and bindings while reusing FastStream's common abstractions.
 
 ### 5.5 Extensions and runtime foundation
 
@@ -210,7 +214,7 @@ An extension contributes reusable model types and their required native realizat
 
 Extensions use the application's existing identity and relationship contracts. They do not introduce their own workflow language, naming authority, separately configured application graph, or hidden business decisions. An independently useful extension may be distributed as a separate Python package. Extensibility does not require a plugin registry, dynamic discovery service, callback system, or additional execution infrastructure.
 
-NATS is not an optional broker plugin. Replacing the execution foundation requires a separate architectural decision and evidence that the replacement realizes the same declared guarantees. Provider extensions do not require that abstraction, and TCA does not promise transport interchangeability.
+An execution integration supplies the native realization of shared application contracts. Another provider is supported only with evidence that its bindings fulfill the required construction, admission, durable evidence, commitment, recovery, security, and ownership guarantees. Similar feature names or FastStream API compatibility alone do not establish those guarantees. Integration selection does not change business meaning or weaken a construct's contract; native capabilities remain available without promising identical operational behavior across providers.
 
 ## 6. Runtime views
 
@@ -218,15 +222,15 @@ NATS is not an optional broker plugin. Replacing the execution foundation requir
 
 The shared launch path reads the exposed `Application` declaration and constructs its required configuration through Pydantic Settings. Invalid required configuration prevents dependent resource startup and identifies the setting. Valid configuration does not establish connectivity or authorization.
 
-Startup configures native broker/resource objects and registers the receiving, invocation, and publishing bindings determined by the declaration. FastStream and integration lifecycles establish and release native connections and resources. Shared framework startup ensures that acquired resources undergo their native release operations after partial initialization failure and during shutdown, using ordinary acquisition/release bracketing where necessary. Cleanup preserves the initialization failure for diagnosis.
+Startup consumes the selected integration's resource bindings through FastStream's common lifecycle facilities and registers the receiving, invocation, and publishing bindings determined by the declaration. FastStream and integration lifecycles establish and release native connections and resources. Shared framework startup ensures that acquired resources undergo their native release operations after partial initialization failure and during shutdown, using ordinary acquisition/release bracketing where necessary. Cleanup preserves the initialization failure for diagnosis.
 
-A minimally configured application with no domain events or activities can connect to NATS and enter the native application lifecycle. It creates no domain subscriptions, consumers, or streams. The modeling types are available through ordinary imports; adding domain declarations determines which native bindings and resources startup realizes.
+A minimally configured application with no domain events or activities can connect through its selected execution integration and enter the native application lifecycle. It creates no domain subscriptions, consumers, or streams. The modeling types are available through ordinary imports; adding domain declarations determines which native bindings and resources startup realizes.
 
 Startup enables event processing; it does not itself pursue business outcomes. The same launch path handles applications with different declarations without application-specific startup branches.
 
 ### 6.2 An event activates an activity and establishes a result
 
-NATS delivers an event through the derived native FastStream subscription. Native Pydantic receiving constructs the declared content while the binding preserves occurrence and source context. External events undergo the selected source's admission contract. FastStream invokes the framework-owned binding for the declared activity; application developers supply no receiving or processing function.
+The selected execution integration delivers an event through the derived native FastStream subscription. Native Pydantic receiving constructs the declared content while the binding preserves occurrence and source context. External events undergo the selected source's admission contract. FastStream invokes the framework-owned binding for the declared activity; application developers supply no receiving or processing function.
 
 The activity contract identifies activation, typed operands, and result. A request or demand activates work through an event. An activating event can supply inputs directly; additional evidence follows declared supply and selection relationships.
 
@@ -258,11 +262,15 @@ Settings remain fixed for a process lifetime unless an explicit modeled change c
 
 An integration determines its resource configuration, owner, use, and lifetime. Applications specify sharing only where composition does not determine it. Native lifecycle management releases resources after initialization failure and during shutdown. Client recreation does not authorize replaying an external effect.
 
-Resource ownership is scoped to an application runtime. Uses of the same declared resource within that runtime share its native instance; equal types or configuration values do not establish sharing. Separate runtimes own separate native clients. Replicas of the same logical application preserve the stream and consumer identities derived from its declarations. Where composition or the native broker context determines the resource association, applications declare no additional reference.
+Resource ownership is scoped to an application runtime. Uses of the same declared resource within that runtime share its native instance; equal types or configuration values do not establish sharing. Separate runtimes own separate native clients. Replicas of the same logical application preserve the logical topology identities derived from its declarations, including stream and consumer identities in NATS. Where composition or the native broker context determines the resource association, applications declare no additional reference.
 
-Application relationships determine logical subjects, stream coverage, durable consumer identity, and commitment scope. Deployment supplies native replication and placement settings through `JStream` and `ConsumerConfig`; consumer state inherits stream replication by default. Native creation and binding preserve configured retention and replication and existing consumer progress. NATS/JetStream owns clustering, replication, and leader election.
+Application relationships determine logical addresses, delivery relationships, retained history, and commitment scope. For NATS, these project to subjects, stream coverage, and durable consumer identity. Deployment supplies native replication and placement settings through `JStream` and `ConsumerConfig`; consumer state inherits stream replication by default. Native creation and binding preserve configured retention and replication and existing consumer progress. NATS/JetStream owns clustering, replication, and leader election.
 
-Development uses an application container and a JetStream-enabled NATS container with persistent storage. Derived resources and deployment-granted permissions must preserve the execution guarantees. Deployment layout or a subject prefix alone does not establish atomic commitment coverage.
+Execution integrations require verified encryption, authenticated application identity, and deployment-granted least-privilege permissions. Native security facilities enforce these guarantees; application credentials confer no provisioning authority unless explicitly granted. Configuration models hold deployment references to secrets and trust material, not credential contents in ordinary values or URLs. No plaintext fallback or certificate-verification bypass is exposed.
+
+The initial NATS identity contract uses verified TLS and native JWT/NKey credentials loaded from a deployment-supplied `.creds` file. Both secure TCP/TLS and WSS are supported. TCP requires native TLS-first with matching server configuration, so authentication cannot precede encryption. Mutual TLS is not mandatory in addition to JWT/NKey authentication. Native SSL, FastStream, and NATS perform verification and enforcement; TCA supplies only the required modeled configuration and bindings.
+
+Development uses an application container and a secured JetStream-enabled NATS container with persistent storage. Development and tests follow the same security contract using generated credentials and certificates; private material is not committed or baked into images. Secret mounts and persistent data require restricted access, with secret mounts read-only where applicable. Derived resources and deployment-granted permissions must preserve the execution guarantees. Deployment layout or a subject prefix alone does not establish atomic commitment coverage.
 
 ## 8. Guarantees attached to modeled relationships
 
@@ -298,11 +306,13 @@ Requiredness, nullability, defaults, acquisition, and stopping retain distinct m
 
 ### 8.3 Establishment, justification, and concurrency
 
-JetStream retains facts needed for continuation and explanation independently of acknowledgement. A published composition retains its content and basis even when it only assembled values. Temporary objects do not require events.
+The execution integration retains facts needed for continuation and explanation independently of acknowledgement. A published composition retains its content and basis even when it only assembled values. Temporary objects do not require events.
 
-Declared supply and retained justification are the same relationship before and after execution. The retained basis records the consumer operand, supplying occurrence, stream and sequence, and any projection actually consumed. Headers may assist routing but are not the sole authority for justification.
+Declared supply and retained justification are the same relationship before and after execution. The retained basis records the consumer operand, supplying occurrence, integration-specific retained evidence identity, and any projection actually consumed. NATS represents retained evidence identity using stream and sequence; those fields are not a universal event representation. Headers may assist routing but are not the sole authority for justification.
 
 A changed value is a new establishment. For replaceable or evolving evidence, publication must protect the basis against every change that could invalidate it, including authority/lifecycle changes and arrivals affecting omission or membership.
+
+The integration must enforce commitment against changes across the complete declared scope using demonstrated native facilities. The following is the NATS realization, not a universal transport algorithm.
 
 Use a covering subject filter within one stream, including the publication destination. Capture stream boundary `S` before reading; retrieve policy-selected evidence and the scope watermark `W` as of that same boundary. Publish with `Nats-Expected-Last-Subject-Sequence: W` and `Nats-Expected-Last-Subject-Sequence-Subject` set to the covering filter. A stream-wide scope uses `Nats-Expected-Last-Sequence: S`. A conflict requires refreshed evidence and reconsideration.
 
@@ -318,7 +328,7 @@ Alternative publication addresses derive from the constructed discriminator. Ext
 
 Cancellation stops new authorization while preserving initiated work and later observations. Completion, finality, reopening, and provider repeat safety follow their declared contracts. Waiting and lifecycle apply to ordinary constructions as well as capabilities.
 
-Runtime-relative deadlines use NATS recording time and native scheduled notifications. Restart does not reset deadlines; late delivery does not redefine them. External timestamps remain business claims.
+Runtime-relative deadlines use the selected integration's authoritative recording time and native notification facilities; the NATS realization uses NATS recording time and native scheduled notifications. Restart does not reset deadlines; late delivery does not redefine them. External timestamps remain business claims.
 
 ### 8.5 Evolution and explanations
 
@@ -338,7 +348,7 @@ Authoring diagnostics and runtime explanations identify the same named applicati
 | Retained events justify work and continuation | Execution preserves declared demand, evidence, authority, and external effect boundaries. |
 | A developer-owned application package | Developers own application meaning and policy choices; supplied constructs own their execution guarantees. |
 | One framework distribution | `type-construction` exports value foundations and application constructs; internal modules preserve dependency boundaries. |
-| Fixed NATS/JetStream and FastStream foundation | Native subscribers, publishers, streams, and consumers realize declared relationships; subjects are derived addresses. |
+| Execution integrations through typed composition | FastStream's common facilities and integration-specific native bindings realize shared contracts. NATS/JetStream is the first implementation; provider representations remain within its boundary. |
 | Shared native startup | One launch path configures native facilities and bindings, supports an empty application, and uses native lifecycle management. |
 | Extensions through typed composition and imports | Reusable operations and provider integrations require no plugin discovery or separate workflow language. |
 
@@ -346,7 +356,7 @@ Authoring diagnostics and runtime explanations identify the same named applicati
 
 | Scenario | Required observable result |
 |---|---|
-| Start an empty application with valid configuration | The shared launch path connects to NATS without domain activity, domain subscriptions, or speculative domain streams/consumers. |
+| Start an empty application with valid configuration | The shared launch path connects through the selected integration without domain activity or speculative domain messaging resources; NATS is the initial verification target. |
 | Run a declared event-to-result relationship with ENV configuration | The same launch path establishes native receiving, Pydantic construction, and retained publication without application handlers, boot callbacks, or duplicate wiring. |
 | Run differently composed applications | Their declarations determine native bindings through the same startup implementation, without application-specific startup branches. |
 | Invalid required settings | Construction fails before dependent resources or activity begin, identifying the setting. |
@@ -356,12 +366,14 @@ Authoring diagnostics and runtime explanations identify the same named applicati
 | Add an ordinary nested business field | Native value construction reflects the field; messaging topology gains no address or resource unless an explicit event or membership relationship requires it. |
 | Inspect execution and native topology | Events, activity attempts, subject addresses, subscriptions, publication targets, stream filters, consumer configuration, and permissions trace to the same declarations and occurrence identities. |
 | Compose a supplied provider integration | Its source, capability, settings, and resource contracts compose without an application-authored adapter or workflow. |
+| Compose a supported execution integration | Its resource relationships select native bindings without a second backend setting; provider-specific configuration and retained evidence identities preserve the shared guarantees. |
+| Connect to secured infrastructure | Trusted, authenticated connections and authorized operations succeed; invalid trust, identity, and forbidden operations fail without plaintext fallback or prohibited effects. |
 | Add a native system projection | It preserves modeled identities and relationships without creating another application definition. |
 | Missing, malformed, or negative evidence | Waiting, receiving failure, consumer failure, and valid negative alternatives remain distinguishable. |
 | Race evidence changes against publication | Stale establishment is rejected; legitimate work succeeds after refresh. |
 | Interrupt after publication before acknowledgement | Retained progress is recognized without duplicate authorization. |
 | Replace a process or configuration source | Native resources are recreated while retained business meaning and execution relationships remain intact. |
-| Scale workers and fail over a broker | Unchanged declarations run across multiple workers against replicated JetStream. After a worker stops and a broker leader fails while quorum remains, surviving or replacement workers continue through the same durable consumers and retained facts, preserving occurrence identity and commitment conditions; input acknowledgement still follows retained result publication. |
+| Scale workers and fail over a NATS broker | Unchanged declarations run across multiple workers against replicated JetStream. After a worker stops and a broker leader fails while quorum remains, surviving or replacement workers continue through the same durable consumers and retained facts, preserving occurrence identity and commitment conditions; input acknowledgement still follows retained result publication. |
 
 Acceptance uses public declarations and real native integrations. Handwritten test coordinators or configuration encoding an execution algorithm do not demonstrate the authoring contract. Tests establish TCA-specific relationships and integration behavior rather than reproduce native framework test suites.
 
@@ -371,7 +383,7 @@ Remaining authoring specifications define concrete Python specialization/composi
 
 Model-only authoring, supplied construct semantics, one authoritative topology, shared native startup, empty-application behavior, native binding targets, topology granularity, native settings, unified packaging, and import-based extensions are settled. Derive remaining choices from application meaning and native capabilities; missing details cannot justify implementation-specific restrictions or speculative machinery.
 
-Replica freshness, retrieval pagination, atomic publication, and external recovery require evidence against the selected versions and deployment configuration. Source inspection, isolated experiments, and single-node runs establish only their demonstrated scope.
+Each execution integration must demonstrate the shared guarantees against its native semantics. Replica freshness, retrieval pagination, atomic publication, and external recovery require evidence against the selected versions and deployment configuration. Source inspection, isolated experiments, and single-node runs establish only their demonstrated scope.
 
 Implementation evidence and delivery planning belong in separate artifacts.
 
@@ -394,6 +406,7 @@ Implementation evidence and delivery planning belong in separate artifacts.
 | Evidence | An admitted retained fact with provenance and version. |
 | Establishment | A constructed result committed under its identity and evidence basis. |
 | Declared topology | The names, placements, identities, and relationships expressed by application composition. |
+| Execution integration | Supplied typed configuration, resource specializations, and native bindings realizing the shared execution guarantees through a selected provider. |
 | Native binding or projection | A system-specific realization derived from those declarations. |
 | Subject | A native NATS message address derived from modeled identity and used in publication, subscription, and stream filters. |
 | Stream | A native JetStream resource retaining messages under its configured subject coverage and retention policy. |

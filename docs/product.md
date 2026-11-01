@@ -81,7 +81,7 @@ Public examples show complete, recognizable applications and their observable be
 | Deployment values, credentials, infrastructure, and permission grants | Deployment operator |
 | Authoritative external data, resource constraints, and provider guarantees | The systems that own those resources |
 
-TCA supports durable event-driven application execution through established infrastructure. External business-data storage can vary without implying interchangeable execution infrastructure.
+TCA supports durable event-driven application execution through supplied integrations with established infrastructure. Teams can use supported infrastructure they already operate while retaining TCA's declarative programming model. Each execution integration must demonstrate the framework's guarantees; similar provider capabilities do not imply identical operational behavior.
 
 TCA does not establish that business requirements are correct, make arbitrary external operations universally exactly-once, or replace authorization and concurrency controls at protected resources.
 
