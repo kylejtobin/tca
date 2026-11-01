@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "faststream[nats]>=0.7.8,<0.8",
-    "nats-py>=2.16,<3",
+    "nats-py[aiohttp]>=2.16,<3",
     "pydantic>=2.13,<3",
     "pydantic-settings>=2.15,<3",
 ]
