@@ -1,5 +1,6 @@
-# Development stack: the TCA container and persistent NATS/JetStream.
-# Runtime contracts are defined in docs/architecture/DESIGN.md.
+# Development stack: the TCA container and persistent, secured NATS/JetStream.
+# Runtime contracts are defined in docs/architecture/DESIGN.md. Run `just secrets` first: the
+# server requires TLS before any protocol exchange and operator credentials from .secrets.
 services:
   dev:
     build:
@@ -9,17 +10,20 @@ services:
         GID: ${GID:-1000}
     volumes:
       - .:/workspace
+      - ./.secrets/client:/run/secrets/tca:ro
     init: true
     depends_on:
       - nats
 
   nats:
     image: nats:2.15.2-alpine@sha256:823e7f1d6d8ffe3b30dbd73d4a06bbb939acf94929f7fdf224404da7a05bafb5
-    command: ["nats-server", "--jetstream", "--store_dir", "/data"]
+    command: ["nats-server", "-c", "/etc/nats/nats-server.conf"]
     volumes:
+      - ./.secrets/nats:/etc/nats:ro
       - nats-data:/data
     ports:
       - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8443:8443"
 
 volumes:
   nats-data:

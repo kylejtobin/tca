@@ -20,6 +20,8 @@ from pydantic_settings import SettingsConfigDict
 
 from type_construction import Model, NatsConnection, Settings
 from type_construction.nats import (
+    CertificateAuthorityFile,
+    CredentialsFile,
     TcpPool,
     TcpServers,
     TcpUrl,
@@ -63,10 +65,22 @@ def _deployment_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name)
 
 
+@pytest.fixture
+def references(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """Deployment supplies the credential and trust references alongside the pool."""
+    credentials = tmp_path / "application.creds"
+    credentials.write_text("placeholder\n")
+    authority = tmp_path / "ca.pem"
+    authority.write_text("placeholder\n")
+    monkeypatch.setenv("ORDERS_NATS__CREDENTIALS", str(credentials))
+    monkeypatch.setenv("ORDERS_NATS__CERTIFICATE_AUTHORITY", str(authority))
+    return credentials, authority
+
+
 def _supply_required_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "ORDERS_NATS__SERVERS",
-        '{"transport": "tcp", "urls": ["nats://nats", "tls://backup.example:4223"]}',
+        '{"transport": "tcp", "urls": ["tls://nats", "tls://backup.example:4223"]}',
     )
     monkeypatch.setenv("ORDERS_DATABASE__HOST", "db.internal")
     monkeypatch.setenv("DEPLOY_REGION", "eu-west")
@@ -76,8 +90,11 @@ def _problems(error: ValidationError) -> set[tuple[tuple[int | str, ...], str]]:
     return {(detail["loc"], detail["type"]) for detail in error.errors()}
 
 
-def test_environment_constructs_the_declared_composition(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_constructs_the_declared_composition(
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
+) -> None:
     _supply_required_values(monkeypatch)
+    credentials, authority = references
 
     settings = construct(OrdersSettings)
 
@@ -85,9 +102,11 @@ def test_environment_constructs_the_declared_composition(monkeypatch: pytest.Mon
         servers=TcpPool(
             transport="tcp",
             urls=TcpServers(
-                (TcpUrl(AnyUrl("nats://nats")), TcpUrl(AnyUrl("tls://backup.example:4223")))
+                (TcpUrl(AnyUrl("tls://nats")), TcpUrl(AnyUrl("tls://backup.example:4223")))
             ),
-        )
+        ),
+        credentials=CredentialsFile(credentials),
+        certificate_authority=CertificateAuthorityFile(authority),
     )
     assert settings.database == Database(host="db.internal", pool_size=5)
     assert settings.region == "eu-west"
@@ -106,13 +125,14 @@ def test_missing_required_values_identify_each_setting() -> None:
 
 
 def test_invalid_supplied_values_identify_nested_locations(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
 ) -> None:
     _supply_required_values(monkeypatch)
     monkeypatch.setenv(
         "ORDERS_NATS__SERVERS",
-        '{"transport": "tcp", "urls": ["nats://nats:4222", "wss://edge.example"]}',
+        '{"transport": "tcp", "urls": ["tls://nats:4222", "nats://nats:4222"]}',
     )
+    monkeypatch.setenv("ORDERS_NATS__CREDENTIALS", str(references[0].parent / "absent.creds"))
     monkeypatch.setenv("ORDERS_DATABASE__POOL_SIZE", "0")
     monkeypatch.setenv("ORDERS_MODE", "test")
 
@@ -121,6 +141,7 @@ def test_invalid_supplied_values_identify_nested_locations(
 
     assert _problems(excinfo.value) == {
         (("nats", "servers", "tcp", "urls", 1), "url_scheme"),
+        (("nats", "credentials"), "path_not_file"),
         (("database", "pool_size"), "greater_than_equal"),
         (("mode",), "literal_error"),
     }
@@ -137,7 +158,7 @@ def test_invalid_declared_default_fails_at_construction() -> None:
 
 
 def test_enabled_sources_keep_native_precedence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
 ) -> None:
     secrets = tmp_path / "secrets"
     secrets.mkdir()
@@ -145,10 +166,10 @@ def test_enabled_sources_keep_native_precedence(
     (secrets / "orders_database").write_text('{"host": "secret-db", "pool_size": 2}')
     env_file = tmp_path / ".env"
     env_file.write_text(
-        'ORDERS_NATS__SERVERS={"transport":"tcp","urls":["nats://dotenv:4222"]}\n'
+        'ORDERS_NATS__SERVERS={"transport":"tcp","urls":["tls://dotenv:4222"]}\n'
         "ORDERS_DATABASE__HOST=dotenv-db\n"
     )
-    monkeypatch.setenv("ORDERS_NATS__SERVERS", '{"transport": "tcp", "urls": ["nats://env:4222"]}')
+    monkeypatch.setenv("ORDERS_NATS__SERVERS", '{"transport": "tcp", "urls": ["tls://env:4222"]}')
     monkeypatch.setenv("DEPLOY_REGION", "env-region")
 
     class Deployed(OrdersSettings):
@@ -158,14 +179,16 @@ def test_enabled_sources_keep_native_precedence(
 
     assert settings.region == "init-region", "initialization values precede the environment"
     assert settings.nats.servers == TcpPool(
-        transport="tcp", urls=TcpServers((TcpUrl(AnyUrl("nats://env:4222")),))
+        transport="tcp", urls=TcpServers((TcpUrl(AnyUrl("tls://env:4222")),))
     ), "env precedes dotenv"
     assert settings.database.host == "dotenv-db", "dotenv precedes secret files"
     assert settings.database.pool_size == 2, "nested values merge per field across sources"
     assert settings.mode == "staging", "secret files precede declared defaults"
 
 
-def test_alias_names_the_receiving_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_alias_names_the_receiving_variable(
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
+) -> None:
     _supply_required_values(monkeypatch)
     monkeypatch.delenv("DEPLOY_REGION")
     monkeypatch.setenv("ORDERS_REGION", "by-prefixed-name")
@@ -180,7 +203,7 @@ def test_alias_names_the_receiving_variable(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_applications_specialize_without_redeclaring_the_contract(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
 ) -> None:
     class BillingSettings(Settings):
         model_config = SettingsConfigDict(env_prefix="BILLING_")
@@ -188,10 +211,13 @@ def test_applications_specialize_without_redeclaring_the_contract(
         nats: NatsConnection
 
     _supply_required_values(monkeypatch)
+    credentials, authority = references
     monkeypatch.setenv(
         "BILLING_NATS__SERVERS",
         '{"transport": "websocket", "urls": ["wss://billing-edge.example"]}',
     )
+    monkeypatch.setenv("BILLING_NATS__CREDENTIALS", str(credentials))
+    monkeypatch.setenv("BILLING_NATS__CERTIFICATE_AUTHORITY", str(authority))
 
     billing = construct(BillingSettings)
     orders = construct(OrdersSettings)
@@ -200,7 +226,9 @@ def test_applications_specialize_without_redeclaring_the_contract(
         servers=WebSocketPool(
             transport="websocket",
             urls=WebSocketServers((WebSocketUrl(AnyUrl("wss://billing-edge.example")),)),
-        )
+        ),
+        credentials=CredentialsFile(credentials),
+        certificate_authority=CertificateAuthorityFile(authority),
     )
     assert orders.nats != billing.nats
     assert BillingSettings.model_config.get("validate_default") is True
@@ -209,13 +237,16 @@ def test_applications_specialize_without_redeclaring_the_contract(
 
 
 def test_frozen_rejects_reassignment_not_container_mutation(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
 ) -> None:
     class Labelled(Settings):
         nats: NatsConnection
         labels: list[str]
 
-    monkeypatch.setenv("NATS__SERVERS", '{"transport": "tcp", "urls": ["nats://nats"]}')
+    credentials, authority = references
+    monkeypatch.setenv("NATS__SERVERS", '{"transport": "tcp", "urls": ["tls://nats"]}')
+    monkeypatch.setenv("NATS__CREDENTIALS", str(credentials))
+    monkeypatch.setenv("NATS__CERTIFICATE_AUTHORITY", str(authority))
     monkeypatch.setenv("LABELS", '["blue"]')
     settings = construct(Labelled)
 
@@ -233,7 +264,9 @@ def test_frozen_rejects_reassignment_not_container_mutation(
     assert settings.labels == ["blue", "green"]
 
 
-def test_composed_settings_are_hashable_facts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_composed_settings_are_hashable_facts(
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
+) -> None:
     _supply_required_values(monkeypatch)
 
     assert hash(construct(OrdersSettings)) == hash(construct(OrdersSettings))
@@ -242,14 +275,15 @@ def test_composed_settings_are_hashable_facts(monkeypatch: pytest.MonkeyPatch) -
 def test_importing_declarations_acquires_no_configuration() -> None:
     declaration = (
         "from pydantic import ValidationError\n"
-        "from type_construction import NatsConnection, Settings\n"
+        "from type_construction import NatsConnection, Resource, Settings\n"
         "class App(Settings):\n"
         "    nats: NatsConnection\n"
+        "    broker: Resource\n"
         "print('declared')\n"
         "try:\n"
         "    App()\n"
         "except ValidationError as error:\n"
-        "    print(error.errors()[0]['loc'])\n"
+        "    print(sorted(detail['loc'] for detail in error.errors()))\n"
     )
 
     result = subprocess.run(  # noqa: S603 - the interpreter and script are fixed test inputs
@@ -261,4 +295,4 @@ def test_importing_declarations_acquires_no_configuration() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["declared", "('nats',)"]
+    assert result.stdout.splitlines() == ["declared", "[('broker',), ('nats',)]"]

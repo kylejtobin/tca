@@ -22,6 +22,11 @@ lock:
 shell:
     {{dev}} bash
 
+# Generate the secured NATS development material in .secrets: certificates, operator
+# credentials and the server configuration. Runs openssl and the pinned nats-box on the host.
+secrets:
+    uv run python -I scripts/generate_nats_material.py .secrets --force
+
 packages := "packages/python"
 
 # The gate: every check the commit hook and CI run, and nothing they do not. It runs `uv run`

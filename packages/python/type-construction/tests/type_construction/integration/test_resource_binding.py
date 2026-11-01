@@ -12,6 +12,7 @@ establishes association and isolation only; live connectivity is outside these t
 import asyncio
 import os
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -43,11 +44,17 @@ def _declared_resource() -> Resource:
 
 
 @pytest.fixture(autouse=True)
-def _deployment_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _deployment_environment(monkeypatch: pytest.MonkeyPatch, material: dict[str, Path]) -> None:
     for name in list(os.environ):
         monkeypatch.delenv(name)
     monkeypatch.setenv(
-        "ORDERS_BROKER__CONNECTION__SERVERS", '{"transport": "tcp", "urls": ["nats://nats:4222"]}'
+        "ORDERS_BROKER__CONNECTION__SERVERS", '{"transport": "tcp", "urls": ["tls://nats:4222"]}'
+    )
+    monkeypatch.setenv(
+        "ORDERS_BROKER__CONNECTION__CREDENTIALS", str(material["application_credentials"])
+    )
+    monkeypatch.setenv(
+        "ORDERS_BROKER__CONNECTION__CERTIFICATE_AUTHORITY", str(material["certificate_authority"])
     )
 
 
