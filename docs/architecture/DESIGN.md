@@ -200,6 +200,8 @@ The default activity binding is a named durable pull consumer, configured throug
 
 Retained typed events are the authoritative execution history. Authoritative history uses file-backed JetStream streams with native `LimitsPolicy`, preserving evidence independently of delivery acknowledgement under section 8.3's retention and commitment guarantees. State and progress views derive from that history; TCA adds no event-store service or separate authoritative execution state.
 
+Framework and extension bindings preserve access to the actual native `NatsBroker`, nats-py `Client`, and `JetStreamContext`. Supported native injection facilities, including FastStream’s `Client` and `JsClient` annotations in their supported contexts, expose those objects without a TCA client facade. FastStream’s convenience methods do not limit the NATS capabilities available to a construct’s implementation. Native operations remain governed by that construct’s declared relationships and guarantees; application authors continue to specialize and compose models.
+
 TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Native integration modules isolate their implementation dependencies without introducing a generic backend abstraction.
 
 ### 5.5 Extensions and runtime foundation
@@ -216,7 +218,7 @@ NATS is not an optional broker plugin. Replacing the execution foundation requir
 
 The shared launch path reads the exposed `Application` declaration and constructs its required configuration through Pydantic Settings. Invalid required configuration prevents dependent resource startup and identifies the setting. Valid configuration does not establish connectivity or authorization.
 
-Startup configures native broker/resource objects and registers the receiving, invocation, and publishing bindings determined by the declaration. FastStream and integration lifecycles establish and release connections and resources, including cleanup after initialization failure and shutdown.
+Startup configures native broker/resource objects and registers the receiving, invocation, and publishing bindings determined by the declaration. FastStream and integration lifecycles establish and release native connections and resources. Shared framework startup ensures that acquired resources undergo their native release operations after partial initialization failure and during shutdown, using ordinary acquisition/release bracketing where necessary. Cleanup preserves the initialization failure for diagnosis.
 
 A minimally configured application with no domain events or activities can connect to NATS and enter the native application lifecycle. It creates no domain subscriptions, consumers, or streams. The modeling types are available through ordinary imports; adding domain declarations determines which native bindings and resources startup realizes.
 
@@ -255,6 +257,8 @@ Among enabled native sources, precedence is explicit initialization values, ENV,
 Settings remain fixed for a process lifetime unless an explicit modeled change contract exists. Restart constructs new settings. Operational endpoints and credentials configure resources; settings affecting business meaning participate in construction and retained justification. Secrets are not retained as business evidence.
 
 An integration determines its resource configuration, owner, use, and lifetime. Applications specify sharing only where composition does not determine it. Native lifecycle management releases resources after initialization failure and during shutdown. Client recreation does not authorize replaying an external effect.
+
+Resource ownership is scoped to an application runtime. Uses of the same declared resource within that runtime share its native instance; equal types or configuration values do not establish sharing. Separate runtimes own separate native clients. Replicas of the same logical application preserve the stream and consumer identities derived from its declarations. Where composition or the native broker context determines the resource association, applications declare no additional reference.
 
 Application relationships determine logical subjects, stream coverage, durable consumer identity, and commitment scope. Deployment supplies native replication and placement settings through `JStream` and `ConsumerConfig`; consumer state inherits stream replication by default. Native creation and binding preserve configured retention and replication and existing consumer progress. NATS/JetStream owns clustering, replication, and leader election.
 
