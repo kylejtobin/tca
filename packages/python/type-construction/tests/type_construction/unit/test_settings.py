@@ -19,7 +19,14 @@ from pydantic import AnyUrl, Field, ValidationError
 from pydantic_settings import SettingsConfigDict
 
 from type_construction import Model, NatsConnection, Settings
-from type_construction.nats import TcpPool, WebSocketPool
+from type_construction.nats import (
+    TcpPool,
+    TcpServers,
+    TcpUrl,
+    WebSocketPool,
+    WebSocketServers,
+    WebSocketUrl,
+)
 
 
 class Database(Model):
@@ -57,7 +64,10 @@ def _deployment_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _supply_required_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ORDERS_NATS__SERVERS", '["nats://nats", "tls://backup.example:4223"]')
+    monkeypatch.setenv(
+        "ORDERS_NATS__SERVERS",
+        '{"transport": "tcp", "urls": ["nats://nats", "tls://backup.example:4223"]}',
+    )
     monkeypatch.setenv("ORDERS_DATABASE__HOST", "db.internal")
     monkeypatch.setenv("DEPLOY_REGION", "eu-west")
 
@@ -72,7 +82,12 @@ def test_environment_constructs_the_declared_composition(monkeypatch: pytest.Mon
     settings = construct(OrdersSettings)
 
     assert settings.nats == NatsConnection(
-        servers=TcpPool((AnyUrl("nats://nats"), AnyUrl("tls://backup.example:4223")))
+        servers=TcpPool(
+            transport="tcp",
+            urls=TcpServers(
+                (TcpUrl(AnyUrl("nats://nats")), TcpUrl(AnyUrl("tls://backup.example:4223")))
+            ),
+        )
     )
     assert settings.database == Database(host="db.internal", pool_size=5)
     assert settings.region == "eu-west"
@@ -94,7 +109,10 @@ def test_invalid_supplied_values_identify_nested_locations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _supply_required_values(monkeypatch)
-    monkeypatch.setenv("ORDERS_NATS__SERVERS", '["nats://nats:4222", "wss://edge.example"]')
+    monkeypatch.setenv(
+        "ORDERS_NATS__SERVERS",
+        '{"transport": "tcp", "urls": ["nats://nats:4222", "wss://edge.example"]}',
+    )
     monkeypatch.setenv("ORDERS_DATABASE__POOL_SIZE", "0")
     monkeypatch.setenv("ORDERS_MODE", "test")
 
@@ -102,8 +120,7 @@ def test_invalid_supplied_values_identify_nested_locations(
         construct(OrdersSettings)
 
     assert _problems(excinfo.value) == {
-        (("nats", "servers", "TcpPool", 1), "url_scheme"),
-        (("nats", "servers", "WebSocketPool", 0), "url_scheme"),
+        (("nats", "servers", "tcp", "urls", 1), "url_scheme"),
         (("database", "pool_size"), "greater_than_equal"),
         (("mode",), "literal_error"),
     }
@@ -128,9 +145,10 @@ def test_enabled_sources_keep_native_precedence(
     (secrets / "orders_database").write_text('{"host": "secret-db", "pool_size": 2}')
     env_file = tmp_path / ".env"
     env_file.write_text(
-        'ORDERS_NATS__SERVERS=["nats://dotenv:4222"]\nORDERS_DATABASE__HOST=dotenv-db\n'
+        'ORDERS_NATS__SERVERS={"transport":"tcp","urls":["nats://dotenv:4222"]}\n'
+        "ORDERS_DATABASE__HOST=dotenv-db\n"
     )
-    monkeypatch.setenv("ORDERS_NATS__SERVERS", '["nats://env:4222"]')
+    monkeypatch.setenv("ORDERS_NATS__SERVERS", '{"transport": "tcp", "urls": ["nats://env:4222"]}')
     monkeypatch.setenv("DEPLOY_REGION", "env-region")
 
     class Deployed(OrdersSettings):
@@ -139,7 +157,9 @@ def test_enabled_sources_keep_native_precedence(
     settings = construct(Deployed, DEPLOY_REGION="init-region")
 
     assert settings.region == "init-region", "initialization values precede the environment"
-    assert settings.nats.servers == TcpPool((AnyUrl("nats://env:4222"),)), "env precedes dotenv"
+    assert settings.nats.servers == TcpPool(
+        transport="tcp", urls=TcpServers((TcpUrl(AnyUrl("nats://env:4222")),))
+    ), "env precedes dotenv"
     assert settings.database.host == "dotenv-db", "dotenv precedes secret files"
     assert settings.database.pool_size == 2, "nested values merge per field across sources"
     assert settings.mode == "staging", "secret files precede declared defaults"
@@ -168,13 +188,19 @@ def test_applications_specialize_without_redeclaring_the_contract(
         nats: NatsConnection
 
     _supply_required_values(monkeypatch)
-    monkeypatch.setenv("BILLING_NATS__SERVERS", '["wss://billing-edge.example"]')
+    monkeypatch.setenv(
+        "BILLING_NATS__SERVERS",
+        '{"transport": "websocket", "urls": ["wss://billing-edge.example"]}',
+    )
 
     billing = construct(BillingSettings)
     orders = construct(OrdersSettings)
 
     assert billing.nats == NatsConnection(
-        servers=WebSocketPool((AnyUrl("wss://billing-edge.example"),))
+        servers=WebSocketPool(
+            transport="websocket",
+            urls=WebSocketServers((WebSocketUrl(AnyUrl("wss://billing-edge.example")),)),
+        )
     )
     assert orders.nats != billing.nats
     assert BillingSettings.model_config.get("validate_default") is True
@@ -189,14 +215,17 @@ def test_frozen_rejects_reassignment_not_container_mutation(
         nats: NatsConnection
         labels: list[str]
 
-    monkeypatch.setenv("NATS__SERVERS", '["nats://nats"]')
+    monkeypatch.setenv("NATS__SERVERS", '{"transport": "tcp", "urls": ["nats://nats"]}')
     monkeypatch.setenv("LABELS", '["blue"]')
     settings = construct(Labelled)
 
     with pytest.raises(ValidationError) as top_level:
         settings.labels = []
     with pytest.raises(ValidationError) as nested:
-        settings.nats.servers = WebSocketPool((AnyUrl("wss://edge.example"),))
+        settings.nats.servers = WebSocketPool(
+            transport="websocket",
+            urls=WebSocketServers((WebSocketUrl(AnyUrl("wss://edge.example")),)),
+        )
     settings.labels.append("green")
 
     assert top_level.value.errors()[0]["type"] == "frozen_instance"

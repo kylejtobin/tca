@@ -20,13 +20,19 @@ acquisition boundary: native Pydantic Settings acquires every requirement in its
 documented order: initialization values, environment, configured dotenv,
 configured secret files, then defaults.
 
-`NatsConnection.servers` is one of the pools the native client connects with:
-`TcpPool`, nonempty `nats://` and `tls://` URLs, or `WebSocketPool`, nonempty
-`ws://` and `wss://` URLs, both exported from `type_construction.nats`. A pool
-mixing the two transport families fails configuration construction. URLs are
-native URL values, so equivalent spellings denote the same endpoint and the
-client applies its own default ports. The WebSocket transport is available
-because the distribution requires `nats-py[aiohttp]`.
+`NatsConnection.servers` is a discriminated sum of two pool alternatives selected
+by the required `transport` field: `TcpPool` (`"tcp"`) holds `TcpServers`, a
+nonempty collection of `TcpUrl` values with the `nats` or `tls` scheme, and
+`WebSocketPool` (`"websocket"`) holds `WebSocketServers`, a nonempty collection
+of `WebSocketUrl` values with the `ws` or `wss` scheme. Deployment supplies the
+selected alternative, for example
+`ORDERS_NATS__SERVERS='{"transport":"tcp","urls":["nats://nats:4222","tls://backup.example:4223"]}'`.
+A missing or unknown discriminator, an untagged list, an empty collection, a
+hostless URL or a URL outside the selected alternative's schemes fails
+configuration construction. URLs are native URL values, so equivalent spellings
+denote the same endpoint, and the client applies its own default ports. The
+constituent types are exported from `type_construction.nats`. The WebSocket
+transport is available because the distribution requires `nats-py[aiohttp]`.
 
 Remaining application constructs and native execution integrations are not yet
 implemented.
