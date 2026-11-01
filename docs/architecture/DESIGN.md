@@ -196,9 +196,9 @@ Framework startup uses ordinary procedural calls to construct native objects, re
 
 Subjects are native message addresses used in publications, subscriptions, and stream filters; they need no separate creation service. Streams and consumers are native resources. Their definitions derive from the model; native facilities create them or connect to operator-provisioned resources under deployment permissions. Existing retained work remains governed by section 8.5.
 
-Native delivery distributes each activity's work among its workers while distinct activities retain their own delivery relationships. Live resource clients are not serialized into events.
+The default activity binding is a named durable pull consumer, configured through FastStream's `PullSub` and native nats-py `ConsumerConfig`. Replicas of the same application share the logical stream and consumer identities for each activity; distinct activities retain independent delivery relationships. Changing worker count or replacing a worker does not change declaration or business occurrence identity. Workers bind to the same durable consumer so startup and replacement preserve delivery progress. Live resource clients are not serialized into events.
 
-Retained typed events are the authoritative execution history. State and progress views derive from that history; TCA adds no event-store service or separate authoritative execution state.
+Retained typed events are the authoritative execution history. Authoritative history uses file-backed JetStream streams with native `LimitsPolicy`, preserving evidence independently of delivery acknowledgement under section 8.3's retention and commitment guarantees. State and progress views derive from that history; TCA adds no event-store service or separate authoritative execution state.
 
 TCA does not reimplement native delivery, invocation, event retention, scheduling, settings loading, or value construction. Native integration modules isolate their implementation dependencies without introducing a generic backend abstraction.
 
@@ -256,7 +256,9 @@ Settings remain fixed for a process lifetime unless an explicit modeled change c
 
 An integration determines its resource configuration, owner, use, and lifetime. Applications specify sharing only where composition does not determine it. Native lifecycle management releases resources after initialization failure and during shutdown. Client recreation does not authorize replaying an external effect.
 
-Development uses an application container and a JetStream-enabled NATS container with persistent storage. Derived streams, consumers, permissions, and retention must preserve the execution guarantees. Deployment layout or a subject prefix alone does not establish atomic commitment coverage.
+Application relationships determine logical subjects, stream coverage, durable consumer identity, and commitment scope. Deployment supplies native replication and placement settings through `JStream` and `ConsumerConfig`; consumer state inherits stream replication by default. Native creation and binding preserve configured retention and replication and existing consumer progress. NATS/JetStream owns clustering, replication, and leader election.
+
+Development uses an application container and a JetStream-enabled NATS container with persistent storage. Derived resources and deployment-granted permissions must preserve the execution guarantees. Deployment layout or a subject prefix alone does not establish atomic commitment coverage.
 
 ## 8. Guarantees attached to modeled relationships
 
@@ -355,6 +357,7 @@ Authoring diagnostics and runtime explanations identify the same named applicati
 | Race evidence changes against publication | Stale establishment is rejected; legitimate work succeeds after refresh. |
 | Interrupt after publication before acknowledgement | Retained progress is recognized without duplicate authorization. |
 | Replace a process or configuration source | Native resources are recreated while retained business meaning and execution relationships remain intact. |
+| Scale workers and fail over a broker | Unchanged declarations run across multiple workers against replicated JetStream. After a worker stops and a broker leader fails while quorum remains, surviving or replacement workers continue through the same durable consumers and retained facts, preserving occurrence identity and commitment conditions; input acknowledgement still follows retained result publication. |
 
 Acceptance uses public declarations and real native integrations. Handwritten test coordinators or configuration encoding an execution algorithm do not demonstrate the authoring contract. Tests establish TCA-specific relationships and integration behavior rather than reproduce native framework test suites.
 
