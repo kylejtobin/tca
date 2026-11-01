@@ -3,10 +3,10 @@
 TCA is a declarative, event-driven application framework under development.
 
 The package currently exports two configuration-only Pydantic value bases, a
-configuration base and the NATS connection contract:
+configuration base, the NATS connection contract and the broker resource:
 
 ```python
-from type_construction import Model, NatsConnection, Root, Settings
+from type_construction import Model, NatsConnection, Resource, Root, Settings
 ```
 
 `Model` extends `BaseModel`; `Root[T]` extends `RootModel[T]`. Both enable
@@ -34,7 +34,22 @@ denote the same endpoint, and the client applies its own default ports. The
 constituent types are exported from `type_construction.nats`. The WebSocket
 transport is available because the distribution requires `nats-py[aiohttp]`.
 
-Remaining application constructs and native execution integrations are not yet
-implemented.
+`Resource` is the configuration for an application-owned native NATS broker. It
+composes `NatsConnection` as its `connection` field and is declared as a field of
+the application's settings, so deployment supplies it through the same nested
+variables, for example
+`ORDERS_BROKER__CONNECTION__SERVERS='{"transport":"tcp","urls":["nats://nats:4222"]}'`.
+The framework realizes a resource placement with `bind_resource` in
+`type_construction.resources`: it constructs a native `NatsBroker` from the
+connection's ordered URLs and registers it with the owning FastStream runtime.
+Application authors do not call it. Each call realizes a separate placement; uses
+of one placement share the returned broker, equal configuration does not merge
+placements, and separate runtimes own separate brokers. Handlers registered on
+that broker receive it, its nats-py `Client` and its `JetStreamContext` through
+FastStream's native broker context. Declaring or binding a resource opens no
+connection; FastStream owns the broker's lifetime.
+
+Remaining application constructs, shared startup and native execution
+integrations are not yet implemented.
 The product definition and architectural contract are maintained in the
 [TCA repository](https://github.com/kylejtobin/tca).
