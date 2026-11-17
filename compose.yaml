@@ -1,6 +1,9 @@
 # Development stack: the TCA container and persistent, secured NATS/JetStream.
-# Runtime contracts are defined in docs/architecture/DESIGN.md. Run `just secrets` first: the
-# server requires TLS before any protocol exchange and operator credentials from .secrets.
+# Runtime contracts are defined in docs/architecture/DESIGN.md. Run `just secrets` first: it
+# generates the material under TCA_SECRETS (default ~/.local/state/tca/secrets), outside the
+# repository tree, partitioned by consumer. Each container mounts only its own partition, read
+# only; the provisioning partition (setup credentials, signing keys) is mounted nowhere. Mounts
+# never create the host directory, so a missing partition fails instead of appearing empty.
 services:
   dev:
     build:
@@ -10,7 +13,12 @@ services:
         GID: ${GID:-1000}
     volumes:
       - .:/workspace
-      - ./.secrets/client:/run/secrets/tca:ro
+      - type: bind
+        source: ${TCA_SECRETS:-~/.local/state/tca/secrets}/application
+        target: /run/secrets/tca
+        read_only: true
+        bind:
+          create_host_path: false
     init: true
     depends_on:
       - nats
@@ -19,11 +27,18 @@ services:
     image: nats:2.15.2-alpine@sha256:823e7f1d6d8ffe3b30dbd73d4a06bbb939acf94929f7fdf224404da7a05bafb5
     command: ["nats-server", "-c", "/etc/nats/nats-server.conf"]
     volumes:
-      - ./.secrets/nats:/etc/nats:ro
+      - type: bind
+        source: ${TCA_SECRETS:-~/.local/state/tca/secrets}/server
+        target: /etc/nats
+        read_only: true
+        bind:
+          create_host_path: false
       - nats-data:/data
     ports:
       - "127.0.0.1:4222:4222"
       - "127.0.0.1:8443:8443"
 
+# JetStream data persisted under the generated account identities. `just reset` removes it
+# together with the material, because a new account cannot reach the previous account's data.
 volumes:
   nats-data:

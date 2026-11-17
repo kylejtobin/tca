@@ -1,16 +1,31 @@
 """Generate the certificates, credentials and server configuration for secured development NATS.
 
-The script produces disposable material for one environment: a private certificate authority
-with a server certificate for the ``nats`` and ``localhost`` names, a NATS operator with a system
-account and an application account that holds a narrowly permitted ``application`` user and a
-fully permitted ``setup`` user, their ``.creds`` files, the memory resolver configuration and the
-server configuration that requires TLS before any protocol exchange on TCP and TLS on the
-WebSocket listener. It also produces untrusted material from an unrelated authority and
-operator so tests can establish rejection. Certificates come from the host ``openssl`` and NATS
-identities from ``nsc`` in the pinned nats-box image. Private material is written with owner-only
-permissions and never leaves the output directory.
+The script produces the material one secured environment needs, partitioned by the party that
+consumes it so each container is given only its own files:
 
-Usage: python -I scripts/generate_nats_material.py OUTPUT_DIR [--force]
+- ``application/``: the narrowly permitted ``application.creds`` and the public trust bundle
+  ``ca.pem``. This is the only directory the application container mounts.
+- ``server/``: the server certificate and private key, the server configuration that requires
+  TLS before any protocol exchange on TCP and TLS on the WebSocket listener, and the memory
+  resolver carrying the operator and account JWTs. This is the only directory the NATS container
+  mounts; it never contains the authority's signing key.
+- ``provisioning/``: the fully permitted ``setup.creds``, the certificate authority's signing key
+  and certificate, and the ``nsc`` store holding the operator and account signing keys. No
+  container mounts it.
+- ``untrusted/``: an unrelated authority and operator used by tests to establish rejection.
+
+Certificates come from the host ``openssl`` and NATS identities from ``nsc`` in the pinned
+nats-box image. Private files are written with owner-only permissions. Generation writes into a
+sibling directory and publishes it by rename, so the output is either complete or absent.
+
+Ordinary setup preserves identity: an existing complete output is left untouched, and an
+incomplete one fails without deleting anything. ``--replace`` removes the existing output and
+generates new identities; it belongs to the explicit reset operation, because JetStream data
+persisted under the previous account cannot be reached by the new one. The script itself touches
+no persistent JetStream data; ``just reset`` removes the Compose project's volume before calling
+it.
+
+Usage: python -I scripts/generate_nats_material.py OUTPUT_DIR [--replace]
 """
 
 import argparse
@@ -32,6 +47,23 @@ APPLICATION_PERMISSIONS = (
     "_INBOX.>",
     "--allow-pub",
     "$JS.API.INFO",
+)
+TOOL_TIMEOUT = 60.0
+IMAGE_TIMEOUT = 300.0
+
+# Relative to the output directory. The set defines a complete generation.
+EXPECTED_FILES = (
+    "application/application.creds",
+    "application/ca.pem",
+    "server/server.pem",
+    "server/server.key",
+    "server/nats-server.conf",
+    "server/resolver.conf",
+    "provisioning/setup.creds",
+    "provisioning/ca.key",
+    "untrusted/ca.pem",
+    "untrusted/ca.key",
+    "untrusted/application.creds",
 )
 
 SERVER_CONFIG = """\
@@ -59,9 +91,9 @@ include "resolver.conf"
 """
 
 
-def run(*command: str, cwd: Path | None = None) -> str:
+def run(*command: str, timeout: float = TOOL_TIMEOUT) -> str:
     result = subprocess.run(  # noqa: S603 - fixed tool invocations with generated paths
-        command, cwd=cwd, check=True, capture_output=True, text=True
+        command, check=True, capture_output=True, text=True, timeout=timeout
     )
     return result.stdout
 
@@ -104,7 +136,16 @@ def server_certificate(directory: Path, ca_key: Path, ca_certificate: Path) -> N
     request = directory / "server.csr"
     extensions = directory / "server.ext"
     names = ",".join(f"DNS:{name}" for name in SERVER_NAMES)
-    extensions.write_text(f"subjectAltName={names}\nextendedKeyUsage=serverAuth\n")
+    # RFC 5280 identifiers and usages: Python's default context verifies strictly and rejects
+    # an issued certificate without an authority key identifier.
+    extensions.write_text(
+        "basicConstraints=critical,CA:FALSE\n"
+        "subjectKeyIdentifier=hash\n"
+        "authorityKeyIdentifier=keyid,issuer\n"
+        "keyUsage=critical,digitalSignature\n"
+        "extendedKeyUsage=serverAuth\n"
+        f"subjectAltName={names}\n"
+    )
     run(
         "openssl",
         "req",
@@ -145,8 +186,13 @@ def server_certificate(directory: Path, ca_key: Path, ca_certificate: Path) -> N
 
 
 def identities(output: Path) -> None:
-    """Create the operator, accounts, users, credentials and resolver through nsc."""
-    store = output / "nsc"
+    """Create the operator, accounts, users, credentials and resolver through nsc.
+
+    The nsc store, including the operator and account signing keys, stays in the provisioning
+    partition. Every nsc location is redirected there because the image's defaults point at a
+    directory owned by a fixed user id.
+    """
+    store = output / "provisioning" / "nsc"
     store.mkdir(mode=0o700)
     script = f"""
 set -eu
@@ -156,9 +202,9 @@ nsc edit account --name app --js-mem-storage -1 --js-disk-storage -1 \\
   --js-streams -1 --js-consumer -1 >/dev/null
 nsc add user --account app --name application {shlex.join(APPLICATION_PERMISSIONS)} >/dev/null
 nsc add user --account app --name setup >/dev/null
-nsc generate creds --account app --name application > /out/client/application.creds
-nsc generate creds --account app --name setup > /out/client/setup.creds
-nsc generate config --mem-resolver --sys-account SYS > /out/nats/resolver.conf
+nsc generate creds --account app --name application > /out/application/application.creds
+nsc generate creds --account app --name setup > /out/provisioning/setup.creds
+nsc generate config --mem-resolver --sys-account SYS > /out/server/resolver.conf
 nsc add operator --name untrusted >/dev/null
 nsc add account --name app >/dev/null
 nsc add user --account app --name application >/dev/null
@@ -173,19 +219,22 @@ nsc generate creds --account app --name application > /out/untrusted/application
         "--volume",
         f"{output}:/out",
         "--env",
-        "HOME=/out/nsc",
+        "HOME=/out/provisioning/nsc",
         "--env",
-        "XDG_CONFIG_HOME=/out/nsc/config",
+        "NKEYS_PATH=/out/provisioning/nsc/nkeys",
         "--env",
-        "XDG_DATA_HOME=/out/nsc/data",
+        "XDG_CONFIG_HOME=/out/provisioning/nsc/config",
+        "--env",
+        "XDG_DATA_HOME=/out/provisioning/nsc/data",
         NATS_BOX,
         "sh",
         "-c",
         script,
+        timeout=IMAGE_TIMEOUT,
     )
     for credentials in (
-        output / "client" / "application.creds",
-        output / "client" / "setup.creds",
+        output / "application" / "application.creds",
+        output / "provisioning" / "setup.creds",
         output / "untrusted" / "application.creds",
     ):
         private(credentials)
@@ -193,34 +242,69 @@ nsc generate creds --account app --name application > /out/untrusted/application
 
 def generate(output: Path) -> None:
     output.mkdir(mode=0o700, parents=True)
-    for name in ("nats", "client", "untrusted"):
+    for name in ("application", "server", "provisioning", "untrusted"):
         (output / name).mkdir(mode=0o700)
 
-    ca_key, ca_certificate = authority(output / "nats", "ca", "TCA Development CA")
-    server_certificate(output / "nats", ca_key, ca_certificate)
-    shutil.copyfile(ca_certificate, output / "client" / "ca.pem")
+    ca_key, ca_certificate = authority(output / "provisioning", "ca", "TCA Development CA")
+    server_certificate(output / "server", ca_key, ca_certificate)
+    shutil.copyfile(ca_certificate, output / "application" / "ca.pem")
     authority(output / "untrusted", "ca", "Unrelated CA")
     identities(output)
-    (output / "nats" / "nats-server.conf").write_text(SERVER_CONFIG)
+    (output / "server" / "nats-server.conf").write_text(SERVER_CONFIG)
+
+
+def missing_files(output: Path) -> list[str]:
+    return [name for name in EXPECTED_FILES if not (output / name).is_file()]
+
+
+def publish(output: Path) -> None:
+    """Generate into a sibling directory, then publish it under the requested name."""
+    staging = output.parent / f".{output.name}.generating"
+    if staging.exists():
+        shutil.rmtree(staging)
+    try:
+        generate(staging)
+        staging.rename(output)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("output", type=Path)
-    parser.add_argument("--force", action="store_true", help="replace an existing directory")
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="remove existing material and generate new identities (used by the reset operation)",
+    )
     arguments = parser.parse_args()
     output: Path = arguments.output.resolve()
     if output.exists():
-        if not arguments.force:
-            print(f"{output} exists; pass --force to replace it", file=sys.stderr)
-            return 1
-        shutil.rmtree(output)
+        if arguments.replace:
+            shutil.rmtree(output)
+        else:
+            missing = missing_files(output)
+            if missing:
+                print(
+                    f"{output} is incomplete; missing: {', '.join(missing)}.\n"
+                    "Nothing was changed. Run the reset operation (`just reset`) to remove the "
+                    "material together with the JetStream data persisted under its identities, "
+                    "or restore the missing files.",
+                    file=sys.stderr,
+                )
+                return 1
+            print(f"Secured NATS material preserved at {output}")
+            return 0
     try:
-        generate(output)
+        publish(output)
     except subprocess.CalledProcessError as error:
         print(f"{error.cmd[0]} failed with status {error.returncode}:", file=sys.stderr)
         print(error.stderr, file=sys.stderr)
         return error.returncode
+    except subprocess.TimeoutExpired as error:
+        print(f"{error.cmd[0]} did not finish within {error.timeout} seconds", file=sys.stderr)
+        return 1
     print(f"Secured NATS material written to {output}")
     return 0
 

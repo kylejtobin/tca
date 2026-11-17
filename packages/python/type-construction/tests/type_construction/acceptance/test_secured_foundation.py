@@ -2,11 +2,12 @@
 
 Governing requirements: docs/product.md section 4 (a developer declares typed configuration and
 resource requirements; deployment supplies values; no startup or connection code is written) and
-docs/architecture/DESIGN.md sections 6.1 and 7 (configuration is acquired through native sources
-and realized as native resources that connect securely). The workflow available today: an
-application settings declaration composes two broker resources, deployment supplies secured
-pools, credentials and trust through the environment, the framework realizes both in one
-runtime, and native delivery reaches handlers with the authenticated clients.
+docs/architecture/DESIGN.md sections 5.4, 6.1 and 7 (configuration is acquired through native
+sources; resource composition selects the execution integration through typed composition and
+imports; resources are realized as native brokers that connect securely). The workflow available
+today: an application settings declaration composes two NATS broker resources, deployment
+supplies secured pools, credentials and trust through the environment, the framework realizes
+both in one runtime, and native delivery reaches handlers with the authenticated clients.
 """
 
 import asyncio
@@ -18,8 +19,11 @@ from faststream import FastStream
 from faststream.nats.annotations import Client
 from pydantic_settings import SettingsConfigDict
 
-from type_construction import Resource, Settings
-from type_construction.resources import bind_resource
+from type_construction import Settings
+from type_construction.nats import NatsResource
+
+START_BOUND = 10.0
+STOP_BOUND = 10.0
 
 
 class OrdersSettings(Settings):
@@ -27,8 +31,8 @@ class OrdersSettings(Settings):
 
     model_config = SettingsConfigDict(env_prefix="ORDERS_")
 
-    broker: Resource
-    edge: Resource
+    broker: NatsResource
+    edge: NatsResource
 
 
 def construct[S: Settings](declaration: type[S], /) -> S:
@@ -58,8 +62,8 @@ def test_deployment_configured_resources_connect_securely_over_both_transports(
         )
     settings = construct(OrdersSettings)
     runtime = FastStream()
-    broker = bind_resource(settings.broker, runtime)
-    edge = bind_resource(settings.edge, runtime)
+    broker = settings.broker.bind(runtime)
+    edge = settings.edge.bind(runtime)
     schemes: dict[str, str] = {}
 
     @broker.subscriber("tca.orders.placed")
@@ -74,7 +78,7 @@ def test_deployment_configured_resources_connect_securely_over_both_transports(
 
     async def scenario() -> None:
         try:
-            await asyncio.wait_for(runtime.start(), 10.0)
+            await asyncio.wait_for(runtime.start(), START_BOUND)
             await broker.publish("placed", "tca.orders.placed")
             await edge.publish("shipped", "tca.orders.shipped")
             for _ in range(50):
@@ -82,7 +86,7 @@ def test_deployment_configured_resources_connect_securely_over_both_transports(
                     break
                 await asyncio.sleep(0.05)
         finally:
-            await runtime.stop()
+            await asyncio.wait_for(runtime.stop(), STOP_BOUND)
 
     asyncio.run(scenario())
 

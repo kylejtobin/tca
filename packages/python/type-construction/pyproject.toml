@@ -17,12 +17,18 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "faststream[nats]>=0.7.8,<0.8",
-    "nats-py[aiohttp,nkeys]>=2.16,<3",
+    "faststream>=0.7.8,<0.8",
     "pydantic>=2.13,<3",
     "pydantic-settings>=2.15,<3",
 ]
 import-names = ["type_construction"]
+
+# The NATS execution integration (type_construction.nats) and its native client.
+[project.optional-dependencies]
+nats = [
+    "faststream[nats]>=0.7.8,<0.8",
+    "nats-py[aiohttp,nkeys]>=2.17,<3",
+]
 
 [project.urls]
 Homepage = "https://github.com/kylejtobin/tca"

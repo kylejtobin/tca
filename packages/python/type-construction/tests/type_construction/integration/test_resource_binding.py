@@ -22,8 +22,8 @@ from faststream.nats import TestNatsBroker
 from faststream.nats.annotations import Client, JsClient, NatsBroker
 from pydantic_settings import SettingsConfigDict
 
-from type_construction import Resource, Settings
-from type_construction.resources import bind_resource
+from type_construction import Settings
+from type_construction.nats import NatsResource
 
 type Injected = tuple[Broker, object, object]
 
@@ -31,7 +31,7 @@ type Injected = tuple[Broker, object, object]
 class OrdersSettings(Settings):
     model_config = SettingsConfigDict(env_prefix="ORDERS_")
 
-    broker: Resource
+    broker: NatsResource
 
 
 def construct[S: Settings](declaration: type[S], /) -> S:
@@ -39,7 +39,7 @@ def construct[S: Settings](declaration: type[S], /) -> S:
     return declaration()
 
 
-def _declared_resource() -> Resource:
+def _declared_resource() -> NatsResource:
     return construct(OrdersSettings).broker
 
 
@@ -67,12 +67,12 @@ def _observe(broker: Broker, subject: str, received: dict[str, Injected]) -> Non
 
 
 def _run(scenario: Callable[[], Coroutine[Any, Any, None]]) -> None:
-    asyncio.run(scenario())
+    asyncio.run(asyncio.wait_for(scenario(), 30.0))
 
 
 def test_two_handlers_on_one_realized_resource_share_its_broker_and_clients() -> None:
     owner = FastStream()
-    broker = bind_resource(_declared_resource(), owner)
+    broker = _declared_resource().bind(owner)
     received: dict[str, Injected] = {}
     _observe(broker, "orders.placed", received)
     _observe(broker, "orders.shipped", received)
@@ -95,8 +95,8 @@ def test_two_handlers_on_one_realized_resource_share_its_broker_and_clients() ->
 def test_equal_configuration_realized_twice_in_one_owner_keeps_distinct_brokers() -> None:
     owner = FastStream()
     resource = _declared_resource()
-    first = bind_resource(resource, owner)
-    second = bind_resource(resource, owner)
+    first = resource.bind(owner)
+    second = resource.bind(owner)
     received: dict[str, Injected] = {}
     _observe(first, "orders.first", received)
     _observe(second, "orders.second", received)
@@ -119,8 +119,8 @@ def test_separate_owners_using_the_same_declaration_keep_isolated_brokers() -> N
     resource = _declared_resource()
     owner = FastStream()
     other = FastStream()
-    here = bind_resource(resource, owner)
-    there = bind_resource(resource, other)
+    here = resource.bind(owner)
+    there = resource.bind(other)
     received: dict[str, Injected] = {}
     _observe(here, "orders.here", received)
     _observe(there, "orders.there", received)

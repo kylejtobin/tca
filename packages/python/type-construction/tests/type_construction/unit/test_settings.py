@@ -18,10 +18,12 @@ import pytest
 from pydantic import AnyUrl, Field, ValidationError
 from pydantic_settings import SettingsConfigDict
 
-from type_construction import Model, NatsConnection, Settings
+from type_construction import Model, Settings
+from type_construction.diagnostics import problems
 from type_construction.nats import (
     CertificateAuthorityFile,
     CredentialsFile,
+    NatsConnection,
     TcpPool,
     TcpServers,
     TcpUrl,
@@ -145,6 +147,27 @@ def test_invalid_supplied_values_identify_nested_locations(
         (("database", "pool_size"), "greater_than_equal"),
         (("mode",), "literal_error"),
     }
+
+
+def test_rejected_deployment_values_stay_out_of_displayed_errors_and_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, references: tuple[Path, Path]
+) -> None:
+    """A deployment value rejected at the acquisition boundary may itself be a secret."""
+    _supply_required_values(monkeypatch)
+    monkeypatch.setenv(
+        "ORDERS_NATS__SERVERS",
+        '{"transport": "tcp", "urls": ["tls://orders:p4ss-canary@nats:4222"]}',
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        construct(OrdersSettings)
+
+    error = excinfo.value
+    assert (("nats", "servers", "tcp", "urls", 0), "url_credentials") in _problems(error)
+    assert "nats.servers.tcp.urls.0" in str(error), "the displayed error identifies the setting"
+    assert "p4ss-canary" not in str(error)
+    assert "p4ss-canary" not in repr(problems(error))
+    assert "p4ss-canary" in str(error.errors()), "the native default rendering keeps the input"
 
 
 def test_invalid_declared_default_fails_at_construction() -> None:
@@ -275,10 +298,11 @@ def test_composed_settings_are_hashable_facts(
 def test_importing_declarations_acquires_no_configuration() -> None:
     declaration = (
         "from pydantic import ValidationError\n"
-        "from type_construction import NatsConnection, Resource, Settings\n"
+        "from type_construction import Settings\n"
+        "from type_construction.nats import NatsConnection, NatsResource\n"
         "class App(Settings):\n"
         "    nats: NatsConnection\n"
-        "    broker: Resource\n"
+        "    broker: NatsResource\n"
         "print('declared')\n"
         "try:\n"
         "    App()\n"

@@ -20,6 +20,3 @@ logs/
 
 # The working handoff, never committed.
 /HANDOFF.md
-
-# Generated secured NATS development material: private keys, credentials and server config.
-/.secrets/

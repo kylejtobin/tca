@@ -21,21 +21,22 @@ Every package's `tests/AGENTS.md` MUST match `.agents/skills/tca-testing/TEST_DI
 Set up the environment from the repository root against the lockfile:
 
 ```bash
-uv sync --locked --all-packages
-uv run which pytest
+uv sync --locked --all-packages --extra nats
+uv run --extra nats which pytest
 ```
 
-The environment's `pytest` MUST be used, not a same-named host tool.
+The environment's `pytest` MUST be used, not a same-named host tool. The NATS
+integration is an installation extra; select it explicitly in every command.
 
 From the package directory:
 
-- Package tests: `uv run pytest tests -q`
-- Focused tests: `uv run pytest tests -q -k '<test_name>'`
+- Package tests: `uv run --extra nats pytest tests -q`
+- Focused tests: `uv run --extra nats pytest tests -q -k '<test_name>'`
 
 From the repository root:
 
 - Instruction parity: `python scripts/check_test_standards.py`
-- All tests: `uv run --all-packages pytest -q`
+- All tests: `uv run --extra nats --all-packages pytest -q`
 - Repository gate: `just check`
 
 Run focused tests during development and the repository gate before declaring work complete. Missing tests, collection failures, and missing implementations MUST remain visible; do not conceal them with skips or stubs.

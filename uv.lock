@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 
 [manifest]
@@ -987,11 +987,11 @@ wheels = [
 
 [[package]]
 name = "nats-py"
-version = "2.16.0"
+version = "2.17.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2c/c8/739b72c9201081e48000884d476231873ac82f7247c43b33823eaf3c0bfb/nats_py-2.16.0.tar.gz", hash = "sha256:1d137ed7afc9b59033b3199324c6237df2016a5091935871344a787eba6b72fc", size = 79731, upload-time = "2026-09-16T07:47:21.843Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/81/bb848a2b1a78e65be0a1127c6b3554fb3dffd9106111a21f7a466ef032a6/nats_py-2.17.0.tar.gz", hash = "sha256:d231b0915567777e283b3553dbe6b35df450c9ffaba65c8a6ca11e6a622bcc07", size = 83960, upload-time = "2026-11-17T14:09:21.97Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/a3/16cec37172144d3362d7551bb823a098b2b2903281fc095dfe4480b8c2fd/nats_py-2.16.0-py3-none-any.whl", hash = "sha256:aeb1ff123966c05833d26c7df7e1d54c1c6d32b612428b21677a2e921f1fecae", size = 93578, upload-time = "2026-09-16T07:47:20.799Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/5a/dbc821dce27cf8f322f36fc99ad2b5c61d37f0b6a96604077aae892ccffb/nats_py-2.17.0-py3-none-any.whl", hash = "sha256:fc7d01f68957462220d6bdce310cad1707eeb5fbd369903d84217b18ea341c0e", size = 97786, upload-time = "2026-11-17T14:09:20.486Z" },
 ]
 
 [package.optional-dependencies]
@@ -1972,19 +1972,26 @@ name = "type-construction"
 version = "0.0.0"
 source = { editable = "packages/python/type-construction" }
 dependencies = [
-    { name = "faststream", extra = ["nats"] },
-    { name = "nats-py", extra = ["aiohttp", "nkeys"] },
+    { name = "faststream" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
 
+[package.optional-dependencies]
+nats = [
+    { name = "faststream", extra = ["nats"] },
+    { name = "nats-py", extra = ["aiohttp", "nkeys"] },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "faststream", extras = ["nats"], specifier = ">=0.7.8,<0.8" },
-    { name = "nats-py", extras = ["aiohttp", "nkeys"], specifier = ">=2.16,<3" },
+    { name = "faststream", specifier = ">=0.7.8,<0.8" },
+    { name = "faststream", extras = ["nats"], marker = "extra == 'nats'", specifier = ">=0.7.8,<0.8" },
+    { name = "nats-py", extras = ["aiohttp", "nkeys"], marker = "extra == 'nats'", specifier = ">=2.17,<3" },
     { name = "pydantic", specifier = ">=2.13,<3" },
     { name = "pydantic-settings", specifier = ">=2.15,<3" },
 ]
+provides-extras = ["nats"]
 
 [[package]]
 name = "typing-extensions"

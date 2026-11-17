@@ -3,7 +3,9 @@
 The base implements docs/architecture/DESIGN.md sections 5.2 and 7. It establishes the required
 native configuration and nothing else: Pydantic Settings supplies source acquisition, precedence,
 parsing, nested construction, aliases, defaults and validation. Importing this module acquires
-no deployment configuration; construction of a specialized class does.
+no deployment configuration; construction of a specialized class does. The class is the boundary
+where deployment values enter, so its displayed validation errors omit the rejected inputs: a
+rejected value may carry a secret, such as a URL with a password.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,4 +27,5 @@ class Settings(BaseSettings):
         validate_default=True,
         frozen=True,
         env_nested_delimiter="__",
+        hide_input_in_errors=True,
     )

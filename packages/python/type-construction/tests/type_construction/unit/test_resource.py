@@ -1,190 +1,145 @@
-"""Applications declare a broker requirement as a ``Resource``; the framework realizes it natively.
+"""The shared ``Resource`` contract is provider-independent; integrations specialize and bind it.
 
 Governing requirements: docs/architecture/DESIGN.md sections 5.2 (``Resource`` declares an
-integration resource's settings; the integration supplies the contract), 5.4 (Pydantic Settings
-constructs configuration; the binding supplies verified TLS, TLS before any protocol exchange and
-native credentials to the native ``NatsBroker``), 6.1 (valid configuration establishes no
-connectivity; invalid required configuration fails identifying the setting) and 7 (every binding
-realizes a separate placement; equal configuration does not establish sharing). The configured
-native security parameters are observed through the broker's published specification.
+integration resource's settings; live clients retain native types), 5.4 (core contracts require
+no provider-specific fields or client types; provider dependencies and exports belong within the
+integration boundary) and 7 (resource ownership is scoped to a runtime; each realization is a
+separate placement). The core is exercised with a test-owned specialization whose native object
+is a plain Python value, so nothing here depends on NATS.
 """
 
-import json
-import os
-import ssl
-from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 import pytest
 from faststream import FastStream
-from faststream.nats.security import NatsCredentials
-from pydantic import ValidationError
+from pydantic import ConfigDict, ValidationError
 from pydantic_settings import SettingsConfigDict
 
-from type_construction import NatsConnection, Resource, Settings
-from type_construction.resources import bind_resource
+from type_construction import Model, Resource, Settings
 
-TCP = '{"transport": "tcp", "urls": ["tls://nats:4222", "tls://backup.example:4223"]}'
-WEBSOCKET = '{"transport": "websocket", "urls": ["wss://edge.example"]}'
+# Blocks the NATS integration's dependencies before importing the core exports, as an
+# installation without the ``nats`` extra would behave.
+CORE_IMPORT_WITHOUT_NATS = """
+import sys
+class Blocked:
+    NAMES = ("nats", "nkeys", "aiohttp", "faststream.nats", "type_construction.nats")
+    def find_spec(self, name, path=None, target=None):
+        if name in self.NAMES or name.startswith(tuple(f"{n}." for n in self.NAMES)):
+            raise ModuleNotFoundError(f"blocked: {name}")
+        return None
+sys.meta_path.insert(0, Blocked())
+import type_construction
+from type_construction import Model, Resource, Root, Settings
+from type_construction.diagnostics import Problem, problems
+from type_construction.resources import Resource as Declared
+print(sorted(type_construction.__all__))
+loaded = [m for m in sys.modules if m.split(".")[0] in ("nats", "nkeys", "aiohttp")]
+print(Declared is Resource, loaded)
+try:
+    import type_construction.nats
+except ModuleNotFoundError as error:
+    print("integration unavailable:", str(error).split(":")[0])
+"""
 
 
-class OrdersSettings(Settings):
-    """The public declaration: a broker requirement beside the application's prefix."""
+class Registry:
+    """A stand-in runtime object a test integration registers its native objects with."""
 
-    model_config = SettingsConfigDict(env_prefix="ORDERS_")
+    def __init__(self) -> None:
+        self.realized: list[object] = []
 
-    broker: Resource
+
+class Counter(Model):
+    """The native object of the test integration: identity matters, configuration does not."""
+
+    model_config = ConfigDict(frozen=False)
+
+    start: int
+
+
+class CounterResource(Resource[Counter]):
+    """A test integration's specialization: typed configuration plus its binding."""
+
+    start: int = 0
+
+    def bind(self, owner: FastStream) -> Counter:
+        counter = Counter(start=self.start)
+        owner.context.set_global("counters", [*owner.context.get("counters", []), counter])
+        return counter
+
+
+class WorkerSettings(Settings):
+    model_config = SettingsConfigDict(env_prefix="WORKER_")
+
+    counter: CounterResource
 
 
 def construct[S: Settings](declaration: type[S], /, **values: Any) -> S:
-    """Construct configuration through its declared class, as the launch path will."""
     return declaration(**values)
 
 
-def _problems(error: ValidationError) -> set[tuple[tuple[int | str, ...], str]]:
-    return {(detail["loc"], detail["type"]) for detail in error.errors()}
+def test_the_shared_contract_cannot_be_realized_without_an_integration() -> None:
+    with pytest.raises(TypeError, match="abstract"):
+        Resource()  # type: ignore[abstract]
 
 
-@pytest.fixture(autouse=True)
-def _deployment_environment(monkeypatch: pytest.MonkeyPatch, material: dict[str, Path]) -> None:
-    for name in list(os.environ):
-        monkeypatch.delenv(name)
-    monkeypatch.setenv(
-        "ORDERS_BROKER__CONNECTION__CREDENTIALS", str(material["application_credentials"])
-    )
-    monkeypatch.setenv(
-        "ORDERS_BROKER__CONNECTION__CERTIFICATE_AUTHORITY", str(material["certificate_authority"])
-    )
-
-
-@pytest.mark.parametrize(
-    ("supplied", "expected"),
-    [
-        (TCP, ["tls://nats:4222", "tls://backup.example:4223"]),
-        (WEBSOCKET, ["wss://edge.example/"]),
-    ],
-    ids=["tcp", "websocket"],
-)
-def test_settings_supply_either_alternative_as_the_resource_connection(
-    monkeypatch: pytest.MonkeyPatch, material: dict[str, Path], supplied: str, expected: list[str]
+def test_an_integration_specialization_binds_to_a_runtime_and_returns_its_native_object(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", supplied)
-
-    settings = construct(OrdersSettings)
-
-    assert settings.broker == Resource(
-        connection=NatsConnection.model_validate(
-            {
-                "servers": json.loads(supplied),
-                "credentials": material["application_credentials"],
-                "certificate_authority": material["certificate_authority"],
-            }
-        )
-    )
-    assert [str(url.root) for url in settings.broker.connection.servers.urls.root] == expected
-
-
-def test_missing_or_invalid_required_configuration_fails_before_binding(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    with pytest.raises(ValidationError) as missing:
-        construct(OrdersSettings)
-
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", '{"transport": "tcp", "urls": []}')
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__CREDENTIALS", str(tmp_path / "absent.creds"))
-    with pytest.raises(ValidationError) as invalid:
-        construct(OrdersSettings)
-
-    assert _problems(missing.value) == {(("broker", "connection", "servers"), "missing")}
-    assert _problems(invalid.value) == {
-        (("broker", "connection", "servers", "tcp", "urls"), "too_short"),
-        (("broker", "connection", "credentials"), "path_not_file"),
-    }
-
-
-def test_declaration_and_binding_open_no_connection(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", TCP)
+    monkeypatch.setenv("WORKER_COUNTER__START", "7")
     owner = FastStream()
 
-    broker = bind_resource(construct(OrdersSettings).broker, owner)
+    resource = construct(WorkerSettings).counter
+    native = resource.bind(owner)
 
-    assert not broker.running
-    assert not broker.config.connection_state, "no native connection exists before startup"
-
-
-@pytest.mark.parametrize(
-    ("supplied", "expected"),
-    [
-        (TCP, ["tls://nats:4222", "tls://backup.example:4223"]),
-        (WEBSOCKET, ["wss://edge.example/"]),
-    ],
-    ids=["tcp", "websocket"],
-)
-def test_binding_registers_the_returned_broker_with_its_ordered_urls(
-    monkeypatch: pytest.MonkeyPatch, supplied: str, expected: list[str]
-) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", supplied)
-    owner = FastStream()
-
-    broker = bind_resource(construct(OrdersSettings).broker, owner)
-
-    assert owner.brokers == [broker]
-    assert owner.brokers[0] is broker
-    assert broker.specification.url == expected
+    assert resource == CounterResource(start=7)
+    assert isinstance(native, Counter) and native.start == 7
+    assert owner.context.get("counters") == [native]
 
 
-def test_binding_supplies_verified_tls_first_and_the_referenced_credentials(
-    monkeypatch: pytest.MonkeyPatch, material: dict[str, Path]
-) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", TCP)
-    broker = bind_resource(construct(OrdersSettings).broker, FastStream())
-
-    security = broker.specification.security
-    assert isinstance(security, NatsCredentials)
-    assert security.credentials == material["application_credentials"]
-    assert security.tls_handshake_first is True
-    assert security.tls_hostname is None, "hostnames are verified against the URL host"
-    context = security.ssl_context
-    assert context is not None
-    assert context.verify_mode is ssl.CERT_REQUIRED
-    assert context.check_hostname is True
-    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
-    certificates = context.get_ca_certs()
-    assert len(certificates) == 1, "only the referenced authority is trusted"
-    assert certificates[0]["subject"] == ((("commonName", "TCA Development CA"),),)
-
-
-def test_each_binding_realizes_a_separate_placement(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", TCP)
-    resource = construct(OrdersSettings).broker
+def test_each_binding_realizes_a_separate_placement() -> None:
+    resource = CounterResource(start=1)
     owner = FastStream()
     other = FastStream()
 
-    first = bind_resource(resource, owner)
-    second = bind_resource(resource, owner)
-    elsewhere = bind_resource(resource, other)
+    first = resource.bind(owner)
+    second = resource.bind(owner)
+    elsewhere = resource.bind(other)
 
-    assert first is not second
-    assert owner.brokers == [first, second]
-    assert other.brokers == [elsewhere]
-    assert elsewhere not in owner.brokers
+    assert first is not second and first is not elsewhere
+    assert first == second == elsewhere, "equal configuration, distinct native objects"
+    assert owner.context.get("counters") == [first, second]
+    assert other.context.get("counters") == [elsewhere]
 
 
-def test_resource_is_an_immutable_fact(
-    monkeypatch: pytest.MonkeyPatch, material: dict[str, Path]
-) -> None:
-    monkeypatch.setenv("ORDERS_BROKER__CONNECTION__SERVERS", TCP)
-    resource = construct(OrdersSettings).broker
-    replacement = NatsConnection.model_validate(
-        {
-            "servers": {"transport": "websocket", "urls": ["wss://edge.example"]},
-            "credentials": material["application_credentials"],
-            "certificate_authority": material["certificate_authority"],
-        }
-    )
+def test_a_resource_is_an_immutable_fact_without_its_native_object() -> None:
+    resource = CounterResource(start=3)
+    native = resource.bind(FastStream())
+    native.start = 99
 
     with pytest.raises(ValidationError) as excinfo:
-        resource.connection = replacement
+        resource.start = 4
 
     assert excinfo.value.errors()[0]["type"] == "frozen_instance"
-    assert hash(resource) == hash(construct(OrdersSettings).broker)
+    assert resource.model_dump() == {"start": 3}, "the live object is never part of the model"
+    assert hash(resource) == hash(CounterResource(start=3))
+
+
+def test_core_exports_import_without_the_nats_integration_dependencies() -> None:
+    result = subprocess.run(  # noqa: S603 - the interpreter and script are fixed test inputs
+        [sys.executable, "-I", "-c", CORE_IMPORT_WITHOUT_NATS],
+        env={},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "['Model', 'Resource', 'Root', 'Settings']",
+        "True []",
+        "integration unavailable: blocked",
+    ]

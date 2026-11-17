@@ -5,9 +5,11 @@ collections, product alternatives and an explicitly discriminated sum; named roo
 JSON root shape), 5.2 (an integration supplies the settings contract its resource requires), 5.3
 (alternatives are selected by declared discriminator values), 5.4 (native ``NatsBroker`` consumes
 the configuration through ``nats-py``; connections are verified TLS with native credentials and
-no plaintext fallback) and 6.1 (valid configuration establishes no connectivity). The native
-``servers`` parameter receives the ordered URL strings of the selected alternative. Credential
-and trust material is referenced by path; contents never enter model values.
+no plaintext fallback), 6.1 (valid configuration establishes no connectivity) and 7 (credential
+contents never enter ordinary values or URLs). The native ``servers`` parameter receives the
+ordered URL strings of the selected alternative. Credential and trust material is referenced by
+path. A URL carrying userinfo is rejected at construction, and the rejected value, which may be a
+secret, stays out of displayed errors and framework diagnostics.
 """
 
 import asyncio
@@ -20,10 +22,11 @@ from nats.aio.client import Client
 from nats.aio.transport import WebSocketTransport
 from pydantic import AnyUrl, ValidationError
 
-from type_construction import NatsConnection
+from type_construction.diagnostics import problems
 from type_construction.nats import (
     CertificateAuthorityFile,
     CredentialsFile,
+    NatsConnection,
     TcpPool,
     TcpServers,
     TcpUrl,
@@ -34,7 +37,11 @@ from type_construction.nats import (
 
 TCP = {"transport": "tcp", "urls": ["tls://nats", "tls://backup.example:4223"]}
 WEBSOCKET = {"transport": "websocket", "urls": ["wss://edge.example:8443", "wss://edge.example"]}
-CANARY_FILE = "-----BEGIN NATS USER JWT-----\neyJ0.canary.jwt\n------END NATS USER JWT------\n"
+CANARY_FILE = (
+    "-----BEGIN NATS USER JWT-----\neyJ0.canary.jwt\n------END NATS USER JWT------\n"
+    "-----BEGIN USER NKEY SEED-----\nSUACANARYSEED\n------END USER NKEY SEED------\n"
+)
+PASSWORD = "p4ss-canary"  # noqa: S105 - a canary that must not survive into any rendering
 
 
 @pytest.fixture
@@ -230,6 +237,113 @@ def test_each_alternative_requires_a_host(
     assert expected in _problems(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    ("pool", "expected"),
+    [
+        (
+            {"transport": "tcp", "urls": ["tls://nats", f"tls://user:{PASSWORD}@nats:4222"]},
+            (("servers", "tcp", "urls", 1), "url_credentials"),
+        ),
+        (
+            {"transport": "tcp", "urls": [f"tls://{PASSWORD}@nats:4222"]},
+            (("servers", "tcp", "urls", 0), "url_credentials"),
+        ),
+        (
+            {"transport": "tcp", "urls": [f"tls://us%40er:{PASSWORD}%3A1@nats"]},
+            (("servers", "tcp", "urls", 0), "url_credentials"),
+        ),
+        (
+            {"transport": "websocket", "urls": [f"wss://user:{PASSWORD}@edge.example"]},
+            (("servers", "websocket", "urls", 0), "url_credentials"),
+        ),
+        (
+            {"transport": "websocket", "urls": [f"wss://{PASSWORD}@[2001:db8::1]:8443"]},
+            (("servers", "websocket", "urls", 0), "url_credentials"),
+        ),
+        (
+            {"transport": "tcp", "urls": [f"tls://user:{PASSWORD}@"]},
+            (("servers", "tcp", "urls", 0), "url_parsing"),
+        ),
+        (
+            {"transport": "tcp", "urls": [f"tls://user:{PASSWORD}@:4222"]},
+            (("servers", "tcp", "urls", 0), "url_parsing"),
+        ),
+    ],
+    ids=[
+        "username-password",
+        "token-userinfo",
+        "percent-encoded",
+        "websocket-username-password",
+        "websocket-token-ipv6",
+        "malformed-no-host",
+        "malformed-port-only",
+    ],
+)
+def test_urls_carrying_credentials_are_rejected_and_hidden_from_renderings(
+    references: dict[str, str],
+    pool: dict[str, object],
+    expected: tuple[tuple[int | str, ...], str],
+) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        _connection(pool, references)
+
+    error = excinfo.value
+    assert expected in _problems(error)
+    assert PASSWORD not in str(error), "the displayed error hides the rejected input"
+    assert PASSWORD not in repr(problems(error)), "framework diagnostics omit input and context"
+    assert PASSWORD in str(error.errors()), "the native default rendering keeps the input"
+
+
+def test_constructed_native_urls_carrying_credentials_are_rejected() -> None:
+    parsed = AnyUrl(f"tls://user:{PASSWORD}@nats:4222")
+    assert parsed.username == "user" and parsed.password == PASSWORD
+
+    with pytest.raises(ValidationError) as direct:
+        TcpUrl(parsed)
+    with pytest.raises(ValidationError) as collected:
+        TcpServers((TcpUrl(AnyUrl("tls://nats")), parsed))  # type: ignore[arg-type]
+    with pytest.raises(ValidationError) as websocket:
+        WebSocketUrl(AnyUrl(f"wss://{PASSWORD}@edge.example"))
+
+    assert _problems(direct.value) == {((), "url_credentials")}
+    assert _problems(collected.value) == {((1,), "url_credentials")}
+    assert _problems(websocket.value) == {((), "url_credentials")}
+    assert PASSWORD not in str(direct.value) + str(collected.value) + str(websocket.value)
+
+
+def test_secure_endpoints_including_ipv6_and_failover_collections_are_admitted(
+    references: dict[str, str],
+) -> None:
+    tcp = _connection(
+        {
+            "transport": "tcp",
+            "urls": ["tls://[::1]:4222", "tls://nats-1.internal", "tls://10.0.0.7:4223"],
+        },
+        references,
+    )
+    websocket = _connection(
+        {"transport": "websocket", "urls": ["wss://[2001:db8::1]:8443", "wss://edge.example"]},
+        references,
+    )
+    client = Client()
+
+    client.set_server_pool(_servers(tcp))
+    tcp_endpoints = _endpoints(client)
+    client.set_server_pool(_servers(websocket))
+
+    assert _servers(tcp) == ["tls://[::1]:4222", "tls://nats-1.internal", "tls://10.0.0.7:4223"]
+    assert tcp_endpoints == [
+        ("tls", "::1", 4222),
+        ("tls", "nats-1.internal", 4222),
+        ("tls", "10.0.0.7", 4223),
+    ]
+    assert _endpoints(client) == [("wss", "2001:db8::1", 8443), ("wss", "edge.example", None)]
+    assert all(
+        url.root.username is None and url.root.password is None
+        for url in (*tcp.servers.urls.root, *websocket.servers.urls.root)
+    )
+
+
 def test_full_url_contract_excludes_host_port_forms_the_native_client_accepts(
     references: dict[str, str],
 ) -> None:
@@ -274,6 +388,7 @@ def test_representations_carry_references_not_credential_contents(
     assert references["credentials"] in rendered
     assert "canary" not in rendered
     assert "BEGIN NATS USER JWT" not in rendered
+    assert "SUACANARYSEED" not in rendered
 
 
 def test_equivalent_spellings_denote_the_same_endpoint(references: dict[str, str]) -> None:
