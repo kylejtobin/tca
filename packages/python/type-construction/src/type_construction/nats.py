@@ -188,8 +188,9 @@ class NatsResource(Resource[NatsBroker]):
         """Realize this placement as a new native broker registered with ``owner``.
 
         The broker verifies server certificates and hostnames against the referenced authorities
-        only, negotiates TLS before any protocol exchange on TCP and authenticates with the
-        referenced credentials. The credentials file is read here, once, and the snapshot is
+        only, accepts TLS 1.2 or later (Python's default floor depends on the OpenSSL build's
+        configuration), negotiates TLS before any protocol exchange on TCP and authenticates with
+        the referenced credentials. The credentials file is read here, once, and the snapshot is
         handed to FastStream's ``NatsCredentials.from_raw``, which rejects content lacking the
         JWT or seed markers before any connection is attempted; the native client would otherwise
         read such a file without terminating. The snapshot lives in the native security object,
@@ -204,6 +205,7 @@ class NatsResource(Resource[NatsBroker]):
             purpose=ssl.Purpose.SERVER_AUTH,
             cafile=str(connection.certificate_authority.root),
         )
+        trust.minimum_version = ssl.TLSVersion.TLSv1_2
         security = NatsCredentials.from_raw(
             connection.credentials.root.read_text(),
             ssl_context=trust,
